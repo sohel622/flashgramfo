@@ -1,0 +1,8 @@
+{
+  "name": "ReelFlow",
+  "description": "ReelFlow - Video sharing and social feed web application featuring short-form video streaming, uploads, profile, and discovery.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
