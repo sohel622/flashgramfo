@@ -84,6 +84,8 @@
         right: auto !important;
         transform: translateX(-50%) !important;
         width: min(100vw, calc(100vh * 9 / 16)) !important;
+      }
+      #page-feed {
         height: 100vh !important;
       }
     }
@@ -129,11 +131,31 @@
       height: 52px;
       display: flex;
       align-items: center;
-      justify-content: center;
-      padding: 0 16px;
+      justify-content: space-between;
+      padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
       z-index: 100;
       background: transparent !important;
       pointer-events: auto;
+    }
+    .topbar-search-btn {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #fff;
+      background: transparent;
+      border: none;
+      transition: transform .12s, opacity .15s;
+    }
+    .topbar-search-btn:active {
+      transform: scale(0.92);
+      opacity: 0.8;
+    }
+    .topbar-search-btn .material-symbols-rounded {
+      font-size: 26px;
+      filter: drop-shadow(0 2px 5px rgba(0,0,0,0.85));
     }
     .topbar-tabs {
       display: flex;
@@ -158,8 +180,10 @@
 
     /* ── FEED ── */
     #feed {
-      position: fixed;
+      position: absolute;
       inset: 0;
+      width: 100%;
+      height: 100%;
       overflow-y: scroll;
       scroll-snap-type: y mandatory;
       -webkit-overflow-scrolling: touch;
@@ -169,7 +193,7 @@
 
     /* Empty state */
     #empty-state {
-      position: fixed;
+      position: absolute;
       inset: 0;
       display: flex;
       flex-direction: column;
@@ -217,7 +241,7 @@
       scroll-snap-align: start;
       scroll-snap-stop: always;
       position: relative;
-      background: transparent !important;
+      background: #000;
       overflow: hidden;
     }
     .slide-video {
@@ -225,8 +249,8 @@
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover !important;
-      background: transparent !important;
+      object-fit: cover;
+      background: #000;
     }
     .tap-overlay {
       position: absolute;
@@ -274,7 +298,7 @@
       bottom: calc(76px + env(safe-area-inset-bottom, 0px));
       display: flex;
       flex-direction: column;
-      gap: 18px;
+      gap: 20px;
       align-items: center;
       z-index: 30;
     }
@@ -282,34 +306,34 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 4px;
       cursor: pointer;
       color: #fff;
+      background: transparent !important;
+      border: none;
+      padding: 0;
     }
     .action-icon-wrap {
-      width: 46px;
-      height: 46px;
+      width: 44px;
+      height: 44px;
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 50%;
-      background: rgba(0,0,0,0.3);
-      backdrop-filter: blur(8px);
+      background: transparent !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      border: none !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
       transition: transform .15s;
     }
     .action-btn:active .action-icon-wrap { transform: scale(1.18); }
     .action-icon-wrap .material-symbols-rounded {
-      font-size: 30px;
-      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6));
+      font-size: 34px;
+      color: #fff;
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.85));
     }
     .action-count {
-      font-size: 11.5px;
-      font-weight: 700;
-      color: #fff;
-      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
-      font-variant-numeric: tabular-nums;
-      min-width: 32px;
-      text-align: center;
+      display: none !important;
     }
     .liked .like-icon { color: var(--accent) !important; animation: heartPop .35s cubic-bezier(.4,0,.2,1); }
     .liked .like-icon svg { fill: var(--accent) !important; }
@@ -1305,10 +1329,14 @@
 
 <!-- TOP BAR (Feed only) -->
 <div id="topbar">
+  <div class="topbar-search-btn" onclick="goPage('discover',document.getElementById('nav-discover'));setTimeout(()=>document.getElementById('discoverInput').focus(),80)" title="Search">
+    <span class="material-symbols-rounded">search</span>
+  </div>
   <div class="topbar-tabs">
     <div class="topbar-tab" id="tab-following" onclick="switchFeedTab('following')">Following</div>
     <div class="topbar-tab active" id="tab-foryou" onclick="switchFeedTab('foryou')">For You</div>
   </div>
+  <div style="width:40px;height:40px;" aria-hidden="true"></div>
 </div>
 
 <!-- 1. FEED PAGE -->
@@ -1778,7 +1806,7 @@ const defaultSeedVideos = [
   {
     id: 'seed-1',
     ts: Date.now() - 3600000 * 2,
-    videoUrl: '/videos/sample1.mp4',
+    videoUrl: '/videos/sample1_916.mp4',
     caption: 'Nature blooming in stunning detail 🌸 Stop and appreciate the details today #nature #bloom #vibes #fyp',
     hashtags: ['#nature', '#bloom', '#vibes', '#fyp'],
     music: 'Nature Vibes - Original Sound',
@@ -1798,7 +1826,7 @@ const defaultSeedVideos = [
   {
     id: 'seed-2',
     ts: Date.now() - 3600000 * 6,
-    videoUrl: '/videos/sample2.webm',
+    videoUrl: '/videos/sample2_916.mp4',
     caption: 'Big Buck Bunny adventures never get old 🐰 A masterpiece of open source animation! #animation #classic #cinema #cartoon',
     hashtags: ['#animation', '#classic', '#cinema', '#cartoon'],
     music: 'Peach Open Movie - Fun Beats',
@@ -1817,7 +1845,7 @@ const defaultSeedVideos = [
   {
     id: 'seed-3',
     ts: Date.now() - 3600000 * 12,
-    videoUrl: '/videos/sample3.mp4',
+    videoUrl: '/videos/sample3_916.mp4',
     caption: 'Deep blue ocean currents and marine life wonders 🌊 Protect our marine ecosystem! #ocean #nature #blue #wildlife',
     hashtags: ['#ocean', '#nature', '#blue', '#wildlife'],
     music: 'Calm Waves Studio - Ocean Sounds',
@@ -2103,6 +2131,13 @@ function makeSlide(v, i) {
   const src = blobUrls[v.id] || v.videoUrl;
   if (src && i <= 1) vid.src = src;
 
+  vid.addEventListener('loadedmetadata', () => {
+    if (vid.videoWidth && vid.videoHeight) {
+      const ratio = vid.videoWidth / vid.videoHeight;
+      vid.style.objectFit = (ratio > 0.65) ? 'contain' : 'cover';
+    }
+  });
+
   vid.addEventListener('timeupdate', () => {
     const pb = slide.querySelector('.progress-bar');
     if (pb && vid.duration) pb.style.width = (vid.currentTime / vid.duration * 100) + '%';
@@ -2186,23 +2221,19 @@ function makeActions(v, i) {
   const isSaved = (profile.saved || []).includes(v.id);
 
   wrap.innerHTML = `
-    <div class="action-btn${v.liked ? ' liked' : ''}" id="like-${v.id}" onclick="toggleLike(this,'${v.id}',${i})">
+    <div class="action-btn${v.liked ? ' liked' : ''}" id="like-${v.id}" onclick="toggleLike(this,'${v.id}',${i})" title="Like">
       <div class="action-icon-wrap">
         <span class="material-symbols-rounded like-icon">favorite</span>
       </div>
-      <span class="action-count" id="lc-${v.id}">${fmtC(v.likes || 0)}</span>
     </div>
-    <div class="action-btn" onclick="openComments('${v.id}')">
+    <div class="action-btn" onclick="openComments('${v.id}')" title="Comments">
       <div class="action-icon-wrap"><span class="material-symbols-rounded fi">chat_bubble</span></div>
-      <span class="action-count" id="cc-${v.id}">${fmtC(cmCount(v))}</span>
     </div>
-    <div class="action-btn${isSaved ? ' saved' : ''}" id="save-${v.id}" onclick="toggleSave('${v.id}')">
+    <div class="action-btn${isSaved ? ' saved' : ''}" id="save-${v.id}" onclick="toggleSave('${v.id}')" title="Save">
       <div class="action-icon-wrap"><span class="material-symbols-rounded save-icon">bookmark</span></div>
-      <span class="action-count" id="sc-${v.id}">${isSaved ? 'Saved' : 'Save'}</span>
     </div>
-    <div class="action-btn" onclick="openShare('${v.id}')">
+    <div class="action-btn" onclick="openShare('${v.id}')" title="Share">
       <div class="action-icon-wrap"><span class="material-symbols-rounded" style="transform:scaleX(-1)">reply</span></div>
-      <span class="action-count" id="shc-${v.id}">${fmtC(v.shares || 0)}</span>
     </div>
   `;
   return wrap;
