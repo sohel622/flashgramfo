@@ -8,456 +8,1509 @@
   <meta property="og:title" content="ReelFlow">
   <meta property="og:description" content="ReelFlow - Video sharing and social feed web application featuring short-form video streaming, uploads, profile, and discovery.">
   <style>
-    :root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-    html{scroll-padding-top:env(safe-area-inset-top,0px)}
-    body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}
-    img{max-width:100%}
-    [hidden]:not([hidden=until-found i]){display:none!important}
+    :root {
+      color-scheme: dark;
+      box-sizing: border-box;
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      --bg: #000;
+      --bg2: #111;
+      --bg3: #181818;
+      --bg4: #222;
+      --fg: #fff;
+      --fg2: rgba(255,255,255,0.65);
+      --fg3: rgba(255,255,255,0.4);
+      --accent: #fe2c55;
+      --accent2: #25f4ee;
+      --card: rgba(255,255,255,0.07);
+      --border: rgba(255,255,255,0.12);
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font);
+      overflow: hidden;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    img { max-width: 100%; display: block; }
+    [hidden] { display: none !important; }
+
+    /* Material Symbols Rounded SVG icons */
+    .material-symbols-rounded {
+      font-size: 24px;
+      line-height: 1;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      vertical-align: middle;
+      width: 1em;
+      height: 1em;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    .material-symbols-rounded:not(.h) { visibility: hidden; }
+    .material-symbols-rounded svg {
+      width: 1em;
+      height: 1em;
+      display: block;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .material-symbols-rounded svg.f, .liked .like-icon svg, .saved .save-icon svg {
+      fill: currentColor;
+    }
+
+    /* 9:16 Centered Frame on Wide Screens */
+    @media (min-width: 600px) {
+      #page-feed, #page-profile, #page-discover, #page-inbox, #topbar, #bottomnav,
+      .modal-sheet, .comments-sheet, .chat-sheet {
+        max-width: 480px;
+        left: 50% !important;
+        transform: translateX(-50%);
+        box-shadow: 0 0 50px rgba(0,0,0,0.85);
+      }
+      body {
+        background: #080808;
+      }
+    }
+
+    /* ── PAGES ── */
+    #page-feed, #page-profile, #page-discover, #page-inbox {
+      position: fixed;
+      inset: 0;
+      transition: transform 0.28s cubic-bezier(.4,0,.2,1), opacity 0.25s;
+    }
+    #page-profile, #page-discover, #page-inbox {
+      transform: translateX(100%);
+      opacity: 0;
+      pointer-events: none;
+      overflow-y: auto;
+      background: var(--bg);
+      z-index: 40;
+    }
+    #page-profile.active, #page-discover.active, #page-inbox.active {
+      transform: translateX(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* ── TOP BAR (Feed only) ── */
+    #topbar {
+      position: fixed;
+      top: env(safe-area-inset-top, 0px);
+      left: 0;
+      right: 0;
+      height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
+      z-index: 100;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.65) 0%, transparent 100%);
+      pointer-events: auto;
+    }
+    .topbar-tabs {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      justify-content: center;
+    }
+    .topbar-tab {
+      font-size: 16px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.55);
+      cursor: pointer;
+      padding: 6px 2px;
+      border-bottom: 2px solid transparent;
+      transition: color .2s, border-color .2s;
+    }
+    .topbar-tab.active {
+      color: #fff;
+      border-bottom-color: #fff;
+    }
+    .topbar-icon {
+      width: 38px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #fff;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.25);
+      backdrop-filter: blur(8px);
+      transition: background .15s, transform .12s;
+    }
+    .topbar-icon:active {
+      transform: scale(0.92);
+      background: rgba(255,255,255,0.2);
+    }
+
+    /* ── FEED ── */
+    #feed {
+      position: fixed;
+      inset: 0;
+      overflow-y: scroll;
+      scroll-snap-type: y mandatory;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    #feed::-webkit-scrollbar { display: none; }
+
+    /* Empty state */
+    #empty-state {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 10;
+      pointer-events: none;
+      background: var(--bg);
+    }
+    .empty-icon {
+      width: 76px;
+      height: 76px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .empty-icon .material-symbols-rounded { font-size: 38px; color: var(--fg2); }
+    .empty-title { font-size: 19px; font-weight: 700; }
+    .empty-sub { font-size: 13.5px; color: var(--fg2); text-align: center; max-width: 240px; line-height: 1.5; }
+    .empty-cta {
+      pointer-events: auto;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 24px;
+      padding: 12px 28px;
+      font-size: 14.5px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: var(--font);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: opacity .15s, transform .12s;
+    }
+    .empty-cta:active { opacity: 0.85; transform: scale(0.98); }
+
+    /* Video Slide */
+    .video-slide {
+      width: 100%;
+      height: 100%;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+      position: relative;
+      background: #000;
+      overflow: hidden;
+    }
+    .slide-video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .tap-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      cursor: pointer;
+    }
+    .pause-icon {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%,-50%) scale(0);
+      width: 74px;
+      height: 74px;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(6px);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      transition: transform .18s cubic-bezier(.4,0,.2,1), opacity .2s;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .pause-icon .material-symbols-rounded { font-size: 38px; color: #fff; }
+    .pause-icon.show { transform: translate(-50%,-50%) scale(1); opacity: 1; }
+
+    .progress-bar-wrap {
+      position: absolute;
+      bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+      left: 0;
+      right: 0;
+      height: 2.5px;
+      background: rgba(255,255,255,0.22);
+      z-index: 30;
+      overflow: hidden;
+    }
+    .progress-bar { height: 100%; width: 0%; background: #fff; }
+    .grad-top {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 120px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.65) 0%, transparent 100%);
+      z-index: 10;
+      pointer-events: none;
+    }
+    .grad-bottom {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 280px;
+      background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 100%);
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    /* Right Actions Column */
+    .right-actions {
+      position: absolute;
+      right: max(12px, env(safe-area-inset-right, 0px));
+      bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      align-items: center;
+      z-index: 30;
+    }
+    .action-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      color: #fff;
+    }
+    .action-icon-wrap {
+      width: 46px;
+      height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.25);
+      backdrop-filter: blur(8px);
+      transition: transform .15s;
+    }
+    .action-btn:active .action-icon-wrap { transform: scale(1.18); }
+    .action-icon-wrap .material-symbols-rounded {
+      font-size: 30px;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6));
+    }
+    .action-count {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #fff;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+      font-variant-numeric: tabular-nums;
+      min-width: 32px;
+      text-align: center;
+    }
+    .liked .like-icon { color: var(--accent) !important; animation: heartPop .35s cubic-bezier(.4,0,.2,1); }
+    .liked .like-icon svg { fill: var(--accent) !important; }
+    .saved .save-icon { color: #f59e0b !important; }
+    .saved .save-icon svg { fill: #f59e0b !important; }
+    @keyframes heartPop { 0%{transform:scale(1)} 40%{transform:scale(1.4)} 70%{transform:scale(.9)} 100%{transform:scale(1)} }
+
+    .avatar-wrap { position: relative; width: 48px; height: 48px; margin-bottom: 6px; }
+    .avatar-img {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      background: #222;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .avatar-img img { width: 100%; height: 100%; object-fit: cover; }
+    .avatar-img .material-symbols-rounded { font-size: 26px; color: var(--fg2); }
+    .follow-dot {
+      position: absolute;
+      bottom: -6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 22px;
+      height: 22px;
+      background: var(--accent);
+      border-radius: 50%;
+      border: 2px solid #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background .2s, transform .15s;
+    }
+    .follow-dot .material-symbols-rounded { font-size: 14px; color: #fff; }
+    .follow-dot.followed { background: #333; }
+    .follow-dot:active { transform: translateX(-50%) scale(1.2); }
+
+    /* Double Tap Heart & Floating Hearts */
+    .float-heart {
+      position: absolute;
+      pointer-events: none;
+      z-index: 50;
+      animation: floatUp .85s ease-out forwards;
+    }
+    .float-heart .material-symbols-rounded { font-size: 38px; color: var(--accent); filter: drop-shadow(0 2px 8px rgba(254,44,85,.6)); }
+    @keyframes floatUp { 0%{opacity:1;transform:translateY(0) scale(1)} 100%{opacity:0;transform:translateY(-120px) scale(1.5)} }
+    
+    .dbl-heart {
+      position: absolute;
+      pointer-events: none;
+      z-index: 50;
+      animation: dblHeart .8s ease-out forwards;
+    }
+    .dbl-heart .material-symbols-rounded { font-size: 96px; color: var(--accent); filter: drop-shadow(0 4px 16px rgba(254,44,85,.65)); }
+    @keyframes dblHeart { 0%{opacity:0;transform:scale(.4) rotate(-10deg)} 25%{opacity:1;transform:scale(1.2) rotate(4deg)} 70%{opacity:1;transform:scale(1) rotate(0deg)} 100%{opacity:0;transform:scale(1.25) translateY(-20px)} }
+
+    /* Bottom Info (Caption, Creator, Audio) */
+    .bottom-info {
+      position: absolute;
+      bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+      left: max(16px, env(safe-area-inset-left, 0px));
+      right: 76px;
+      z-index: 30;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+    }
+    .bottom-info .author-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    .author-name {
+      font-weight: 700;
+      font-size: 15px;
+      color: #fff;
+      text-shadow: 0 1px 4px rgba(0,0,0,.8);
+    }
+    .bottom-info .caption {
+      font-size: 14px;
+      color: rgba(255,255,255,.95);
+      line-height: 1.4;
+      margin-bottom: 6px;
+      text-shadow: 0 1px 4px rgba(0,0,0,.8);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      pointer-events: auto;
+    }
+    .hashtags { display: flex; flex-wrap: wrap; gap: 6px; pointer-events: auto; margin-bottom: 8px; }
+    .hashtag { font-size: 13px; font-weight: 600; color: var(--accent2); cursor: pointer; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+    .music-row { display: flex; align-items: center; gap: 8px; pointer-events: none; }
+    .music-row .material-symbols-rounded { font-size: 16px; color: rgba(255,255,255,.85); animation: spin 4s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .music-text { font-size: 13px; color: rgba(255,255,255,.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+
+    /* ── BOTTOM NAV ── */
+    #bottomnav {
+      position: fixed;
+      bottom: env(safe-area-inset-bottom, 0px);
+      left: 0;
+      right: 0;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      background: rgba(0,0,0,0.92);
+      backdrop-filter: blur(16px);
+      z-index: 100;
+      padding: 0 max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px));
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      cursor: pointer;
+      padding: 6px 12px;
+      position: relative;
+    }
+    .nav-item .material-symbols-rounded { font-size: 24px; color: rgba(255,255,255,0.4); transition: color .18s; }
+    .nav-label { font-size: 10.5px; font-weight: 600; color: rgba(255,255,255,0.4); letter-spacing: 0.02em; transition: color .18s; }
+    .nav-item.active .material-symbols-rounded { color: #fff; }
+    .nav-item.active .nav-label { color: #fff; }
+    .nav-badge-dot {
+      position: absolute;
+      top: 4px;
+      right: 14px;
+      width: 7px;
+      height: 7px;
+      background: var(--accent);
+      border-radius: 50%;
+    }
+
+    .nav-plus { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .plus-btn {
+      position: relative;
+      height: 34px;
+      padding: 0 16px;
+      border-radius: 9px;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform .12s;
+    }
+    .plus-btn:active { transform: scale(0.95); }
+    .plus-btn::before { content: ""; position: absolute; inset: 0; border-radius: 9px; background: linear-gradient(90deg, var(--accent2), var(--accent)); transform: translateX(-3px); z-index: -1; }
+    .plus-btn::after { content: ""; position: absolute; inset: 0; border-radius: 9px; background: linear-gradient(90deg, var(--accent2), var(--accent)); transform: translateX(3px); z-index: -1; opacity: .7; }
+    .plus-btn .material-symbols-rounded { font-size: 22px; color: #000; font-variation-settings: 'FILL' 0, 'wght' 700, 'GRAD' 0, 'opsz' 24; }
+
+    /* ═══════════════════════════════════════════════════════
+       OWN PROFILE PAGE (REDESIGNED TO REFERENCE 2 STYLE)
+       - Black background & large typography
+       - Display user name in large bold white text
+       - Display username below the name
+       - NO profile picture / avatar on right side or anywhere in header
+       - Following, Followers, and Likes statistics
+       - User's bio below statistics
+       - Show ONLY ONE button: Edit Profile (functional)
+       - NO Follow, Message, Chat, or Add Friend buttons
+       - 3-column video gallery grid with proper alignment & views/likes
+    ═══════════════════════════════════════════════════════ */
+    #page-profile {
+      background: #000;
+      padding-bottom: calc(75px + env(safe-area-inset-bottom, 0px));
+      min-height: 100vh;
+    }
+    .profile-header {
+      padding: calc(env(safe-area-inset-top, 0px) + 16px) max(20px, env(safe-area-inset-right, 0px)) 16px max(20px, env(safe-area-inset-left, 0px));
+    }
+    .profile-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 22px;
+    }
+    .profile-topbar-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.01em;
+    }
+    .profile-topbar-icon {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #fff;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      transition: background .15s;
+    }
+    .profile-topbar-icon:active { background: rgba(255,255,255,0.18); }
+
+    /* Large bold white typography for Name, username below, NO avatar */
+    .profile-hero {
+      margin-bottom: 22px;
+      text-align: left;
+    }
+    .profile-hero-name {
+      font-size: 32px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin: 0 0 6px 0;
+      word-break: break-word;
+    }
+    .profile-hero-handle {
+      font-size: 14.5px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.55);
+      margin: 0;
+    }
+
+    /* Statistics: Following, Followers, Likes */
+    .profile-stats {
+      display: flex;
+      gap: 36px;
+      margin-bottom: 18px;
+      align-items: flex-start;
+    }
+    .profile-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      cursor: pointer;
+    }
+    .profile-stat-num {
+      font-size: 18px;
+      font-weight: 800;
+      color: #fff;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+    }
+    .profile-stat-label {
+      font-size: 12.5px;
+      color: rgba(255, 255, 255, 0.5);
+      font-weight: 500;
+    }
+
+    /* Bio below statistics */
+    .profile-bio {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.88);
+      line-height: 1.5;
+      margin-bottom: 20px;
+      white-space: pre-line;
+      text-align: left;
+    }
+
+    /* Show ONLY ONE button: Edit Profile */
+    .profile-action-single {
+      margin-bottom: 22px;
+    }
+    .profile-btn-edit-main {
+      width: 100%;
+      height: 44px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 10px;
+      color: #fff;
+      font-size: 14.5px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: var(--font);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background .18s, transform .12s;
+    }
+    .profile-btn-edit-main:active {
+      background: rgba(255, 255, 255, 0.22);
+      transform: scale(0.99);
+    }
+
+    /* Profile Tabs */
+    .profile-tabs {
+      display: flex;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      background: #000;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+    .profile-tab {
+      flex: 1;
+      height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: border-color .2s, color .2s;
+      color: rgba(255, 255, 255, 0.45);
+    }
+    .profile-tab .material-symbols-rounded { font-size: 20px; }
+    .profile-tab .ptab-label { font-size: 12.5px; font-weight: 600; }
+    .profile-tab.active {
+      border-bottom-color: #fff;
+      color: #fff;
+    }
+
+    /* 3-Column Video Gallery Grid */
+    .video-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2px;
+      background: #000;
+      padding: 2px 0;
+    }
+    .grid-item {
+      position: relative;
+      aspect-ratio: 9/16;
+      background: #141414;
+      cursor: pointer;
+      overflow: hidden;
+    }
+    .grid-item video, .grid-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      pointer-events: none;
+    }
+    .grid-badge {
+      position: absolute;
+      bottom: 6px;
+      left: 6px;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #fff;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+      background: rgba(0, 0, 0, 0.45);
+      padding: 2px 6px;
+      border-radius: 4px;
+      backdrop-filter: blur(4px);
+    }
+    .grid-badge .material-symbols-rounded { font-size: 13px; }
+    .grid-del-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.65);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+      color: #fff;
+    }
+    .profile-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding: 50px 20px;
+      text-align: center;
+    }
+    .profile-empty .material-symbols-rounded { font-size: 46px; color: var(--fg3); }
+    .profile-empty-title { font-size: 17px; font-weight: 700; }
+    .profile-empty-sub { font-size: 13px; color: var(--fg2); max-width: 250px; line-height: 1.5; }
+    .profile-empty-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 20px;
+      padding: 10px 26px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: var(--font);
+      margin-top: 6px;
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       DISCOVER PAGE
+       - Search bar for users, videos, hashtags
+       - Search suggestion tags
+       - Popular Creators carousel with Follow buttons
+       - Trending Videos grid
+    ═══════════════════════════════════════════════════════ */
+    .discover-header {
+      padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 8px;
+    }
+    .search-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255,255,255,0.09);
+      border-radius: 12px;
+      padding: 10px 14px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .search-box input {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      color: #fff;
+      font-size: 15px;
+      font-family: var(--font);
+      min-width: 0;
+    }
+    .search-clear {
+      color: var(--fg2);
+      cursor: pointer;
+      display: none;
+    }
+    .search-clear.show { display: block; }
+    .search-tags {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 12px 16px;
+      scrollbar-width: none;
+    }
+    .search-tags::-webkit-scrollbar { display: none; }
+    .search-chip {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #fff;
+      padding: 6px 14px;
+      border-radius: 16px;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .search-chip:active { background: rgba(255,255,255,0.2); }
+    .search-chip.active { background: #fff; color: #000; }
+
+    .discover-section-title {
+      font-size: 16px;
+      font-weight: 700;
+      padding: 16px 16px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .discover-section-title .material-symbols-rounded { font-size: 18px; color: var(--accent); }
+
+    /* Popular Creators Horizontal Scroll */
+    .creators-scroll {
+      display: flex;
+      gap: 12px;
+      overflow-x: auto;
+      padding: 0 16px 16px;
+      scrollbar-width: none;
+    }
+    .creators-scroll::-webkit-scrollbar { display: none; }
+    .creator-card {
+      min-width: 140px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      padding: 14px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 6px;
+    }
+    .creator-card-av {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: var(--bg3);
+      border: 2px solid var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      font-weight: 700;
+      font-size: 18px;
+    }
+    .creator-card-name { font-size: 13.5px; font-weight: 700; color: #fff; }
+    .creator-card-handle { font-size: 11.5px; color: var(--fg2); margin-top: -2px; }
+    .creator-card-followers { font-size: 11px; color: var(--fg3); }
+    .creator-follow-btn {
+      margin-top: 4px;
+      width: 100%;
+      height: 28px;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .creator-follow-btn.following {
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       INBOX PAGE & CHAT
+       - Activity sub-tab: Likes, comments, follower notifications
+       - Messages sub-tab: Direct chat threads
+       - Full chat conversation view with instant replies
+    ═══════════════════════════════════════════════════════ */
+    .inbox-header {
+      padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 0;
+    }
+    .inbox-title { font-size: 22px; font-weight: 800; margin-bottom: 12px; }
+    .inbox-subtabs {
+      display: flex;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      margin-bottom: 10px;
+    }
+    .inbox-subtab {
+      flex: 1;
+      text-align: center;
+      padding: 10px 0;
+      font-size: 14.5px;
+      font-weight: 600;
+      color: var(--fg2);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .inbox-subtab.active {
+      color: #fff;
+      border-bottom-color: #fff;
+    }
+    .inbox-filters {
+      display: flex;
+      gap: 8px;
+      padding: 6px 16px 12px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .inbox-filters::-webkit-scrollbar { display: none; }
+    .inbox-chip {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.08);
+      color: var(--fg2);
+      cursor: pointer;
+    }
+    .inbox-chip.active { background: #fff; color: #000; }
+
+    .notif-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      transition: background .12s;
+    }
+    .notif-item:active { background: rgba(255,255,255,0.04); }
+    .notif-ic {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.09);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .notif-ic.like { background: rgba(254,44,85,0.18); color: var(--accent); }
+    .notif-ic.comment { background: rgba(37,244,238,0.18); color: var(--accent2); }
+    .notif-ic.follow { background: rgba(255,255,255,0.15); color: #fff; }
+    .notif-content { flex: 1; min-width: 0; }
+    .notif-text { font-size: 13.5px; line-height: 1.4; color: rgba(255,255,255,0.9); }
+    .notif-text strong { color: #fff; font-weight: 700; }
+    .notif-time { font-size: 11px; color: var(--fg3); margin-top: 3px; }
+    .notif-action-btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    /* Chat Thread List */
+    .chat-thread-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      cursor: pointer;
+      transition: background .12s;
+    }
+    .chat-thread-item:active { background: rgba(255,255,255,0.05); }
+    .chat-thread-av {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: var(--bg3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.12);
+      flex-shrink: 0;
+    }
+    .chat-thread-body { flex: 1; min-width: 0; }
+    .chat-thread-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }
+    .chat-thread-name { font-size: 14.5px; font-weight: 700; color: #fff; }
+    .chat-thread-time { font-size: 11px; color: var(--fg3); }
+    .chat-thread-msg { font-size: 13px; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Chat Conversation Sheet */
+    #chat-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 250;
+      display: flex;
+      align-items: flex-end;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .22s;
+    }
+    #chat-modal.open { opacity: 1; pointer-events: auto; }
+    .chat-sheet {
+      width: 100%;
+      height: 90vh;
+      background: var(--bg);
+      border-radius: 20px 20px 0 0;
+      display: flex;
+      flex-direction: column;
+      transform: translateY(100%);
+      transition: transform .28s cubic-bezier(.4,0,.2,1);
+      overflow: hidden;
+    }
+    #chat-modal.open .chat-sheet { transform: translateY(0); }
+    .chat-header {
+      height: 56px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      background: var(--bg2);
+    }
+    .chat-header-info { text-align: center; }
+    .chat-header-name { font-size: 15px; font-weight: 700; }
+    .chat-header-handle { font-size: 11.5px; color: var(--fg2); }
+    .chat-back-btn { background: none; border: none; color: #fff; cursor: pointer; padding: 6px; }
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .chat-bubble {
+      max-width: 78%;
+      padding: 10px 14px;
+      border-radius: 18px;
+      font-size: 14px;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+    .chat-bubble.me {
+      align-self: flex-end;
+      background: var(--accent);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .chat-bubble.them {
+      align-self: flex-start;
+      background: var(--bg3);
+      color: #fff;
+      border-bottom-left-radius: 4px;
+    }
+    .chat-input-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+      border-top: 1px solid rgba(255,255,255,0.1);
+      background: var(--bg2);
+    }
+    .chat-input {
+      flex: 1;
+      background: rgba(255,255,255,0.08);
+      border: none;
+      outline: none;
+      border-radius: 20px;
+      padding: 10px 16px;
+      color: #fff;
+      font-size: 14px;
+      font-family: var(--font);
+    }
+    .chat-send-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: none;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    /* ── MODALS (Upload, Share, Comments, Edit Profile) ── */
+    #upload-modal, #share-modal, #comments-modal, #edit-profile-modal, #more-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: flex;
+      align-items: flex-end;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .22s;
+    }
+    #upload-modal.open, #share-modal.open, #comments-modal.open, #edit-profile-modal.open, #more-modal.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .modal-sheet {
+      width: 100%;
+      max-height: 85vh;
+      overflow-y: auto;
+      background: var(--bg3);
+      border-radius: 20px 20px 0 0;
+      padding: 18px max(20px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+      transform: translateY(100%);
+      transition: transform .28s cubic-bezier(.4,0,.2,1);
+    }
+    .open .modal-sheet { transform: translateY(0); }
+    .modal-handle {
+      width: 38px;
+      height: 4px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 2px;
+      margin: 0 auto 16px;
+    }
+    .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+    .modal-sub { font-size: 12.5px; color: var(--fg2); margin-bottom: 16px; }
+
+    /* Upload zone & Thumbnail options */
+    .upload-zone {
+      border: 2px dashed rgba(255,255,255,0.2);
+      border-radius: 14px;
+      padding: 24px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .upload-zone:hover, .upload-zone.drag-over { border-color: var(--accent); background: rgba(254,44,85,.08); }
+    .upload-zone .material-symbols-rounded { font-size: 38px; color: var(--fg2); }
+    .upload-zone-text { font-size: 14px; font-weight: 600; }
+    .upload-zone-hint { font-size: 12px; color: var(--fg2); }
+    #fileInput, #thumbInput { display: none; }
+    
+    #uploadPreviewWrap { display: none; margin-bottom: 14px; }
+    #uploadPreview { width: 100%; max-height: 180px; border-radius: 10px; background: #000; object-fit: contain; }
+    #uploadFilename { font-size: 12px; color: var(--fg2); margin-top: 5px; }
+
+    .thumb-picker-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .thumb-btn {
+      flex: 1;
+      height: 38px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .thumb-preview-thumb {
+      width: 48px;
+      height: 48px;
+      border-radius: 8px;
+      background: #222;
+      border: 1px solid rgba(255,255,255,0.2);
+      object-fit: cover;
+      display: none;
+    }
+
+    .tag-chips-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .tag-chip {
+      background: rgba(255,255,255,0.08);
+      color: var(--accent2);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 12px;
+      cursor: pointer;
+    }
+
+    .text-input {
+      width: 100%;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.08);
+      outline: none;
+      border-radius: 10px;
+      padding: 12px 14px;
+      color: #fff;
+      font-size: 14px;
+      font-family: var(--font);
+    }
+    .text-input::placeholder { color: var(--fg3); }
+    .upload-btn {
+      width: 100%;
+      height: 46px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: opacity .15s;
+      font-family: var(--font);
+    }
+    .upload-btn:active { opacity: 0.85; }
+
+    /* Comments Sheet */
+    .comments-sheet {
+      width: 100%;
+      height: 64vh;
+      background: var(--bg3);
+      border-radius: 20px 20px 0 0;
+      display: flex;
+      flex-direction: column;
+      transform: translateY(100%);
+      transition: transform .28s cubic-bezier(.4,0,.2,1);
+      overflow: hidden;
+    }
+    .open .comments-sheet { transform: translateY(0); }
+    .comments-header {
+      padding: 14px 20px 10px;
+      font-weight: 700;
+      font-size: 15px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      text-align: center;
+      position: relative;
+    }
+    .cm-close {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      background: none;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+    }
+    .comments-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .comment-item { display: flex; gap: 10px; align-items: flex-start; }
+    .comment-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: var(--bg2);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .comment-body { flex: 1; min-width: 0; }
+    .comment-user { font-size: 12.5px; font-weight: 700; margin-bottom: 2px; }
+    .comment-text { font-size: 13.5px; color: rgba(255,255,255,0.9); line-height: 1.4; }
+    .comment-time { font-size: 11px; color: var(--fg3); margin-top: 3px; }
+    .comment-input-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px));
+      border-top: 1px solid rgba(255,255,255,0.08);
+      background: var(--bg3);
+    }
+    .comment-input {
+      flex: 1;
+      background: rgba(255,255,255,0.08);
+      border: none;
+      outline: none;
+      border-radius: 20px;
+      padding: 9px 15px;
+      color: #fff;
+      font-size: 14px;
+      font-family: var(--font);
+    }
+    .comment-send {
+      background: var(--accent);
+      border: none;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #fff;
+    }
+
+    /* Share Sheet */
+    .share-row { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 14px; scrollbar-width: none; }
+    .share-row::-webkit-scrollbar { display: none; }
+    .share-item { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; min-width: 58px; }
+    .share-icon-wrap { width: 50px; height: 50px; border-radius: 14px; background: rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; }
+    .share-item-label { font-size: 11px; color: var(--fg2); }
+    .share-link-row { display: flex; gap: 10px; align-items: center; background: rgba(255,255,255,0.06); border-radius: 10px; padding: 10px 12px; }
+    .share-link-url { flex: 1; font-size: 12.5px; color: var(--fg2); font-family: monospace; overflow: hidden; text-overflow: ellipsis; }
+    .copy-btn { background: var(--accent); color: #fff; border: none; border-radius: 7px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; }
+
+    /* More Options Modal */
+    .more-row { display: flex; align-items: center; gap: 14px; padding: 15px 4px; font-size: 15px; font-weight: 600; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    .more-row:last-child { border-bottom: none; }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: calc(75px + env(safe-area-inset-bottom, 0px));
+      left: 50%;
+      transform: translateX(-50%) translateY(14px);
+      background: rgba(24,24,24,0.96);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #fff;
+      padding: 10px 22px;
+      border-radius: 24px;
+      font-size: 13.5px;
+      font-weight: 600;
+      z-index: 500;
+      opacity: 0;
+      transition: opacity .22s, transform .22s;
+      white-space: nowrap;
+      pointer-events: none;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* Loading Overlay */
+    #db-loading {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      z-index: 600;
+      transition: opacity .3s;
+    }
+    #db-loading.hidden { opacity: 0; pointer-events: none; }
+    .loading-ring {
+      width: 44px;
+      height: 44px;
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
   </style>
 </head>
 <body>
 
-<style>
-.material-symbols-rounded { font-size:24px; line-height:1; user-select:none; display:inline-block; vertical-align:middle; width:1em; height:1em; overflow:hidden; white-space:nowrap; }
-.material-symbols-rounded:not(.h){ visibility:hidden; }
-.material-symbols-rounded svg { width:1em; height:1em; display:block; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
-.material-symbols-rounded svg.f, .liked .like-icon svg { fill:currentColor; }
-
-:root {
-  --bg:#000; --bg2:#111; --bg3:#1a1a1a;
-  --fg:#fff; --fg2:#888; --fg3:#555;
-  --accent:#fe2c55; --accent2:#25f4ee;
-  --card:rgba(255,255,255,0.07);
-  --font:'Inter',system-ui,sans-serif;
-  color-scheme:dark;
-}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-html,body{height:100%;background:var(--bg);color:var(--fg);font-family:var(--font);overflow:hidden;-webkit-user-select:none;user-select:none;}
-
-body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:#000;z-index:200;}
-
-/* ── PAGES ── */
-#page-feed, #page-profile {
-  position:fixed; inset:0;
-  transition: transform 0.3s cubic-bezier(.4,0,.2,1), opacity 0.3s;
-}
-#page-profile { transform:translateX(100%); opacity:0; pointer-events:none; overflow-y:auto; }
-#page-profile.active { transform:translateX(0); opacity:1; pointer-events:auto; }
-
-/* ── TOP BAR ── */
-#topbar {
-  position:fixed; top:env(safe-area-inset-top,0px); left:0; right:0;
-  height:52px; display:flex; align-items:center;
-  padding-left:max(16px,env(safe-area-inset-left,0px));
-  padding-right:max(16px,env(safe-area-inset-right,0px));
-  z-index:100;
-  background:linear-gradient(to bottom,rgba(0,0,0,0.7) 0%,transparent 100%);
-}
-.topbar-tabs { display:flex; gap:22px; align-items:center; flex:1; justify-content:center; }
-.topbar-tab { font-size:15px; font-weight:600; color:rgba(255,255,255,0.45); cursor:pointer; padding:4px 2px; border-bottom:2px solid transparent; transition:color .2s,border-color .2s; }
-.topbar-tab.active { color:#fff; border-bottom-color:#fff; }
-.topbar-icon { width:36px; height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#fff; }
-
-/* ── FEED ── */
-#feed { position:fixed; inset:0; overflow-y:scroll; scroll-snap-type:y mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
-#feed::-webkit-scrollbar { display:none; }
-
-/* empty state */
-#empty-state { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; z-index:10; pointer-events:none; background:var(--bg); }
-.empty-icon { width:76px; height:76px; border-radius:50%; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; }
-.empty-icon .material-symbols-rounded { font-size:36px; color:var(--fg2); }
-.empty-title { font-size:18px; font-weight:700; }
-.empty-sub { font-size:13px; color:var(--fg2); text-align:center; max-width:230px; line-height:1.55; }
-.empty-cta { pointer-events:auto; background:var(--accent); color:#fff; border:none; border-radius:22px; padding:11px 28px; font-size:14px; font-weight:700; cursor:pointer; font-family:var(--font); display:flex; align-items:center; gap:7px; transition:opacity .15s; }
-.empty-cta:active{opacity:.82;}
-
-.video-slide { width:100%; height:100%; scroll-snap-align:start; scroll-snap-stop:always; position:relative; background:#000; overflow:hidden; }
-.slide-video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-.tap-overlay { position:absolute; inset:0; z-index:5; cursor:pointer; }
-.pause-icon { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) scale(0); width:68px; height:68px; background:rgba(0,0,0,0.5); border-radius:50%; display:flex; align-items:center; justify-content:center; z-index:20; transition:transform .15s cubic-bezier(.4,0,.2,1),opacity .2s; opacity:0; pointer-events:none; }
-.pause-icon .material-symbols-rounded { font-size:32px; color:#fff; }
-.pause-icon.show { transform:translate(-50%,-50%) scale(1); opacity:1; }
-.progress-bar-wrap { position:absolute; bottom:calc(60px + env(safe-area-inset-bottom,0px)); left:0; right:0; height:3px; background:rgba(255,255,255,0.2); border-radius:0; z-index:30; overflow:hidden; }
-.progress-bar { height:100%; width:0%; background:#fff; border-radius:0; }
-.grad-top { position:absolute; top:0; left:0; right:0; height:110px; background:linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,transparent 100%); z-index:10; pointer-events:none; }
-.grad-bottom { position:absolute; bottom:0; left:0; right:0; height:290px; background:linear-gradient(to top,rgba(0,0,0,0.8) 0%,transparent 100%); z-index:10; pointer-events:none; }
-
-/* right actions */
-.right-actions { position:absolute; right:max(10px,env(safe-area-inset-right,0px)); bottom:88px; display:flex; flex-direction:column; gap:20px; align-items:center; z-index:30; }
-.action-btn { display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer; color:#fff; -webkit-tap-highlight-color:transparent; }
-.action-icon-wrap { width:48px; height:48px; display:flex; align-items:center; justify-content:center; }
-.action-icon-wrap .material-symbols-rounded { font-size:32px; filter:drop-shadow(0 1px 5px rgba(0,0,0,0.6)); transition:transform .16s cubic-bezier(.4,0,.2,1); }
-.action-btn:active .action-icon-wrap .material-symbols-rounded { transform:scale(1.22); }
-.action-count { font-size:12px; font-weight:600; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,0.7); font-variant-numeric:tabular-nums; min-width:32px; text-align:center; }
-.liked .like-icon { animation:heartPop .38s cubic-bezier(.4,0,.2,1); }
-@keyframes heartPop { 0%{transform:scale(1)} 40%{transform:scale(1.42)} 70%{transform:scale(.88)} 100%{transform:scale(1)} }
-
-.avatar-wrap { position:relative; width:46px; height:46px; margin-bottom:2px; }
-.avatar-img { width:46px; height:46px; border-radius:50%; border:2px solid #fff; background:#222; display:flex; align-items:center; justify-content:center; overflow:hidden; }
-.avatar-img .material-symbols-rounded { font-size:26px; color:var(--fg2); }
-.follow-dot { position:absolute; bottom:-5px; left:50%; transform:translateX(-50%); width:20px; height:20px; background:var(--accent); border-radius:50%; border:2px solid #000; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background .2s,transform .15s; }
-.follow-dot .material-symbols-rounded { font-size:12px; color:#fff; font-variation-settings:'FILL' 1,'wght' 700,'GRAD' 0,'opsz' 20; }
-.follow-dot.followed { background:#444; }
-.follow-dot:active { transform:translateX(-50%) scale(1.25); }
-
-.float-heart { position:absolute; pointer-events:none; z-index:50; animation:floatUp .85s ease-out forwards; }
-.float-heart .material-symbols-rounded { font-size:36px; color:var(--accent); font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24; filter:drop-shadow(0 2px 6px rgba(254,44,85,.5)); }
-@keyframes floatUp { 0%{opacity:1;transform:translateY(0) scale(1)} 100%{opacity:0;transform:translateY(-110px) scale(1.5)} }
-.dbl-heart { position:absolute; pointer-events:none; z-index:50; opacity:0; animation:dblHeart .8s ease-out forwards; }
-.dbl-heart .material-symbols-rounded { font-size:90px; color:var(--accent); font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 48; filter:drop-shadow(0 3px 12px rgba(254,44,85,.55)); }
-@keyframes dblHeart { 0%{opacity:0;transform:scale(.5)} 30%{opacity:1;transform:scale(1.15)} 70%{opacity:1;transform:scale(1)} 100%{opacity:0;transform:scale(1.2)} }
-
-.bottom-info { position:absolute; bottom:76px; left:max(14px,env(safe-area-inset-left,0px)); right:76px; z-index:30; pointer-events:none; }
-.bottom-info .username { font-weight:700; font-size:15px; margin-bottom:5px; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,.6); }
-.bottom-info .caption { font-size:13.5px; color:rgba(255,255,255,.9); line-height:1.4; margin-bottom:6px; text-shadow:0 1px 3px rgba(0,0,0,.5); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.hashtags { display:flex; flex-wrap:wrap; gap:5px; pointer-events:auto; }
-.hashtag { font-size:12.5px; font-weight:600; color:var(--accent2); cursor:pointer; text-shadow:0 1px 3px rgba(0,0,0,.5); }
-.music-row { display:flex; align-items:center; gap:6px; margin-top:7px; pointer-events:none; }
-.music-row .material-symbols-rounded { font-size:16px; color:rgba(255,255,255,.8); animation:spin 3s linear infinite; }
-@keyframes spin{to{transform:rotate(360deg)}}
-.music-text { font-size:12.5px; color:rgba(255,255,255,.85); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; text-shadow:0 1px 3px rgba(0,0,0,.5); }
-
-/* horizontal action row, author row */
-.right-actions { flex-direction:row; left:max(14px,env(safe-area-inset-left,0px)); right:max(14px,env(safe-area-inset-right,0px)); bottom:calc(66px + env(safe-area-inset-bottom,0px)); gap:18px; align-items:center; }
-.right-actions > .action-btn:last-child { margin-left:auto; }
-.action-count { min-height:15px; min-width:0; }
-.bottom-info { bottom:calc(142px + env(safe-area-inset-bottom,0px)); right:14px; }
-.author-row { display:flex; align-items:center; gap:8px; margin-top:8px; }
-.author-av { width:28px; height:28px; border-radius:50%; border:1.5px solid #fff; background:#222; overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-.author-av img { width:100%; height:100%; object-fit:cover; }
-.author-av .material-symbols-rounded { font-size:18px; color:var(--fg2); }
-.author-name { font-weight:700; font-size:14px; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,.6); }
-
-/* 9:16 centered frame on wide screens */
-@media (min-aspect-ratio: 9/16) {
-  #feed, #topbar, #bottomnav { left:50%; right:auto; width:min(100vw, calc(100vh * 9 / 16)); transform:translateX(-50%); }
-}
-/* comments bottom-sheet: video shrinks to the top */
-#comments-modal { background:transparent; backdrop-filter:none; }
-html body #comments-modal, html body #comments-modal.open { background:transparent !important; -webkit-backdrop-filter:none !important; backdrop-filter:none !important; pointer-events:none; }
-html body #comments-modal .comments-sheet { pointer-events:auto; }
-.comments-sheet { position:relative; box-shadow:0 -6px 24px rgba(0,0,0,.45); }
-.comments-header::before { content:''; display:block; width:38px; height:4px; border-radius:2px; background:rgba(255,255,255,.18); margin:-4px auto 8px; }
-.cm-close { position:absolute; top:10px; right:12px; width:32px; height:32px; border:none; background:transparent; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:2; }
-body.cm-open #topbar, body.cm-open .right-actions, body.cm-open .bottom-info, body.cm-open .grad-top, body.cm-open .grad-bottom { display:none !important; }
-body.cm-open .slide-video { object-fit:contain !important; }
-body.cm-open .progress-bar-wrap { bottom:0; }
-
-/* bottom stack: [video] → progress bar → black action strip → bottom nav */
-:root { --strip:72px; --stack:calc(60px + var(--strip) + env(safe-area-inset-bottom,0px)); }
-.slide-video { inset:0 0 var(--stack) 0; height:auto; }
-.progress-bar-wrap { bottom:var(--stack); }
-.grad-bottom { bottom:var(--stack); height:240px; }
-.bottom-info { bottom:calc(var(--stack) + 12px); left:max(14px,env(safe-area-inset-left,0px)); right:14px; }
-.right-actions { left:0; right:0; bottom:calc(60px + env(safe-area-inset-bottom,0px)); height:var(--strip); box-sizing:border-box; padding:4px max(14px,env(safe-area-inset-right,0px)) 0 max(14px,env(safe-area-inset-left,0px)); background:#000; align-items:flex-start; gap:18px; }
-/* single profile display: the row's profile item is a compact follow button (no big avatar) */
-.right-actions .avatar-img { display:none; }
-.right-actions .avatar-wrap { width:48px; height:48px; margin:0; display:flex; align-items:center; justify-content:center; }
-.right-actions .follow-dot { position:static; transform:none; width:36px; height:36px; border:none; }
-.right-actions .follow-dot:active { transform:scale(1.15); }
-.right-actions .follow-dot .material-symbols-rounded { font-size:20px; }
-body.cm-open .slide-video { inset:0; height:100%; }
-
-/* ===== Vertical action bar (right), info (bottom-left), clean create button ===== */
-:root { --stack:calc(60px + env(safe-area-inset-bottom,0px)); }
-.slide-video { inset:0; height:100%; }
-.progress-bar-wrap { bottom:var(--stack); }
-.grad-bottom { bottom:0; height:300px; }
-.right-actions { left:auto; right:max(10px,env(safe-area-inset-right,0px)); bottom:calc(var(--stack) + 18px); height:auto; padding:0; background:transparent; flex-direction:column; align-items:center; gap:18px; }
-.right-actions > .action-btn:first-child { display:none; }
-.right-actions > .action-btn:last-child { margin-left:0; }
-.right-actions .action-btn, .right-actions .action-icon-wrap .material-symbols-rounded, .right-actions .action-count { color:#fff; }
-.action-count { min-height:15px; min-width:36px; }
-.bottom-info { display:flex; flex-direction:column; bottom:calc(var(--stack) + 16px); left:max(14px,env(safe-area-inset-left,0px)); right:76px; }
-.bottom-info .author-row { order:1; margin:0 0 8px; }
-.bottom-info .caption { order:2; }
-.bottom-info .hashtags { order:3; }
-.bottom-info .music-row { order:4; margin-top:8px; }
-.bottom-info .music-row .material-symbols-rounded { animation:none; }
-.plus-btn::before, .plus-btn::after { display:none; }
-.plus-btn { background:#fff; }
-.sub-page { position:fixed; inset:0; background:#000; z-index:50; display:none; overflow-y:auto; padding:calc(env(safe-area-inset-top,0px) + 14px) 0 calc(76px + env(safe-area-inset-bottom,0px)); }
-.sub-page.active { display:block; }
-.sp-title { font-size:20px; font-weight:800; padding:6px 16px 14px; }
-.sp-search { display:flex; align-items:center; gap:10px; margin:0 14px 14px; background:rgba(255,255,255,.09); border-radius:12px; padding:10px 14px; }
-.sp-search input { flex:1; background:none; border:none; outline:none; color:#fff; font-size:15px; font-family:var(--font); min-width:0; }
-.sp-empty { text-align:center; color:var(--fg2); font-size:14px; padding:60px 24px; line-height:1.6; }
-.inbox-item { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,.06); font-size:14px; line-height:1.4; }
-.inbox-ic { width:38px; height:38px; border-radius:50%; background:rgba(255,255,255,.09); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-.inbox-ic .material-symbols-rounded { font-size:20px; color:#fff; }
-#more-modal { position:fixed; inset:0; z-index:200; display:flex; align-items:flex-end; background:rgba(0,0,0,.6); opacity:0; pointer-events:none; transition:opacity .22s; }
-#more-modal.open { opacity:1; pointer-events:auto; }
-.more-row { display:flex; align-items:center; gap:14px; padding:15px 4px; font-size:15px; font-weight:600; cursor:pointer; border-bottom:1px solid rgba(255,255,255,.07); }
-.more-row:last-child { border-bottom:none; }
-.more-row .material-symbols-rounded { font-size:22px; }
-
-/* ===== Instagram-style comments: video shrinks to top at its own aspect ratio ===== */
-.slide-video { transition:top .34s cubic-bezier(.32,.72,0,1), left .34s cubic-bezier(.32,.72,0,1), width .34s cubic-bezier(.32,.72,0,1), height .34s cubic-bezier(.32,.72,0,1); }
-.comments-sheet { transition:transform .34s cubic-bezier(.32,.72,0,1); pointer-events:auto; }
-#comments-modal, #comments-modal.open { pointer-events:none; }
-.comments-header { touch-action:none; }
-.comments-list:empty::before { content:'No comments yet. Start the conversation.'; color:var(--fg2); font-size:14px; text-align:center; margin:auto; }
-body.cm-open #feed { overflow-y:hidden; }
-body.cm-open .slide-video { object-fit:cover !important; }
-body.cm-open .pause-icon { top:var(--pi-top,20%); }
-body.cm-open .progress-bar-wrap { bottom:auto; top:calc(var(--vt) + var(--vh) - 3px); left:var(--vl); right:auto; width:var(--vw); }
-
-.action-btn.saved .action-icon-wrap svg { fill:currentColor; }
-.tap-overlay { -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
-
-/* ── BOTTOM NAV ── */
-#bottomnav { position:fixed; bottom:env(safe-area-inset-bottom,0px); left:0; right:0; height:60px; display:flex; align-items:center; justify-content:space-around; background:rgba(0,0,0,0.9); backdrop-filter:blur(14px); z-index:100; padding-left:max(0px,env(safe-area-inset-left,0px)); padding-right:max(0px,env(safe-area-inset-right,0px)); border-top:1px solid rgba(255,255,255,.07); }
-.nav-item { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; cursor:pointer; padding:6px 14px; -webkit-tap-highlight-color:transparent; }
-.nav-item .material-symbols-rounded { font-size:24px; color:rgba(255,255,255,.38); transition:color .18s; }
-.nav-label { font-size:10px; font-weight:600; color:rgba(255,255,255,.38); letter-spacing:.03em; transition:color .18s; }
-.nav-item.active .material-symbols-rounded { color:#fff; }
-.nav-item.active .nav-label { color:#fff; }
-.nav-plus { display:flex; align-items:center; justify-content:center; cursor:pointer; }
-.plus-btn { position:relative; height:34px; padding:0 16px; border-radius:9px; background:#fff; display:flex; align-items:center; justify-content:center; }
-.plus-btn::before { content:""; position:absolute; inset:0; border-radius:9px; background:linear-gradient(90deg,var(--accent2),var(--accent)); transform:translateX(-3px); z-index:-1; }
-.plus-btn::after { content:""; position:absolute; inset:0; border-radius:9px; background:linear-gradient(90deg,var(--accent2),var(--accent)); transform:translateX(3px); z-index:-1; opacity:.7; }
-.plus-btn .material-symbols-rounded { font-size:22px; color:#000; font-variation-settings:'FILL' 0,'wght' 700,'GRAD' 0,'opsz' 24; }
-
-/* ── PROFILE PAGE ── */
-#page-profile {
-  background:var(--bg);
-  padding-bottom:calc(70px + env(safe-area-inset-bottom,0px));
-}
-.profile-header {
-  padding: calc(env(safe-area-inset-top,0px) + 12px) max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px));
-}
-.profile-topbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; margin-top:8px; }
-.profile-topbar-username { font-size:16px; font-weight:700; flex:1; text-align:center; }
-.profile-topbar-icon { width:36px; height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
-.profile-avatar-row { display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:16px; }
-.profile-avatar { width:90px; height:90px; border-radius:50%; background:var(--bg3); display:flex; align-items:center; justify-content:center; border:2px solid var(--fg3); overflow:hidden; cursor:pointer; }
-.profile-avatar .material-symbols-rounded { font-size:44px; color:var(--fg2); }
-.profile-name { font-size:16px; font-weight:700; }
-.profile-handle { font-size:13px; color:var(--fg2); margin-top:2px; }
-.profile-stats { display:flex; justify-content:center; gap:32px; margin-bottom:16px; }
-.profile-stat { display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer; }
-.profile-stat-num { font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; }
-.profile-stat-label { font-size:12px; color:var(--fg2); }
-.profile-bio { font-size:13.5px; color:var(--fg); text-align:center; line-height:1.5; margin-bottom:16px; padding:0 20px; }
-.profile-btn-row { display:flex; gap:10px; margin-bottom:20px; }
-.profile-btn { flex:1; height:36px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; font-family:var(--font); border:none; display:flex; align-items:center; justify-content:center; gap:6px; transition:opacity .15s; }
-.profile-btn:active{opacity:.8;}
-.profile-btn-edit { background:var(--bg3); color:var(--fg); border:1px solid var(--fg3); }
-.profile-btn-share { background:var(--bg3); color:var(--fg); border:1px solid var(--fg3); }
-.profile-btn-add { width:36px; height:36px; flex:none; background:var(--bg3); color:var(--fg); border:1px solid var(--fg3); border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
-
-/* profile tabs */
-.profile-tabs { display:flex; border-bottom:1px solid rgba(255,255,255,.1); margin-bottom:1px; }
-.profile-tab { flex:1; height:44px; display:flex; align-items:center; justify-content:center; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; transition:border-color .2s; }
-.profile-tab .material-symbols-rounded { font-size:22px; color:var(--fg2); }
-.profile-tab.active { border-bottom-color:var(--fg); }
-.profile-tab.active .material-symbols-rounded { color:var(--fg); }
-
-/* video grid */
-.video-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1.5px; }
-.grid-item { position:relative; aspect-ratio:9/16; background:var(--bg2); cursor:pointer; overflow:hidden; }
-.grid-item video { width:100%; height:100%; object-fit:cover; pointer-events:none; }
-.grid-item-placeholder { width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
-.grid-item-placeholder .material-symbols-rounded { font-size:28px; color:var(--fg3); }
-.grid-like { position:absolute; bottom:5px; left:5px; display:flex; align-items:center; gap:3px; }
-.grid-like .material-symbols-rounded { font-size:14px; color:#fff; font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 20; }
-.grid-like-count { font-size:11.5px; font-weight:600; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.7); font-variant-numeric:tabular-nums; }
-
-/* profile no-videos */
-.profile-empty { display:flex; flex-direction:column; align-items:center; gap:12px; padding:40px 20px; }
-.profile-empty .material-symbols-rounded { font-size:48px; color:var(--fg3); }
-.profile-empty-title { font-size:16px; font-weight:700; }
-.profile-empty-sub { font-size:13px; color:var(--fg2); text-align:center; }
-.profile-empty-btn { background:var(--accent); color:#fff; border:none; border-radius:22px; padding:10px 26px; font-size:14px; font-weight:700; cursor:pointer; font-family:var(--font); }
-
-/* ── MODALS ── */
-#upload-modal,#share-modal,#comments-modal,#edit-profile-modal {
-  position:fixed; inset:0; z-index:200; display:flex; align-items:flex-end;
-  background:rgba(0,0,0,0.7); backdrop-filter:blur(4px);
-  opacity:0; pointer-events:none; transition:opacity .22s;
-}
-#upload-modal.open,#share-modal.open,#comments-modal.open,#edit-profile-modal.open { opacity:1; pointer-events:auto; }
-.modal-sheet { width:100%; background:var(--bg3); border-radius:20px 20px 0 0; padding:18px max(20px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(20px,env(safe-area-inset-left,0px)); transform:translateY(100%); transition:transform .28s cubic-bezier(.4,0,.2,1); }
-.open .modal-sheet { transform:translateY(0); }
-.modal-handle { width:38px; height:4px; background:rgba(255,255,255,.15); border-radius:2px; margin:0 auto 18px; }
-.modal-title { font-size:17px; font-weight:700; margin-bottom:5px; }
-.modal-sub { font-size:13px; color:var(--fg2); margin-bottom:18px; }
-.upload-zone { border:2px dashed rgba(255,255,255,.15); border-radius:14px; padding:26px 20px; text-align:center; cursor:pointer; transition:border-color .2s,background .2s; margin-bottom:14px; display:flex; flex-direction:column; align-items:center; gap:8px; }
-.upload-zone:hover,.upload-zone.drag-over { border-color:var(--accent); background:rgba(254,44,85,.06); }
-.upload-zone .material-symbols-rounded { font-size:40px; color:var(--fg2); }
-.upload-zone-text { font-size:14px; color:rgba(255,255,255,.65); }
-.upload-zone-hint { font-size:12px; color:var(--fg2); }
-#fileInput { display:none; }
-#uploadPreviewWrap { display:none; margin-bottom:14px; }
-#uploadPreview { width:100%; max-height:180px; border-radius:10px; background:#000; object-fit:contain; display:block; }
-#uploadFilename { font-size:12px; color:var(--fg2); margin-top:5px; }
-.text-input { width:100%; background:rgba(255,255,255,.07); border:none; outline:none; border-radius:10px; padding:11px 14px; color:#fff; font-size:14px; font-family:var(--font); }
-.text-input::placeholder{color:var(--fg2);}
-.upload-btn { width:100%; height:48px; background:var(--accent); color:#fff; border:none; border-radius:10px; font-size:15px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; transition:opacity .15s; font-family:var(--font); }
-.upload-btn:active{opacity:.82;}
-.upload-btn .material-symbols-rounded{font-size:20px;}
-
-/* share */
-.share-row { display:flex; gap:12px; overflow-x:auto; padding-bottom:4px; scrollbar-width:none; margin-bottom:14px; }
-.share-row::-webkit-scrollbar{display:none;}
-.share-item { display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; min-width:58px; }
-.share-icon-wrap { width:52px; height:52px; border-radius:14px; background:var(--card); display:flex; align-items:center; justify-content:center; transition:transform .15s; }
-.share-icon-wrap .material-symbols-rounded{font-size:26px;}
-.share-item:active .share-icon-wrap{transform:scale(.92);}
-.share-item-label{font-size:11px;color:var(--fg2);}
-.share-link-row { display:flex; gap:10px; align-items:center; background:rgba(255,255,255,.06); border-radius:10px; padding:10px 12px; }
-.share-link-url { flex:1; font-size:12.5px; color:var(--fg2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:monospace; }
-.copy-btn { background:var(--accent); color:#fff; border:none; border-radius:7px; padding:6px 14px; font-size:12px; font-weight:700; cursor:pointer; font-family:var(--font); }
-
-/* comments */
-.comments-sheet { width:100%; height:62vh; background:var(--bg3); border-radius:20px 20px 0 0; display:flex; flex-direction:column; transform:translateY(100%); transition:transform .28s cubic-bezier(.4,0,.2,1); overflow:hidden; }
-.open .comments-sheet{transform:translateY(0);}
-.comments-header { padding:14px 20px 10px; font-weight:700; font-size:15px; border-bottom:1px solid rgba(255,255,255,.07); text-align:center; flex-shrink:0; }
-.comments-list { flex:1; overflow-y:auto; padding:12px 16px; display:flex; flex-direction:column; gap:14px; }
-.comment-item { display:flex; gap:10px; align-items:flex-start; }
-.comment-avatar { width:34px; height:34px; border-radius:50%; background:var(--bg2); flex-shrink:0; display:flex; align-items:center; justify-content:center; }
-.comment-avatar .material-symbols-rounded{font-size:20px;color:var(--fg2);}
-.comment-body{flex:1;min-width:0;}
-.comment-user{font-size:12.5px;font-weight:700;margin-bottom:2px;}
-.comment-text{font-size:13.5px;color:rgba(255,255,255,.85);line-height:1.4;}
-.comment-time{font-size:11px;color:var(--fg2);margin-top:3px;}
-.comment-like-btn{font-size:12px;color:var(--fg2);cursor:pointer;flex-shrink:0;padding-top:2px;display:flex;flex-direction:column;align-items:center;gap:2px;}
-.comment-like-btn .material-symbols-rounded{font-size:18px;}
-.comment-input-row { display:flex;gap:10px;align-items:center; padding:10px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px)); border-top:1px solid rgba(255,255,255,.07); background:var(--bg3); flex-shrink:0; }
-.comment-input { flex:1; background:rgba(255,255,255,.07); border:none; outline:none; border-radius:20px; padding:9px 15px; color:#fff; font-size:14px; font-family:var(--font); }
-.comment-input::placeholder{color:var(--fg2);}
-.comment-send { background:var(--accent); border:none; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; }
-.comment-send .material-symbols-rounded{font-size:18px;color:#fff;}
-
-/* edit profile */
-.edit-profile-sheet { width:100%; background:var(--bg3); border-radius:20px 20px 0 0; padding:18px max(20px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(20px,env(safe-area-inset-left,0px)); transform:translateY(100%); transition:transform .28s cubic-bezier(.4,0,.2,1); }
-.open .edit-profile-sheet{transform:translateY(0);}
-.edit-field-label{font-size:12px;font-weight:600;color:var(--fg2);margin-bottom:5px;margin-top:14px;letter-spacing:.04em;text-transform:uppercase;}
-
-/* toast */
-#toast { position:fixed; bottom:80px; left:50%; transform:translateX(-50%) translateY(14px); background:rgba(22,22,22,.97); color:#fff; padding:9px 20px; border-radius:22px; font-size:13.5px; font-weight:600; z-index:300; opacity:0; transition:opacity .22s,transform .22s; white-space:nowrap; pointer-events:none; box-shadow:0 4px 20px rgba(0,0,0,.4); }
-#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
-
-/* loading overlay */
-#db-loading { position:fixed; inset:0; background:var(--bg); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; z-index:500; transition:opacity .3s; }
-#db-loading.hidden{opacity:0;pointer-events:none;}
-.loading-ring { width:44px; height:44px; border:3px solid rgba(255,255,255,.1); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
-</style>
-
-<!-- Loading -->
+<!-- Loading Overlay -->
 <div id="db-loading">
   <div class="loading-ring"></div>
-  <span style="font-size:13px;color:var(--fg2);">Loading…</span>
+  <span style="font-size:13px;color:var(--fg2);">Loading ReelFlow…</span>
 </div>
 
-<!-- TOP BAR (feed only) -->
+<!-- TOP BAR (Feed only) -->
 <div id="topbar">
-  <div class="topbar-icon" onclick="goPage('discover',document.getElementById('nav-discover'));setTimeout(()=>document.getElementById('discoverInput').focus(),60)">
+  <div class="topbar-icon" onclick="goPage('discover',document.getElementById('nav-discover'));setTimeout(()=>document.getElementById('discoverInput').focus(),80)" title="Discover">
     <span class="material-symbols-rounded">search</span>
   </div>
   <div class="topbar-tabs">
-    <div class="topbar-tab active" onclick="switchTab('foryou',this)">For You</div>
+    <div class="topbar-tab" id="tab-following" onclick="switchFeedTab('following')">Following</div>
+    <div class="topbar-tab active" id="tab-foryou" onclick="switchFeedTab('foryou')">For You</div>
   </div>
-  <div class="topbar-icon" aria-hidden="true"></div>
+  <div class="topbar-icon" id="top-sound-btn" onclick="toggleMute()" title="Toggle Sound">
+    <span class="material-symbols-rounded" id="top-sound-icon">volume_off</span>
+  </div>
 </div>
 
-<!-- FEED PAGE -->
+<!-- 1. FEED PAGE -->
 <div id="page-feed">
   <div id="feed"></div>
   <div id="empty-state" hidden>
     <div class="empty-icon"><span class="material-symbols-rounded">videocam_off</span></div>
     <div class="empty-title">No videos yet</div>
-    <div class="empty-sub">Upload a video and it'll appear right here</div>
+    <div class="empty-sub">Upload your first video to start your feed!</div>
     <button class="empty-cta" onclick="openUpload()">
-      <span class="material-symbols-rounded" style="font-size:18px;">add</span>
+      <span class="material-symbols-rounded">add</span>
       Upload Video
     </button>
   </div>
 </div>
 
-<!-- PROFILE PAGE -->
+<!-- 2. OWN PROFILE PAGE (Reference Image 2 Style) -->
 <div id="page-profile">
   <div class="profile-header">
     <div class="profile-topbar">
-      <div class="profile-topbar-icon" style="width:36px"></div>
-      <div class="profile-topbar-username" id="profile-topbar-name">@you</div>
-      <div class="profile-topbar-icon" onclick="openEditProfile()">
-        <span class="material-symbols-rounded">menu</span>
+      <div style="width:36px"></div>
+      <div class="profile-topbar-title">Profile</div>
+      <div class="profile-topbar-icon" onclick="openEditProfile()" title="Edit Profile">
+        <span class="material-symbols-rounded">edit</span>
       </div>
     </div>
-    <div class="profile-avatar-row">
-      <div class="profile-avatar" onclick="openEditProfile()">
-        <span class="material-symbols-rounded fi" id="profile-avatar-icon">person</span>
-      </div>
-      <div>
-        <div class="profile-name" id="profile-display-name">Your Name</div>
-        <div class="profile-handle" id="profile-handle">@you</div>
-      </div>
+
+    <!-- Big bold white Name and handle below, NO avatar -->
+    <div class="profile-hero">
+      <h1 class="profile-hero-name" id="profile-display-name">Alex Johnson</h1>
+      <div class="profile-hero-handle" id="profile-handle">@alexjohnson</div>
     </div>
+
+    <!-- Stats counters -->
     <div class="profile-stats">
-      <div class="profile-stat">
-        <div class="profile-stat-num" id="stat-following">0</div>
+      <div class="profile-stat" onclick="showToast('148 Following')">
+        <div class="profile-stat-num" id="stat-following">148</div>
         <div class="profile-stat-label">Following</div>
       </div>
-      <div class="profile-stat">
-        <div class="profile-stat-num" id="stat-followers">0</div>
+      <div class="profile-stat" onclick="showToast('18.4K Followers')">
+        <div class="profile-stat-num" id="stat-followers">18.4K</div>
         <div class="profile-stat-label">Followers</div>
       </div>
-      <div class="profile-stat">
-        <div class="profile-stat-num" id="stat-likes">0</div>
+      <div class="profile-stat" onclick="showToast('Total video likes')">
+        <div class="profile-stat-num" id="stat-likes">54.2K</div>
         <div class="profile-stat-label">Likes</div>
       </div>
     </div>
-    <div class="profile-bio" id="profile-bio">Tap Edit to set your bio ✨</div>
-    <div class="profile-btn-row">
-      <button class="profile-btn profile-btn-edit" onclick="openEditProfile()">
-        <span class="material-symbols-rounded" style="font-size:16px;">edit</span> Edit profile
+
+    <!-- Bio below statistics -->
+    <div class="profile-bio" id="profile-bio">Capturing motion & short stories 🎬 Exploring creative flow ✨</div>
+
+    <!-- ONLY ONE BUTTON: Edit Profile -->
+    <div class="profile-action-single">
+      <button class="profile-btn-edit-main" onclick="openEditProfile()">
+        <span class="material-symbols-rounded" style="font-size:16px;">edit</span>
+        Edit Profile
       </button>
-      <button class="profile-btn profile-btn-share" onclick="showToast('Profile link copied!')">
-        <span class="material-symbols-rounded" style="font-size:16px;">share</span> Share
-      </button>
-      <div class="profile-btn-add" onclick="showToast('Find friends coming soon!')">
-        <span class="material-symbols-rounded">person_add</span>
-      </div>
     </div>
   </div>
 
+  <!-- Tabs: Uploads (grid), Liked, Saved -->
   <div class="profile-tabs">
     <div class="profile-tab active" id="ptab-videos" onclick="switchProfileTab('videos')">
       <span class="material-symbols-rounded fi">grid_on</span>
+      <span class="ptab-label">Videos</span>
     </div>
     <div class="profile-tab" id="ptab-liked" onclick="switchProfileTab('liked')">
       <span class="material-symbols-rounded">favorite</span>
+      <span class="ptab-label">Liked</span>
     </div>
     <div class="profile-tab" id="ptab-private" onclick="switchProfileTab('private')">
       <span class="material-symbols-rounded">bookmark</span>
+      <span class="ptab-label">Saved</span>
     </div>
   </div>
 
   <div id="profile-grid-wrap"></div>
 </div>
 
-<!-- DISCOVER / INBOX PAGES -->
-<div id="page-discover" class="sub-page">
-  <div class="sp-search"><span class="material-symbols-rounded">search</span><input id="discoverInput" placeholder="Search videos or #hashtags" oninput="renderDiscover()"></div>
+<!-- 3. DISCOVER PAGE -->
+<div id="page-discover">
+  <div class="discover-header">
+    <div class="search-box">
+      <span class="material-symbols-rounded" style="color:var(--fg2)">search</span>
+      <input id="discoverInput" placeholder="Search creators, videos, #hashtags…" oninput="renderDiscover()">
+      <span class="material-symbols-rounded search-clear" id="searchClearBtn" onclick="clearDiscoverSearch()">close</span>
+    </div>
+  </div>
+
+  <!-- Trending Tags Chips -->
+  <div class="search-tags" id="discoverTags">
+    <div class="search-chip active" onclick="filterDiscoverTag(this, '')">All</div>
+    <div class="search-chip" onclick="filterDiscoverTag(this, '#fyp')">#fyp</div>
+    <div class="search-chip" onclick="filterDiscoverTag(this, '#trending')">#trending</div>
+    <div class="search-chip" onclick="filterDiscoverTag(this, '#nature')">#nature</div>
+    <div class="search-chip" onclick="filterDiscoverTag(this, '#dance')">#dance</div>
+    <div class="search-chip" onclick="filterDiscoverTag(this, '#animation')">#animation</div>
+    <div class="search-chip" onclick="filterDiscoverTag(this, '#ocean')">#ocean</div>
+  </div>
+
+  <!-- Popular Creators -->
+  <div class="discover-section-title">
+    <span class="material-symbols-rounded">trending_up</span>
+    Popular Creators
+  </div>
+  <div class="creators-scroll" id="creatorsContainer"></div>
+
+  <!-- Trending Videos Grid -->
+  <div class="discover-section-title">
+    <span class="material-symbols-rounded">play_arrow</span>
+    Trending Videos
+  </div>
   <div id="discover-body"></div>
 </div>
-<div id="page-inbox" class="sub-page">
-  <div class="sp-title">Inbox</div>
-  <div id="inbox-body"></div>
-</div>
 
-<!-- MORE OPTIONS -->
-<div id="more-modal" onclick="closeOnBackdrop(event,'more-modal')">
-  <div class="modal-sheet">
-    <div class="modal-handle"></div>
-    <div class="more-row" onclick="moreAct('share')"><span class="material-symbols-rounded">reply</span>Share</div>
-    <div class="more-row" onclick="moreAct('caption')"><span class="material-symbols-rounded">content_copy</span>Copy caption</div>
-    <div class="more-row" onclick="moreAct('mute')"><span class="material-symbols-rounded" id="more-mute-ic">volume_off</span><span id="more-mute-tx">Mute sound</span></div>
+<!-- 4. INBOX PAGE -->
+<div id="page-inbox">
+  <div class="inbox-header">
+    <div class="inbox-title">Inbox</div>
+    <div class="inbox-subtabs">
+      <div class="inbox-subtab active" id="inbox-sub-activity" onclick="switchInboxSubtab('activity')">Activity</div>
+      <div class="inbox-subtab" id="inbox-sub-messages" onclick="switchInboxSubtab('messages')">Messages</div>
+    </div>
+  </div>
+
+  <!-- Activity View -->
+  <div id="inbox-activity-view">
+    <div class="inbox-filters">
+      <div class="inbox-chip active" onclick="filterInboxNotifs(this, 'all')">All</div>
+      <div class="inbox-chip" onclick="filterInboxNotifs(this, 'like')">Likes</div>
+      <div class="inbox-chip" onclick="filterInboxNotifs(this, 'comment')">Comments</div>
+      <div class="inbox-chip" onclick="filterInboxNotifs(this, 'follow')">Followers</div>
+    </div>
+    <div id="inbox-notifs-list"></div>
+  </div>
+
+  <!-- Messages View -->
+  <div id="inbox-messages-view" style="display:none;">
+    <div id="inbox-chats-list"></div>
   </div>
 </div>
 
-<!-- BOTTOM NAV -->
+<!-- 5. BOTTOM NAVIGATION BAR -->
 <div id="bottomnav">
   <div class="nav-item active" id="nav-home" onclick="goPage('feed',this)">
     <span class="material-symbols-rounded fi">home</span>
@@ -468,13 +1521,14 @@ body.cm-open .progress-bar-wrap { bottom:auto; top:calc(var(--vt) + var(--vh) - 
     <span class="nav-label">Discover</span>
   </div>
   <div class="nav-plus" onclick="openUpload()">
-    <div class="plus-btn">
+    <div class="plus-btn" title="Create Video">
       <span class="material-symbols-rounded">add</span>
     </div>
   </div>
   <div class="nav-item" id="nav-inbox" onclick="goPage('inbox',this)">
     <span class="material-symbols-rounded">notifications</span>
     <span class="nav-label">Inbox</span>
+    <div class="nav-badge-dot"></div>
   </div>
   <div class="nav-item" id="nav-profile" onclick="goPage('profile',this)">
     <span class="material-symbols-rounded">person</span>
@@ -484,24 +1538,54 @@ body.cm-open .progress-bar-wrap { bottom:auto; top:calc(var(--vt) + var(--vh) - 
 
 <!-- UPLOAD MODAL -->
 <div id="upload-modal" onclick="closeOnBackdrop(event,'upload-modal')">
-  <div class="modal-sheet">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
     <div class="modal-title">Upload Video</div>
-    <div class="modal-sub">Saved to this device — stays after refresh</div>
+    <div class="modal-sub">Share your moments with followers and the world</div>
+
+    <!-- Video Selection Zone -->
     <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
       <span class="material-symbols-rounded">video_file</span>
-      <div class="upload-zone-text">Tap to choose a video</div>
+      <div class="upload-zone-text">Tap to choose a video from device</div>
       <div class="upload-zone-hint">MP4 · MOV · WebM · Max 1 min</div>
     </div>
     <input type="file" id="fileInput" accept="video/*">
+
+    <!-- Video Preview -->
     <div id="uploadPreviewWrap">
-      <video id="uploadPreview" muted playsinline></video>
+      <video id="uploadPreview" controls muted playsinline></video>
       <div id="uploadFilename"></div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;">
-      <input id="captionInput" type="text" class="text-input" placeholder="Write a caption…">
-      <input id="hashtagInput" type="text" class="text-input" placeholder="#hashtag #reels">
+
+    <!-- Custom Thumbnail Option -->
+    <div class="thumb-picker-row">
+      <button type="button" class="thumb-btn" onclick="document.getElementById('thumbInput').click()">
+        <span class="material-symbols-rounded">image</span>
+        Custom Thumbnail
+      </button>
+      <button type="button" class="thumb-btn" onclick="captureCurrentFrame()">
+        <span class="material-symbols-rounded">photo_camera</span>
+        Capture Frame
+      </button>
+      <img id="thumbPreviewImg" class="thumb-preview-thumb" alt="Cover Preview">
     </div>
+    <input type="file" id="thumbInput" accept="image/*">
+
+    <!-- Caption & Hashtags -->
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px;">
+      <input id="captionInput" type="text" class="text-input" placeholder="Write a catchy caption…">
+      <input id="hashtagInput" type="text" class="text-input" placeholder="#hashtag #vibes">
+    </div>
+
+    <!-- Suggested Hashtags -->
+    <div class="tag-chips-row">
+      <span class="tag-chip" onclick="appendTag('#fyp')">#fyp</span>
+      <span class="tag-chip" onclick="appendTag('#trending')">#trending</span>
+      <span class="tag-chip" onclick="appendTag('#viral')">#viral</span>
+      <span class="tag-chip" onclick="appendTag('#foryou')">#foryou</span>
+      <span class="tag-chip" onclick="appendTag('#reels')">#reels</span>
+    </div>
+
     <button class="upload-btn" onclick="submitUpload()">
       <span class="material-symbols-rounded">rocket_launch</span>
       Post to Feed
@@ -511,15 +1595,15 @@ body.cm-open .progress-bar-wrap { bottom:auto; top:calc(var(--vt) + var(--vh) - 
 
 <!-- SHARE MODAL -->
 <div id="share-modal" onclick="closeOnBackdrop(event,'share-modal')">
-  <div class="modal-sheet">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
-    <div style="font-weight:700;font-size:15px;margin-bottom:14px;">Share</div>
+    <div style="font-weight:700;font-size:16px;margin-bottom:14px;">Share Video</div>
     <div class="share-row">
       <div class="share-item" onclick="shareAct('copy')"><div class="share-icon-wrap"><span class="material-symbols-rounded">link</span></div><div class="share-item-label">Copy Link</div></div>
+      <div class="share-item" onclick="shareAct('native')"><div class="share-icon-wrap"><span class="material-symbols-rounded">share</span></div><div class="share-item-label">Share To…</div></div>
       <div class="share-item" onclick="shareAct('whatsapp')"><div class="share-icon-wrap"><span class="material-symbols-rounded">chat</span></div><div class="share-item-label">WhatsApp</div></div>
       <div class="share-item" onclick="shareAct('sms')"><div class="share-icon-wrap"><span class="material-symbols-rounded">sms</span></div><div class="share-item-label">Message</div></div>
       <div class="share-item" onclick="shareAct('email')"><div class="share-icon-wrap"><span class="material-symbols-rounded">mail</span></div><div class="share-item-label">Email</div></div>
-      <div class="share-item" onclick="shareAct('more')"><div class="share-icon-wrap"><span class="material-symbols-rounded">more_horiz</span></div><div class="share-item-label">More</div></div>
     </div>
     <div class="share-link-row">
       <span class="share-link-url" id="shareUrl">reelflow.app/v/...</span>
@@ -531,8 +1615,10 @@ body.cm-open .progress-bar-wrap { bottom:auto; top:calc(var(--vt) + var(--vh) - 
 <!-- COMMENTS MODAL -->
 <div id="comments-modal" onclick="closeOnBackdrop(event,'comments-modal')">
   <div class="comments-sheet" onclick="event.stopPropagation()">
-    <div class="comments-header" id="commentsTitle">Comments</div>
-    <button class="cm-close" onclick="document.getElementById('comments-modal').classList.remove('open')"><span class="material-symbols-rounded">close</span></button>
+    <div class="comments-header">
+      <span id="commentsTitle">Comments</span>
+      <button class="cm-close" onclick="document.getElementById('comments-modal').classList.remove('open')"><span class="material-symbols-rounded">close</span></button>
+    </div>
     <div class="comments-list" id="commentsList"></div>
     <div class="comment-input-row">
       <input class="comment-input" id="commentInput" placeholder="Add a comment…" onkeydown="if(event.key==='Enter')postComment()">
@@ -543,74 +1629,103 @@ body.cm-open .progress-bar-wrap { bottom:auto; top:calc(var(--vt) + var(--vh) - 
 
 <!-- EDIT PROFILE MODAL -->
 <div id="edit-profile-modal" onclick="closeOnBackdrop(event,'edit-profile-modal')">
-  <div class="edit-profile-sheet">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
     <div class="modal-title">Edit Profile</div>
-    <div class="edit-field-label">Display Name</div>
-    <input id="ep-name" type="text" class="text-input" placeholder="Your Name">
-    <div class="edit-field-label">Username</div>
-    <input id="ep-handle" type="text" class="text-input" placeholder="@username">
-    <div class="edit-field-label">Bio</div>
-    <input id="ep-bio" type="text" class="text-input" placeholder="Write something about you…">
-    <div class="edit-field-label">Profile Photo</div>
-    <button class="profile-btn profile-btn-edit" style="width:100%" onclick="document.getElementById('avatarInput').click()"><span class="material-symbols-rounded" style="font-size:18px">photo_camera</span> Change photo</button>
-    <input type="file" id="avatarInput" accept="image/*" hidden>
-    <div style="margin-top:18px;">
-      <button class="upload-btn" onclick="saveProfile()">
-        <span class="material-symbols-rounded">check</span>
-        Save Profile
-      </button>
+    <div class="modal-sub">Update your public profile information</div>
+
+    <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Display Name</div>
+    <input id="ep-name" type="text" class="text-input" placeholder="Your Name" style="margin-bottom:14px;">
+
+    <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Username Handle</div>
+    <input id="ep-handle" type="text" class="text-input" placeholder="username" style="margin-bottom:14px;">
+
+    <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Bio</div>
+    <textarea id="ep-bio" class="text-input" rows="3" placeholder="Tell the world about yourself…" style="margin-bottom:18px;resize:none;"></textarea>
+
+    <button class="upload-btn" onclick="saveProfile()">
+      <span class="material-symbols-rounded">check</span>
+      Save Changes
+    </button>
+  </div>
+</div>
+
+<!-- CHAT / DIRECT MESSAGE MODAL -->
+<div id="chat-modal" onclick="closeOnBackdrop(event,'chat-modal')">
+  <div class="chat-sheet" onclick="event.stopPropagation()">
+    <div class="chat-header">
+      <button class="chat-back-btn" onclick="closeChat()"><span class="material-symbols-rounded">arrow_back</span></button>
+      <div class="chat-header-info">
+        <div class="chat-header-name" id="chat-user-name">Earth Moments</div>
+        <div class="chat-header-handle" id="chat-user-handle">@earth_moments</div>
+      </div>
+      <div style="width:36px"></div>
+    </div>
+    <div class="chat-messages" id="chatMessages"></div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput" class="chat-input" placeholder="Send a message…" onkeydown="if(event.key==='Enter')sendChatMessage()">
+      <button class="chat-send-btn" onclick="sendChatMessage()"><span class="material-symbols-rounded">send</span></button>
     </div>
   </div>
 </div>
 
-<!-- TOAST -->
+<!-- MORE OPTIONS MODAL -->
+<div id="more-modal" onclick="closeOnBackdrop(event,'more-modal')">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="more-row" onclick="moreAct('share')"><span class="material-symbols-rounded">reply</span>Share</div>
+    <div class="more-row" onclick="moreAct('caption')"><span class="material-symbols-rounded">content_copy</span>Copy caption</div>
+    <div class="more-row" onclick="moreAct('mute')"><span class="material-symbols-rounded" id="more-mute-ic">volume_off</span><span id="more-mute-tx">Toggle Sound</span></div>
+  </div>
+</div>
+
+<!-- TOAST NOTIFICATION -->
 <div id="toast"></div>
 
-<!-- Offline inline icons (no network needed) -->
+<!-- ═══════════════════════════════════════════════════════
+     OFFLINE INLINE SVG ICONS DICTIONARY
+═══════════════════════════════════════════════════════ -->
 <script>
 (function(){
 const D='fill="currentColor" stroke="none"';
 const P={
-search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
-live_tv:'<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M8 2l4 4 4-4"/>',
-add:'<path d="M12 5v14M5 12h14"/>',
-home:'<path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/>',
-explore:'<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
-notifications:'<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>',
-person:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6z"/>',
-videocam_off:'<path d="M3 3l18 18"/><path d="M15 10l6-3v10l-3-1.5M15 14v3H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h7"/>',
-videocam:'<rect x="3" y="6" width="12" height="12" rx="2"/><path d="M15 10l6-3v10l-6-3z"/>',
-video_file:'<path d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v5h5M9 12l5 3-5 3z"/>',
-rocket_launch:'<path d="M12 2c3 2 5 6 5 10l-2 3H9l-2-3c0-4 2-8 5-10z"/><circle cx="12" cy="10" r="1.5"/><path d="M9 15l-2 5 5-2M15 15l2 5-5-2"/>',
-link:'<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
-chat:'<path d="M4 5h16v11H9l-5 4z"/>',
-sms:'<path d="M4 5h16v11H9l-5 4z"/><path d="M8 10.5h.01M12 10.5h.01M16 10.5h.01"/>',
-mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 7 9-7"/>',
-more_horiz:'<g '+D+'><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></g>',
-more_vert:'<g '+D+'><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></g>',
-favorite:'<path d="M12 21s-8-5.5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 5.5-8 11-8 11z"/>',
-chat_bubble:'<path d="M4 4h16v13H8l-4 4z"/>',
-reply:'<path d="M10 8V4L3 11l7 7v-4c6 0 9 2 11 6-1-7-4-12-11-12z"/>',
-pause:'<g '+D+'><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></g>',
-music_note:'<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>',
-menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
-edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',
-share:'<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 11l7.6-4M8.2 13l7.6 4"/>',
-person_add:'<circle cx="10" cy="8" r="4"/><path d="M2 21c0-4 3-6 8-6M18 9v6M15 12h6"/>',
-grid_on:'<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
-lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
-check:'<path d="M5 13l4 4L19 7"/>',
-download:'<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>',
-content_copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
-volume_up:'<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 9a4 4 0 0 1 0 6"/>',
-volume_off:'<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/>',
-close:'<path d="M6 6l12 12M18 6L6 18"/>',
-bookmark:'<path d="M6 3h12v18l-6-4-6 4z"/>',
-play_arrow:'<path d="M8 5v14l11-7z"/>',
-send:'<path d="M3 11l18-8-8 18-2-8z"/>',
-delete:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
-photo_camera:'<path d="M4 7h4l2-3h4l2 3h4v13H4z"/><circle cx="12" cy="13" r="3.5"/>'
+  search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+  add:'<path d="M12 5v14M5 12h14"/>',
+  home:'<path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/>',
+  explore:'<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
+  notifications:'<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>',
+  person:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6z"/>',
+  videocam_off:'<path d="M3 3l18 18"/><path d="M15 10l6-3v10l-3-1.5M15 14v3H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h7"/>',
+  videocam:'<rect x="3" y="6" width="12" height="12" rx="2"/><path d="M15 10l6-3v10l-6-3z"/>',
+  video_file:'<path d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v5h5M9 12l5 3-5 3z"/>',
+  rocket_launch:'<path d="M12 2c3 2 5 6 5 10l-2 3H9l-2-3c0-4 2-8 5-10z"/><circle cx="12" cy="10" r="1.5"/><path d="M9 15l-2 5 5-2M15 15l2 5-5-2"/>',
+  link:'<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  chat:'<path d="M4 5h16v11H9l-5 4z"/>',
+  sms:'<path d="M4 5h16v11H9l-5 4z"/><path d="M8 10.5h.01M12 10.5h.01M16 10.5h.01"/>',
+  mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 7 9-7"/>',
+  more_horiz:'<g '+D+'><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></g>',
+  favorite:'<path d="M12 21s-8-5.5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 5.5-8 11-8 11z"/>',
+  chat_bubble:'<path d="M4 4h16v13H8l-4 4z"/>',
+  reply:'<path d="M10 8V4L3 11l7 7v-4c6 0 9 2 11 6-1-7-4-12-11-12z"/>',
+  pause:'<g '+D+'><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></g>',
+  music_note:'<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>',
+  menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+  edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  share:'<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 11l7.6-4M8.2 13l7.6 4"/>',
+  grid_on:'<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
+  bookmark:'<path d="M6 3h12v18l-6-4-6 4z"/>',
+  check:'<path d="M5 13l4 4L19 7"/>',
+  content_copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
+  volume_up:'<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 9a4 4 0 0 1 0 6"/>',
+  volume_off:'<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/>',
+  close:'<path d="M6 6l12 12M18 6L6 18"/>',
+  play_arrow:'<path d="M8 5v14l11-7z"/>',
+  send:'<path d="M3 11l18-8-8 18-2-8z"/>',
+  delete:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+  photo_camera:'<path d="M4 7h4l2-3h4l2 3h4v13H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
+  arrow_back:'<path d="M19 12H5M12 19l-7-7 7-7"/>',
+  trending_up:'<path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/>'
 };
 const FILL={home:1,person:1,favorite:1,chat_bubble:1,videocam:1,notifications:1,play_arrow:1};
 function hyd(el){
@@ -635,10 +1750,10 @@ new MutationObserver(ms=>{
 })();
 </script>
 
+<!-- ═══════════════════════════════════════════════════════
+     APPLICATION CORE JAVASCRIPT
+═══════════════════════════════════════════════════════ -->
 <script>
-// ═══════════════════════════════════════════════════════
-//  IndexedDB — store full video blobs so they persist
-// ═══════════════════════════════════════════════════════
 const DB_NAME = 'reelflow', DB_VER = 1;
 let db = null;
 
@@ -653,7 +1768,7 @@ function openDB() {
         d.createObjectStore('profile', { keyPath: 'key' });
     };
     req.onsuccess = e => { db = e.target.result; res(db); };
-    req.onerror   = e => rej(e.target.error);
+    req.onerror = e => rej(e.target.error);
     req.onblocked = () => rej(new Error('blocked'));
   });
 }
@@ -663,7 +1778,7 @@ function dbGetAll(store) {
     const tx = db.transaction(store, 'readonly');
     const req = tx.objectStore(store).getAll();
     req.onsuccess = () => res(req.result);
-    req.onerror   = () => rej(req.error);
+    req.onerror = () => rej(req.error);
   });
 }
 function dbPut(store, obj) {
@@ -671,7 +1786,7 @@ function dbPut(store, obj) {
     const tx = db.transaction(store, 'readwrite');
     const req = tx.objectStore(store).put(obj);
     req.onsuccess = () => res();
-    req.onerror   = () => rej(req.error);
+    req.onerror = () => rej(req.error);
   });
 }
 function dbDelete(store, key) {
@@ -679,92 +1794,221 @@ function dbDelete(store, key) {
     const tx = db.transaction(store, 'readwrite');
     const req = tx.objectStore(store).delete(key);
     req.onsuccess = () => res();
-    req.onerror   = () => rej(req.error);
+    req.onerror = () => rej(req.error);
   });
 }
 
 // ═══════════════════════════════════════════════════════
-//  STATE
+//  APP STATE
 // ═══════════════════════════════════════════════════════
-let videos = [];   // {id, blob, caption, hashtags, music, username, likes, comments, shares, ts}
-let profile = { avatar:null, saved:[], name:'Your Name', handle:'you', bio:'Tap Edit to set your bio ✨', following:0, followers:0 };
-let storageOk = false, avatarUrl = null;
-setTimeout(()=>document.getElementById('db-loading').classList.add('hidden'),5000);
-let blobUrls = {}; // id -> object URL (session cache)
+let videos = [];
+let profile = {
+  saved: [],
+  name: 'Alex Johnson',
+  handle: 'alexjohnson',
+  bio: 'Capturing motion & short stories 🎬 Exploring creative flow ✨',
+  following: 148,
+  followers: 18400,
+  likes: 54200
+};
+let storageOk = false;
+let blobUrls = {};
+let thumbUrls = {};
 let feedObserver = null;
 let toastTimer = null;
 let currentProfileTab = 'videos';
+let activeIdx = -1;
+let currentFeedTab = 'foryou';
+window._muted = true; // start muted for smooth mobile autoplay, user can toggle sound
+let customUploadedThumbBlob = null;
+
+// Initial Creators
+let creators = [
+  { id: 'c1', name: 'Earth Moments', handle: 'earth_moments', followers: '1.4M', followed: false },
+  { id: 'c2', name: 'Animation Daily', handle: 'anim_daily', followers: '840K', followed: true },
+  { id: 'c3', name: 'Ocean Depths', handle: 'ocean_depths', followers: '620K', followed: false },
+  { id: 'c4', name: 'Maya Dance', handle: 'maya_dance', followers: '2.8M', followed: false },
+  { id: 'c5', name: 'Tech Frontier', handle: 'tech_frontier', followers: '950K', followed: false }
+];
+
+// Seed Videos for rich out-of-the-box experience
+const defaultSeedVideos = [
+  {
+    id: 'seed-1',
+    ts: Date.now() - 3600000 * 2,
+    videoUrl: '/videos/sample1.mp4',
+    caption: 'Nature blooming in stunning detail 🌸 Stop and appreciate the details today #nature #bloom #vibes #fyp',
+    hashtags: ['#nature', '#bloom', '#vibes', '#fyp'],
+    music: 'Nature Vibes - Original Sound',
+    username: 'earth_moments',
+    userDisplayName: 'Earth Moments',
+    likes: 14200,
+    comments: 382,
+    shares: 890,
+    views: 64200,
+    isSeed: true,
+    userComments: [
+      { user: '@sarah_m', text: 'This looks so peaceful! 😍', time: '1h ago' },
+      { user: '@david_k', text: 'Where was this recorded?', time: '45m ago' },
+      { user: '@tiktok_fan', text: 'Colors are incredible ✨', time: '10m ago' }
+    ]
+  },
+  {
+    id: 'seed-2',
+    ts: Date.now() - 3600000 * 6,
+    videoUrl: '/videos/sample2.webm',
+    caption: 'Big Buck Bunny adventures never get old 🐰 A masterpiece of open source animation! #animation #classic #cinema #cartoon',
+    hashtags: ['#animation', '#classic', '#cinema', '#cartoon'],
+    music: 'Peach Open Movie - Fun Beats',
+    username: 'anim_daily',
+    userDisplayName: 'Animation Daily',
+    likes: 38900,
+    comments: 1240,
+    shares: 2450,
+    views: 142000,
+    isSeed: true,
+    userComments: [
+      { user: '@retro_fan', text: 'Childhood memories right here! 🐰', time: '3h ago' },
+      { user: '@cameron', text: 'Still holds up so well in 2026 🔥', time: '1h ago' }
+    ]
+  },
+  {
+    id: 'seed-3',
+    ts: Date.now() - 3600000 * 12,
+    videoUrl: '/videos/sample3.mp4',
+    caption: 'Deep blue ocean currents and marine life wonders 🌊 Protect our marine ecosystem! #ocean #nature #blue #wildlife',
+    hashtags: ['#ocean', '#nature', '#blue', '#wildlife'],
+    music: 'Calm Waves Studio - Ocean Sounds',
+    username: 'ocean_depths',
+    userDisplayName: 'Ocean Depths',
+    likes: 21400,
+    comments: 670,
+    shares: 1120,
+    views: 89000,
+    isSeed: true,
+    userComments: [
+      { user: '@marine_biologist', text: 'Incredible underwater footage 🐋', time: '5h ago' },
+      { user: '@elena', text: 'So soothing to watch on repeat 🌊', time: '2h ago' }
+    ]
+  }
+];
+
+// Direct messages conversations
+let chatThreads = [
+  {
+    id: 't1',
+    user: 'Earth Moments',
+    handle: 'earth_moments',
+    messages: [
+      { sender: 'them', text: 'Hey Alex! Loved your reel on the feed!', time: '2:15 PM' },
+      { sender: 'me', text: 'Thanks so much! Your nature clips are so inspiring.', time: '2:18 PM' },
+      { sender: 'them', text: 'Appreciate it! Let us know if you want to collaborate on the next video 🌸', time: '2:20 PM' }
+    ]
+  },
+  {
+    id: 't2',
+    user: 'Animation Daily',
+    handle: 'anim_daily',
+    messages: [
+      { sender: 'them', text: 'New 3D render drop coming tomorrow 🔥', time: '11:00 AM' }
+    ]
+  },
+  {
+    id: 't3',
+    user: 'Maya Dance',
+    handle: 'maya_dance',
+    messages: [
+      { sender: 'them', text: 'Hey, what music track did you use on your latest upload?', time: 'Yesterday' }
+    ]
+  }
+];
 
 // ═══════════════════════════════════════════════════════
-//  INIT — load DB then render
+//  INIT
 // ═══════════════════════════════════════════════════════
 (async () => {
   try {
-    await openDB(); storageOk = true;
-    try{ navigator.storage && navigator.storage.persist && navigator.storage.persist(); }catch(_){}
+    await openDB();
+    storageOk = true;
+    try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch(_){}
+
     const rows = await dbGetAll('videos');
     rows.sort((a,b) => b.ts - a.ts);
-    videos = rows;
-    // create blob URLs
-    videos.forEach(v => {
+
+    // Create session blob URLs for user-uploaded videos
+    rows.forEach(v => {
       if (v.blob) blobUrls[v.id] = URL.createObjectURL(v.blob);
+      if (v.thumbnailBlob) thumbUrls[v.id] = URL.createObjectURL(v.thumbnailBlob);
     });
-    // load profile
+
+    if (rows.length === 0) {
+      videos = defaultSeedVideos.slice();
+    } else {
+      // Merge user uploads with seed videos
+      videos = rows.concat(defaultSeedVideos);
+    }
+
+    // Load profile
     const prows = await dbGetAll('profile');
     prows.forEach(r => { if (r.key in profile) profile[r.key] = r.val; });
   } catch(e) {
-    console.warn('DB error', e);
+    console.warn('DB initialization error', e);
+    videos = defaultSeedVideos.slice();
   }
+
   applyProfile();
   buildFeed();
+  renderCreators();
+  renderDiscover();
+  renderInbox();
   document.getElementById('db-loading').classList.add('hidden');
-  cloudBoot();
-  if(!storageOk) setTimeout(()=>showToast('⚠️ Storage blocked — videos won\'t be saved'),600);
 })();
 
 // ═══════════════════════════════════════════════════════
-//  PROFILE
+//  OWN PROFILE (Reference Image 2 Style)
 // ═══════════════════════════════════════════════════════
 function applyProfile() {
   document.getElementById('profile-display-name').textContent = profile.name;
   document.getElementById('profile-handle').textContent = '@' + profile.handle;
-  document.getElementById('profile-topbar-name').textContent = '@' + profile.handle;
   document.getElementById('profile-bio').textContent = profile.bio;
   document.getElementById('stat-following').textContent = fmtN(profile.following);
   document.getElementById('stat-followers').textContent = fmtN(profile.followers);
-  if (profile.avatar) {
-    if (!avatarUrl) avatarUrl = URL.createObjectURL(profile.avatar);
-    document.querySelector('.profile-avatar').innerHTML = '<img src="'+avatarUrl+'" style="width:100%;height:100%;object-fit:cover">';
-  }
-  const totalLikes = videos.reduce((s,v) => s + (v.likes||0), 0);
+
+  const ownVideos = videos.filter(v => !v.isSeed || v.username === profile.handle);
+  const totalLikes = ownVideos.reduce((sum, v) => sum + (v.likes || 0), 0) + (profile.likes || 0);
   document.getElementById('stat-likes').textContent = fmtN(totalLikes);
 }
 
 function openEditProfile() {
-  document.getElementById('ep-name').value   = profile.name;
+  document.getElementById('ep-name').value = profile.name;
   document.getElementById('ep-handle').value = profile.handle;
-  document.getElementById('ep-bio').value    = profile.bio;
+  document.getElementById('ep-bio').value = profile.bio;
   document.getElementById('edit-profile-modal').classList.add('open');
 }
+
 async function saveProfile() {
-  profile.name    = document.getElementById('ep-name').value.trim()   || profile.name;
-  profile.handle  = document.getElementById('ep-handle').value.replace(/^@/,'').trim() || profile.handle;
-  profile.bio     = document.getElementById('ep-bio').value.trim()    || profile.bio;
+  profile.name = document.getElementById('ep-name').value.trim() || profile.name;
+  profile.handle = document.getElementById('ep-handle').value.replace(/^@/,'').trim() || profile.handle;
+  profile.bio = document.getElementById('ep-bio').value.trim() || profile.bio;
+
   document.getElementById('edit-profile-modal').classList.remove('open');
   applyProfile();
   renderProfileGrid();
+  showToast('Profile updated ✨');
+
   try {
-    await dbPut('profile', {key:'name',    val:profile.name});
-    await dbPut('profile', {key:'handle',  val:profile.handle});
-    await dbPut('profile', {key:'bio',     val:profile.bio});
-  } catch(e){}
-  showToast('Profile saved!');
+    await dbPut('profile', { key: 'name', val: profile.name });
+    await dbPut('profile', { key: 'handle', val: profile.handle });
+    await dbPut('profile', { key: 'bio', val: profile.bio });
+  } catch(e) {
+    console.warn('Error saving profile', e);
+  }
 }
 
 function switchProfileTab(tab) {
   currentProfileTab = tab;
-  ['videos','liked','private'].forEach(t => {
-    document.getElementById('ptab-'+t).classList.toggle('active', t===tab);
+  ['videos', 'liked', 'private'].forEach(t => {
+    document.getElementById('ptab-' + t).classList.toggle('active', t === tab);
   });
   renderProfileGrid();
 }
@@ -773,77 +2017,104 @@ function renderProfileGrid() {
   const wrap = document.getElementById('profile-grid-wrap');
   wrap.innerHTML = '';
 
-  if (currentProfileTab === 'private') { renderSavedGrid(wrap); return; }
-  if (currentProfileTab !== 'videos') {
-    const empty = document.createElement('div');
-    empty.className = 'profile-empty';
-    empty.innerHTML = `
-      <span class="material-symbols-rounded">${currentProfileTab==='liked'?'favorite':'lock'}</span>
-      <div class="profile-empty-title">${currentProfileTab==='liked'?'No liked videos':'No private videos'}</div>
-      <div class="profile-empty-sub">${currentProfileTab==='liked'?'Videos you like will appear here':'Your private videos appear here'}</div>
-    `;
-    wrap.appendChild(empty);
-    return;
-  }
-
-  if (videos.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'profile-empty';
-    empty.innerHTML = `
-      <span class="material-symbols-rounded">videocam</span>
-      <div class="profile-empty-title">Upload your first video</div>
-      <div class="profile-empty-sub">Your videos will show here</div>
-      <button class="profile-empty-btn" onclick="openUpload()">Upload</button>
-    `;
-    wrap.appendChild(empty);
-    return;
+  let list = [];
+  if (currentProfileTab === 'videos') {
+    list = videos.filter(v => !v.isSeed || v.username === profile.handle);
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'profile-empty';
+      empty.innerHTML = `
+        <span class="material-symbols-rounded">videocam</span>
+        <div class="profile-empty-title">No videos uploaded yet</div>
+        <div class="profile-empty-sub">Your published videos will appear in this 3-column gallery</div>
+        <button class="profile-empty-btn" onclick="openUpload()">Upload a Video</button>
+      `;
+      wrap.appendChild(empty);
+      return;
+    }
+  } else if (currentProfileTab === 'liked') {
+    list = videos.filter(v => v.liked);
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'profile-empty';
+      empty.innerHTML = `
+        <span class="material-symbols-rounded">favorite</span>
+        <div class="profile-empty-title">No liked videos yet</div>
+        <div class="profile-empty-sub">Tap the heart on videos you love to see them here</div>
+      `;
+      wrap.appendChild(empty);
+      return;
+    }
+  } else if (currentProfileTab === 'private') {
+    list = videos.filter(v => (profile.saved || []).includes(v.id));
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'profile-empty';
+      empty.innerHTML = `
+        <span class="material-symbols-rounded">bookmark</span>
+        <div class="profile-empty-title">No saved videos</div>
+        <div class="profile-empty-sub">Save your favorite videos to watch them anytime</div>
+      `;
+      wrap.appendChild(empty);
+      return;
+    }
   }
 
   const grid = document.createElement('div');
   grid.className = 'video-grid';
-  videos.forEach((v, i) => {
+
+  list.forEach(v => {
+    const originalIndex = videos.findIndex(x => x.id === v.id);
     const item = document.createElement('div');
     item.className = 'grid-item';
-    item.onclick = () => {
-      goPage('feed', document.getElementById('nav-home'));
-      setTimeout(() => {
-        const slide = document.getElementById('feed').children[i];
-        if (slide) slide.scrollIntoView({ behavior:'smooth' });
-      }, 200);
-    };
-    if (blobUrls[v.id]) {
+    item.onclick = () => openInFeed(originalIndex);
+
+    if (thumbUrls[v.id]) {
+      const img = document.createElement('img');
+      img.src = thumbUrls[v.id];
+      item.appendChild(img);
+    } else if (blobUrls[v.id]) {
       const vid = document.createElement('video');
       vid.src = blobUrls[v.id] + '#t=0.1';
       vid.muted = true;
       vid.playsInline = true;
       vid.preload = 'metadata';
       item.appendChild(vid);
-    } else {
-      const ph = document.createElement('div');
-      ph.className = 'grid-item-placeholder';
-      ph.innerHTML = '<span class="material-symbols-rounded">videocam</span>';
-      item.appendChild(ph);
+    } else if (v.videoUrl) {
+      const vid = document.createElement('video');
+      vid.src = v.videoUrl + '#t=0.1';
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.preload = 'metadata';
+      item.appendChild(vid);
     }
-    const likeRow = document.createElement('div');
-    likeRow.className = 'grid-like';
-    likeRow.innerHTML = `<span class="material-symbols-rounded fi">favorite</span><span class="grid-like-count">${fmtN(v.likes||0)}</span>`;
-    item.appendChild(likeRow);
-    const del = document.createElement('div');
-    del.style.cssText = 'position:absolute;top:5px;right:5px;width:26px;height:26px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:2';
-    del.innerHTML = '<span class="material-symbols-rounded" style="font-size:16px;color:#fff">delete</span>';
-    del.onclick = ev => { ev.stopPropagation(); if (confirm('Delete this video?')) deleteVideo(v.id); };
-    let lpDone = false, lpT;
-    item.addEventListener('touchstart', () => { lpDone = false; lpT = setTimeout(() => { lpDone = true; if (confirm('Delete this video?')) deleteVideo(v.id); }, 800); }, { passive:true });
-    ['touchend','touchmove','touchcancel'].forEach(t => item.addEventListener(t, () => clearTimeout(lpT), { passive:true }));
-    item.addEventListener('click', e => { if (lpDone) { e.stopImmediatePropagation(); lpDone = false; } }, true);
-    item.addEventListener('contextmenu', e => { e.preventDefault(); if (confirm('Delete this video?')) deleteVideo(v.id); });
+
+    // Views / Likes badge
+    const badge = document.createElement('div');
+    badge.className = 'grid-badge';
+    badge.innerHTML = `<span class="material-symbols-rounded">play_arrow</span><span>${fmtN(v.views || (v.likes || 0) * 3 || 120)}</span>`;
+    item.appendChild(badge);
+
+    // Delete button for user's own videos in Videos tab
+    if (currentProfileTab === 'videos' && !v.isSeed) {
+      const del = document.createElement('div');
+      del.className = 'grid-del-btn';
+      del.innerHTML = '<span class="material-symbols-rounded" style="font-size:16px;">delete</span>';
+      del.onclick = (e) => {
+        e.stopPropagation();
+        if (confirm('Delete this video?')) deleteVideo(v.id);
+      };
+      item.appendChild(del);
+    }
+
     grid.appendChild(item);
   });
+
   wrap.appendChild(grid);
 }
 
 // ═══════════════════════════════════════════════════════
-//  FEED
+//  HOME / FOR YOU FEED
 // ═══════════════════════════════════════════════════════
 const feedEl = document.getElementById('feed');
 const emptyEl = document.getElementById('empty-state');
@@ -861,11 +2132,16 @@ function buildFeed() {
   videos.forEach((v, i) => feedEl.appendChild(makeSlide(v, i)));
 
   feedObserver = new IntersectionObserver(entries => {
-    entries.forEach(e => { if (e.isIntersecting && e.intersectionRatio >= 0.6) setActive(+e.target.dataset.idx); });
-  }, { threshold: [0.6, 0.9] });
+    entries.forEach(e => {
+      if (e.isIntersecting && e.intersectionRatio >= 0.55) {
+        setActive(+e.target.dataset.idx);
+      }
+    });
+  }, { threshold: [0.55, 0.85] });
 
   feedEl.querySelectorAll('.video-slide').forEach(s => feedObserver.observe(s));
-  activeIdx = -1; setActive(0);
+  activeIdx = -1;
+  setActive(0);
 }
 
 function makeSlide(v, i) {
@@ -874,111 +2150,106 @@ function makeSlide(v, i) {
   slide.dataset.idx = i;
   slide.dataset.id = v.id;
 
-  // video
+  // Video element
   const vid = document.createElement('video');
   vid.className = 'slide-video';
-  vid.loop = true; vid.playsInline = true; vid.preload = 'metadata';
-  vid.defaultPlaybackRate = 1; vid.playbackRate = 1; vid.preservesPitch = true;
-  vid.addEventListener('ratechange', () => { if (vid.playbackRate !== 1) vid.playbackRate = 1; });
-  if (blobUrls[v.id]) vid.src = blobUrls[v.id];
+  vid.loop = true;
+  vid.playsInline = true;
+  vid.preload = 'metadata';
+  vid.muted = window._muted;
+
+  const src = blobUrls[v.id] || v.videoUrl;
+  if (src && i <= 1) vid.src = src;
+
   vid.addEventListener('timeupdate', () => {
     const pb = slide.querySelector('.progress-bar');
-    if (pb && vid.duration) pb.style.width = (vid.currentTime/vid.duration*100)+'%';
+    if (pb && vid.duration) pb.style.width = (vid.currentTime / vid.duration * 100) + '%';
   });
-  vid.addEventListener('loadedmetadata', () => { if (vid.videoWidth > vid.videoHeight) vid.style.objectFit = 'contain'; });
-  slide.appendChild(vid);
 
+  slide.appendChild(vid);
   slide.insertAdjacentHTML('beforeend',
     '<div class="grad-top"></div><div class="grad-bottom"></div>' +
     '<div class="progress-bar-wrap"><div class="progress-bar"></div></div>'
   );
 
-  // tap overlay with double-tap detection
+  // Tap overlay (Single tap pause/resume, double tap like)
   const tap = document.createElement('div');
   tap.className = 'tap-overlay';
-  let lpT = null, lpFired = false, lpX = 0, lpY = 0;
-  tap.addEventListener('pointerdown', e => { lpFired = false; lpX = e.clientX; lpY = e.clientY; clearTimeout(lpT); lpT = setTimeout(() => { lpFired = true; openMore(v.id); }, 500); });
-  tap.addEventListener('pointermove', e => { if (Math.abs(e.clientX-lpX) > 10 || Math.abs(e.clientY-lpY) > 10) clearTimeout(lpT); });
-  ['pointerup','pointercancel','pointerleave'].forEach(t => tap.addEventListener(t, () => clearTimeout(lpT)));
-  tap.addEventListener('contextmenu', e => e.preventDefault());
-  tap.addEventListener('click', e => { if (lpFired) { e.stopImmediatePropagation(); lpFired = false; } }, true);
-  let tapTimer = null, lastTapT = 0, burst = false, burstT = null;
+  let tapTimer = null, lastTapT = 0;
+
   tap.addEventListener('click', e => {
     const now = Date.now();
-    if (burst) {
-      clearTimeout(burstT); burstT = setTimeout(() => { burst = false; }, 350);
-      doDoubleTap(e, slide, v, i); return;
-    }
-    if (tapTimer && now - lastTapT < 300) {
-      clearTimeout(tapTimer); tapTimer = null; lastTapT = 0;
-      burst = true; burstT = setTimeout(() => { burst = false; }, 350);
-      doDoubleTap(e, slide, v, i); return;
+    if (now - lastTapT < 300) {
+      clearTimeout(tapTimer);
+      tapTimer = null;
+      lastTapT = 0;
+      doDoubleTap(e, slide, v, i);
+      return;
     }
     lastTapT = now;
     clearTimeout(tapTimer);
-    tapTimer = setTimeout(() => { tapTimer = null; doSingleTap(slide, vid); }, 300);
+    tapTimer = setTimeout(() => {
+      tapTimer = null;
+      doSingleTap(slide, vid);
+    }, 280);
   });
   slide.appendChild(tap);
 
+  // Pause icon indicator
   const pi = document.createElement('div');
   pi.className = 'pause-icon';
   pi.innerHTML = '<span class="material-symbols-rounded fi">pause</span>';
   slide.appendChild(pi);
 
+  // Right action buttons & Bottom info
   slide.appendChild(makeActions(v, i));
   slide.appendChild(makeInfo(v));
   return slide;
 }
 
 function doSingleTap(slide, vid) {
-  if (!vid.getAttribute('src')) return;
   const pi = slide.querySelector('.pause-icon');
   const ic = pi.querySelector('.material-symbols-rounded');
   clearTimeout(pi._t);
-  if (vid.paused) { vid.play().catch(()=>{}); ic.textContent = 'play_arrow'; }
-  else { vid.pause(); ic.textContent = 'pause'; }
+  if (vid.paused) {
+    vid.play().catch(()=>{});
+    ic.textContent = 'play_arrow';
+  } else {
+    vid.pause();
+    ic.textContent = 'pause';
+  }
   pi.className = 'pause-icon show';
-  pi._t = setTimeout(() => { pi.className = 'pause-icon'; }, 800);
+  pi._t = setTimeout(() => { pi.className = 'pause-icon'; }, 750);
 }
+
 function doDoubleTap(e, slide, v, i) {
-  const btn = document.getElementById('like-'+v.id);
-  if (btn && !btn.classList.contains('liked')) toggleLike(btn, v.id, i);
-  const vid = slide.querySelector('video');
-  const sr = slide.getBoundingClientRect(), vr = vid.getBoundingClientRect();
-  const dh = document.createElement('div');
-  dh.className = 'dbl-heart';
-  dh.innerHTML = '<span class="material-symbols-rounded fi">favorite</span>';
-  dh.style.left = (vr.left - sr.left + vr.width/2 - 45) + 'px';
-  dh.style.top  = (vr.top  - sr.top  + vr.height/2 - 45) + 'px';
-  slide.appendChild(dh);
-  setTimeout(() => dh.remove(), 900);
-}
-function doSingleTap_old(slide, vid) {
-  if (!vid.src) return;
-  const pi = slide.querySelector('.pause-icon');
-  if (vid.paused) { vid.play().catch(()=>{}); pi.className='pause-icon'; }
-  else { vid.pause(); pi.className='pause-icon show'; setTimeout(()=>pi.className='pause-icon',1400); }
-}
-function doDoubleTap_old(e, slide, v, i) {
-  const btn = document.getElementById('like-'+v.id);
-  if (btn && !btn.classList.contains('liked')) toggleLike(btn, v.id, i);
+  const btn = document.getElementById('like-' + v.id);
+  if (btn && !btn.classList.contains('liked')) {
+    toggleLike(btn, v.id, i);
+  }
+
   const rect = slide.getBoundingClientRect();
   const dh = document.createElement('div');
   dh.className = 'dbl-heart';
   dh.innerHTML = '<span class="material-symbols-rounded fi">favorite</span>';
-  dh.style.left = (e.clientX-rect.left-45)+'px';
-  dh.style.top  = (e.clientY-rect.top -45)+'px';
+  dh.style.left = (e.clientX - rect.left - 48) + 'px';
+  dh.style.top = (e.clientY - rect.top - 48) + 'px';
   slide.appendChild(dh);
-  setTimeout(()=>dh.remove(), 850);
+  setTimeout(() => dh.remove(), 800);
 }
 
 function makeActions(v, i) {
   const wrap = document.createElement('div');
   wrap.className = 'right-actions';
+  const isSaved = (profile.saved || []).includes(v.id);
+  const avatarLetter = (v.username || 'U')[0].toUpperCase();
+
   wrap.innerHTML = `
     <div class="action-btn">
-      <div class="avatar-wrap">
-        <div class="avatar-img"><span class="material-symbols-rounded fi">person</span></div>
+      <div class="avatar-wrap" onclick="viewCreatorProfile('${v.username}')">
+        <div class="avatar-img">
+          <span style="font-weight:700;font-size:18px;color:#fff;">${avatarLetter}</span>
+        </div>
         <div class="follow-dot" id="fd-${v.id}" onclick="toggleFollow(event,'${v.id}')">
           <span class="material-symbols-rounded">add</span>
         </div>
@@ -986,21 +2257,21 @@ function makeActions(v, i) {
     </div>
     <div class="action-btn${v.liked ? ' liked' : ''}" id="like-${v.id}" onclick="toggleLike(this,'${v.id}',${i})">
       <div class="action-icon-wrap">
-        <span class="material-symbols-rounded like-icon" style="color:${v.liked ? 'var(--accent)' : '#fff'};">favorite</span>
+        <span class="material-symbols-rounded like-icon">favorite</span>
       </div>
-      <span class="action-count" id="lc-${v.id}">${fmtC(v.likes||0)}</span>
+      <span class="action-count" id="lc-${v.id}">${fmtC(v.likes || 0)}</span>
     </div>
     <div class="action-btn" onclick="openComments('${v.id}')">
       <div class="action-icon-wrap"><span class="material-symbols-rounded fi">chat_bubble</span></div>
       <span class="action-count" id="cc-${v.id}">${fmtC(cmCount(v))}</span>
     </div>
+    <div class="action-btn${isSaved ? ' saved' : ''}" id="save-${v.id}" onclick="toggleSave('${v.id}')">
+      <div class="action-icon-wrap"><span class="material-symbols-rounded save-icon">bookmark</span></div>
+      <span class="action-count" id="sc-${v.id}">${isSaved ? 'Saved' : 'Save'}</span>
+    </div>
     <div class="action-btn" onclick="openShare('${v.id}')">
       <div class="action-icon-wrap"><span class="material-symbols-rounded" style="transform:scaleX(-1)">reply</span></div>
-      <span class="action-count" id="sc-${v.id}">${fmtC(v.shares||0)}</span>
-    </div>
-    <div class="action-btn${(profile.saved||[]).includes(v.id) ? ' saved' : ''}" id="save-${v.id}" onclick="toggleSave('${v.id}')">
-      <div class="action-icon-wrap"><span class="material-symbols-rounded">bookmark</span></div>
-      <span class="action-count"></span>
+      <span class="action-count" id="shc-${v.id}">${fmtC(v.shares || 0)}</span>
     </div>
   `;
   return wrap;
@@ -1009,13 +2280,20 @@ function makeActions(v, i) {
 function makeInfo(v) {
   const wrap = document.createElement('div');
   wrap.className = 'bottom-info';
-  const tags = (v.hashtags||[]).map(t=>`<span class="hashtag">${t}</span>`).join('');
-  if (profile.avatar && !avatarUrl) avatarUrl = URL.createObjectURL(profile.avatar);
-  const avHtml = profile.avatar ? `<img src="${avatarUrl}">` : '<span class="material-symbols-rounded fi">person</span>';
+  const tags = (v.hashtags || []).map(t => `<span class="hashtag" onclick="searchTag('${t}')">${t}</span>`).join(' ');
+  const avatarLetter = (v.username || 'U')[0].toUpperCase();
+
   wrap.innerHTML = `
-    <div class="caption">${v.caption||''}</div>
+    <div class="author-row" onclick="viewCreatorProfile('${v.username}')">
+      <div style="width:26px;height:26px;border-radius:50%;background:#333;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;border:1px solid #fff;">${avatarLetter}</div>
+      <span class="author-name">@${v.username || 'user'}</span>
+    </div>
+    <div class="caption">${v.caption || ''}</div>
     <div class="hashtags">${tags}</div>
-    <div class="author-row"><div class="author-av">${avHtml}</div><span class="author-name">@${v.username||'you'}</span></div><div class="music-row"><span class="material-symbols-rounded">music_note</span><span class="music-text">Original audio</span></div>
+    <div class="music-row">
+      <span class="material-symbols-rounded">music_note</span>
+      <span class="music-text">${v.music || 'Original audio'}</span>
+    </div>
   `;
   return wrap;
 }
@@ -1024,528 +2302,746 @@ function makeInfo(v) {
 //  INTERACTIONS
 // ═══════════════════════════════════════════════════════
 async function toggleLike(btn, id, idx) {
-  const v = videos[idx]; if(!v) return;
+  const v = videos[idx];
+  if (!v) return;
   const isLiked = btn.classList.toggle('liked');
   v.liked = isLiked;
-  const icon = btn.querySelector('.like-icon');
-  const countEl = document.getElementById('lc-'+id);
+  const countEl = document.getElementById('lc-' + id);
+
   if (isLiked) {
-    icon.style.cssText = 'color:var(--accent);font-variation-settings:"FILL" 1,"wght" 400,"GRAD" 0,"opsz" 24;';
-    v.likes = (v.likes||0)+1;
+    v.likes = (v.likes || 0) + 1;
     const slide = feedEl.children[idx];
     if (slide) {
       const fh = document.createElement('div');
       fh.className = 'float-heart';
       fh.innerHTML = '<span class="material-symbols-rounded fi">favorite</span>';
-      fh.style.right='48px'; fh.style.bottom='220px';
-      slide.appendChild(fh); setTimeout(()=>fh.remove(), 900);
+      fh.style.right = '48px';
+      fh.style.bottom = '220px';
+      slide.appendChild(fh);
+      setTimeout(() => fh.remove(), 850);
     }
   } else {
-    icon.style.cssText = 'color:#fff;font-variation-settings:"FILL" 0,"wght" 400,"GRAD" 0,"opsz" 24;';
-    v.likes = Math.max(0,(v.likes||0)-1);
+    v.likes = Math.max(0, (v.likes || 0) - 1);
   }
+
   if (countEl) countEl.textContent = fmtC(v.likes);
-  document.getElementById('stat-likes').textContent = fmtN(videos.reduce((s,x)=>s+(x.likes||0),0));
-  try { await dbPut('videos', v); } catch(e){}
+  applyProfile();
+  try { if (!v.isSeed) await dbPut('videos', v); } catch(e){}
 }
 
 function toggleFollow(e, id) {
   e.stopPropagation();
-  const dot = document.getElementById('fd-'+id); if(!dot) return;
+  const dot = document.getElementById('fd-' + id);
+  if (!dot) return;
   const isF = dot.classList.toggle('followed');
   dot.querySelector('.material-symbols-rounded').textContent = isF ? 'check' : 'add';
-  showToast(isF ? 'Followed!' : 'Unfollowed');
+  profile.following = Math.max(0, profile.following + (isF ? 1 : -1));
+  applyProfile();
+  showToast(isF ? 'Following creator! ✨' : 'Unfollowed');
+}
+
+async function toggleSave(id) {
+  if (!profile.saved) profile.saved = [];
+  const idx = profile.saved.indexOf(id);
+  const on = idx < 0;
+  if (on) profile.saved.push(id);
+  else profile.saved.splice(idx, 1);
+
+  const b = document.getElementById('save-' + id);
+  if (b) {
+    b.classList.toggle('saved', on);
+    const countEl = document.getElementById('sc-' + id);
+    if (countEl) countEl.textContent = on ? 'Saved' : 'Save';
+  }
+  showToast(on ? 'Video saved to your profile 🔖' : 'Removed from saved');
+  try { await dbPut('profile', { key: 'saved', val: profile.saved.slice() }); } catch(e){}
+  renderProfileGrid();
+}
+
+function toggleMute() {
+  window._muted = !window._muted;
+  document.querySelectorAll('video').forEach(v => { v.muted = window._muted; });
+  const icon = document.getElementById('top-sound-icon');
+  if (icon) icon.textContent = window._muted ? 'volume_off' : 'volume_up';
+  showToast(window._muted ? 'Sound Muted 🔇' : 'Sound On 🔊');
 }
 
 // ═══════════════════════════════════════════════════════
-//  UPLOAD — save full blob to IndexedDB
+//  VIDEO UPLOAD (With Custom Thumbnail & Preview)
 // ═══════════════════════════════════════════════════════
-function openUpload() { document.getElementById('upload-modal').classList.add('open'); }
+function openUpload() {
+  document.getElementById('upload-modal').classList.add('open');
+}
 
 document.getElementById('fileInput').addEventListener('change', function() {
-  const f = this.files[0]; if(!f) return;
-  const url = URL.createObjectURL(f);
-  document.getElementById('uploadPreview').src = url;
-  document.getElementById('uploadPreviewWrap').style.display = 'block';
-  document.getElementById('uploadFilename').textContent = f.name+' ('+fmtSize(f.size)+')';
+  const file = this.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
   const pv = document.getElementById('uploadPreview');
+  pv.src = url;
+  document.getElementById('uploadPreviewWrap').style.display = 'block';
+  document.getElementById('uploadFilename').textContent = file.name + ' (' + fmtSize(file.size) + ')';
+
   pv.onloadedmetadata = () => {
     if (pv.duration > 60.5) {
       showToast('Video must be 1 minute or less');
       document.getElementById('fileInput').value = '';
-      pv.removeAttribute('src'); pv.load();
+      pv.removeAttribute('src');
+      pv.load();
       document.getElementById('uploadPreviewWrap').style.display = 'none';
+    } else {
+      // Auto-capture first frame as default thumbnail
+      setTimeout(captureCurrentFrame, 300);
     }
   };
 });
 
+document.getElementById('thumbInput').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  customUploadedThumbBlob = file;
+  const thumbUrl = URL.createObjectURL(file);
+  const img = document.getElementById('thumbPreviewImg');
+  img.src = thumbUrl;
+  img.style.display = 'block';
+  showToast('Custom thumbnail selected!');
+});
+
+function captureCurrentFrame() {
+  const video = document.getElementById('uploadPreview');
+  if (!video || !video.src || video.videoWidth === 0) {
+    showToast('Choose a video first');
+    return;
+  }
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(blob => {
+      customUploadedThumbBlob = blob;
+      const img = document.getElementById('thumbPreviewImg');
+      img.src = URL.createObjectURL(blob);
+      img.style.display = 'block';
+      showToast('Thumbnail frame captured 📸');
+    }, 'image/jpeg', 0.85);
+  } catch(e) {
+    console.warn('Canvas capture error', e);
+  }
+}
+
+function appendTag(tag) {
+  const inp = document.getElementById('hashtagInput');
+  const curr = inp.value.trim();
+  if (!curr.includes(tag)) inp.value = (curr ? curr + ' ' : '') + tag;
+}
+
 const zone = document.getElementById('uploadZone');
-zone.addEventListener('dragover', e=>{e.preventDefault();zone.classList.add('drag-over');});
-zone.addEventListener('dragleave', ()=>zone.classList.remove('drag-over'));
-zone.addEventListener('drop', e=>{
-  e.preventDefault(); zone.classList.remove('drag-over');
-  const f=e.dataTransfer.files[0];
-  if(f&&f.type.startsWith('video/')){
-    const dt=new DataTransfer(); dt.items.add(f);
-    document.getElementById('fileInput').files=dt.files;
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+  e.preventDefault();
+  zone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('video/')) {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    document.getElementById('fileInput').files = dt.files;
     document.getElementById('fileInput').dispatchEvent(new Event('change'));
   }
 });
 
 async function submitUpload() {
   const file = document.getElementById('fileInput').files[0];
-  if (!file) { showToast('Please choose a video first'); return; }
-  const pvd = document.getElementById('uploadPreview').duration;
-  if (pvd && pvd > 60.5) { showToast('Video must be 1 minute or less'); return; }
+  if (!file) {
+    showToast('Please select a video file first');
+    return;
+  }
+  const caption = document.getElementById('captionInput').value.trim() || 'My new video';
+  const hashRaw = document.getElementById('hashtagInput').value.trim();
+  const hashtags = hashRaw ? hashRaw.split(/\s+/).filter(t => t.length > 0) : [];
+  const id = 'v_' + Date.now();
 
-  const caption  = document.getElementById('captionInput').value.trim()  || 'My video';
-  const hashRaw  = document.getElementById('hashtagInput').value.trim();
-  const hashtags = hashRaw ? hashRaw.split(/\s+/).filter(t=>t.length>0) : [];
-
-  const id = 'v'+Date.now();
   const newVid = {
-    id, ts: Date.now(),
-    blob: file,           // ← full Blob saved in IndexedDB
-    caption, hashtags,
-    music: file.name.replace(/\.[^.]+$/,''),
-    username: profile.handle || 'you',
-    likes:0, comments:0, shares:0,
-    userComments:[]
+    id,
+    ts: Date.now(),
+    blob: file,
+    thumbnailBlob: customUploadedThumbBlob,
+    caption,
+    hashtags,
+    music: file.name.replace(/\.[^.]+$/,'') + ' - Original Sound',
+    username: profile.handle || 'alexjohnson',
+    likes: 0,
+    comments: 0,
+    shares: 0,
+    views: 1,
+    userComments: []
   };
 
-  // create blob URL for this session
-  let saved = false;
   try {
-    try { newVid.blob = new Blob([await file.arrayBuffer()], {type:file.type||'video/mp4'}); } catch(_){}
-    await dbPut('videos', newVid); saved = true;
-  } catch(e){ console.warn(e); }
-  blobUrls[id] = URL.createObjectURL(newVid.blob);
+    newVid.blob = new Blob([await file.arrayBuffer()], { type: file.type || 'video/mp4' });
+    if (customUploadedThumbBlob) {
+      newVid.thumbnailBlob = new Blob([await customUploadedThumbBlob.arrayBuffer()], { type: 'image/jpeg' });
+      thumbUrls[id] = URL.createObjectURL(newVid.thumbnailBlob);
+    }
+    await dbPut('videos', newVid);
+  } catch(e) {
+    console.warn('DB put video error', e);
+  }
 
+  blobUrls[id] = URL.createObjectURL(newVid.blob);
   videos.unshift(newVid);
 
-  // reset form
+  // Reset form
   document.getElementById('upload-modal').classList.remove('open');
   document.getElementById('captionInput').value = '';
   document.getElementById('hashtagInput').value = '';
-  document.getElementById('fileInput').value    = '';
+  document.getElementById('fileInput').value = '';
+  document.getElementById('thumbInput').value = '';
   document.getElementById('uploadPreviewWrap').style.display = 'none';
   document.getElementById('uploadPreview').src = '';
+  document.getElementById('thumbPreviewImg').style.display = 'none';
+  customUploadedThumbBlob = null;
 
   buildFeed();
   renderProfileGrid();
   applyProfile();
-  setTimeout(() => feedEl.scrollTo({top:0,behavior:'instant'}), 60);
-  showToast(saved ? 'Posted! 🎉 Video saved permanently' : '⚠️ Posted, but NOT saved (storage blocked)');
-  if (cloudAssets && cloudDb) {
-    if (newVid.blob.size >= 20 * 1024 * 1024) setTimeout(() => showToast('⚠️ Over 20MB — saved on this device only'), 2200);
-    else cloudUpload(newVid);
-  }
+  goPage('feed', document.getElementById('nav-home'));
+  setTimeout(() => feedEl.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+  showToast('Video published to feed! 🎉');
 }
 
 // ═══════════════════════════════════════════════════════
-//  SHARE
-// ═══════════════════════════════════════════════════════
-function openShare(id) {
-  window._shareId = id;
-  document.getElementById('shareUrl').textContent = 'reelflow.app/v/'+id;
-  document.getElementById('share-modal').classList.add('open');
-}
-function shareAct(type) {
-  document.getElementById('share-modal').classList.remove('open');
-  const sv = videos.find(x => x.id === window._shareId);
-  if (sv) { sv.shares = (sv.shares||0) + 1; refreshCounts(sv); dbPut('videos', sv).catch(()=>{}); }
-  const url = document.getElementById('shareUrl').textContent;
-  if (type !== 'copy' && navigator.share) { navigator.share({ title:'ReelFlow', url:'https://'+url }).catch(()=>{}); return; }
-  copyLink();
-}
-function copyLink() {
-  const url = document.getElementById('shareUrl').textContent;
-  navigator.clipboard.writeText(url).then(()=>showToast('Link copied!')).catch(()=>showToast('Copy: '+url));
-}
-
-// ═══════════════════════════════════════════════════════
-//  COMMENTS
+//  COMMENTS & SHARING
 // ═══════════════════════════════════════════════════════
 let activeCommentsId = null;
+
 function openComments(id) {
   activeCommentsId = id;
-  const v = videos.find(x=>x.id===id);
-  document.getElementById('commentsTitle').textContent = fmtN((v?.comments||0)+(v?.userComments?.length||0)) + ' Comments';
+  const v = videos.find(x => x.id === id);
+  document.getElementById('commentsTitle').textContent = fmtN(cmCount(v)) + ' Comments';
   const list = document.getElementById('commentsList');
   list.innerHTML = '';
-  (v?.userComments||[]).forEach(c => addCommentEl(list,c.user,c.text,c.time));
+  (v?.userComments || []).forEach(c => addCommentEl(list, c.user, c.text, c.time));
   document.getElementById('comments-modal').classList.add('open');
 }
-function addCommentEl(list,user,text,time) {
+
+function addCommentEl(list, user, text, time) {
   const item = document.createElement('div');
   item.className = 'comment-item';
+  const initial = (user.replace('@','') || 'U')[0].toUpperCase();
   item.innerHTML = `
-    <div class="comment-avatar"><span class="material-symbols-rounded fi">person</span></div>
+    <div class="comment-avatar"><span style="font-weight:700;font-size:12px;color:#fff;">${initial}</span></div>
     <div class="comment-body">
       <div class="comment-user">${user}</div>
       <div class="comment-text">${text}</div>
       <div class="comment-time">${time}</div>
     </div>
-    <div class="comment-like-btn" onclick="toggleCLike(this)">
-      <span class="material-symbols-rounded">favorite</span>
-    </div>
   `;
   list.appendChild(item);
 }
-function toggleCLike(el) {
-  const ic=el.querySelector('.material-symbols-rounded');
-  const on=ic.style.color==='var(--accent)';
-  ic.style.color=on?'':' var(--accent)';
-  ic.style.fontVariationSettings=on?'':'"FILL" 1,"wght" 400,"GRAD" 0,"opsz" 24';
-}
+
 async function postComment() {
-  const input=document.getElementById('commentInput');
-  const text=input.value.trim(); if(!text) return;
-  const v=videos.find(x=>x.id===activeCommentsId); if(!v) return;
-  const c={user:'@'+profile.handle,text,time:'just now'};
-  if(!v.userComments) v.userComments=[];
+  const input = document.getElementById('commentInput');
+  const text = input.value.trim();
+  if (!text) return;
+  const v = videos.find(x => x.id === activeCommentsId);
+  if (!v) return;
+
+  const c = { user: '@' + profile.handle, text, time: 'Just now' };
+  if (!v.userComments) v.userComments = [];
   v.userComments.push(c);
-  refreshCounts(v);
+
   document.getElementById('commentsTitle').textContent = fmtN(cmCount(v)) + ' Comments';
-  addCommentEl(document.getElementById('commentsList'),c.user,c.text,c.time);
-  document.getElementById('commentsList').scrollTop=99999;
-  input.value='';
-  try { await dbPut('videos',v); } catch(e){}
+  addCommentEl(document.getElementById('commentsList'), c.user, c.text, c.time);
+  document.getElementById('commentsList').scrollTop = 99999;
+  input.value = '';
+
+  const ccEl = document.getElementById('cc-' + v.id);
+  if (ccEl) ccEl.textContent = fmtC(cmCount(v));
+  try { if (!v.isSeed) await dbPut('videos', v); } catch(e){}
+}
+
+function openShare(id) {
+  window._shareId = id;
+  document.getElementById('shareUrl').textContent = 'reelflow.app/v/' + id;
+  document.getElementById('share-modal').classList.add('open');
+}
+
+function shareAct(type) {
+  document.getElementById('share-modal').classList.remove('open');
+  const v = videos.find(x => x.id === window._shareId);
+  if (v) {
+    v.shares = (v.shares || 0) + 1;
+    const shc = document.getElementById('shc-' + v.id);
+    if (shc) shc.textContent = fmtC(v.shares);
+    try { if (!v.isSeed) dbPut('videos', v); } catch(_){}
+  }
+  const url = 'https://' + document.getElementById('shareUrl').textContent;
+  if (type === 'native' && navigator.share) {
+    navigator.share({ title: 'ReelFlow Video', url }).catch(()=>{});
+  } else if (type === 'copy') {
+    copyLink();
+  } else {
+    copyLink();
+  }
+}
+
+function copyLink() {
+  const url = 'https://' + document.getElementById('shareUrl').textContent;
+  navigator.clipboard.writeText(url).then(() => showToast('Link copied to clipboard! 📋')).catch(() => showToast('Share: ' + url));
 }
 
 // ═══════════════════════════════════════════════════════
-//  NAV / TABS
+//  DISCOVER & CREATORS
 // ═══════════════════════════════════════════════════════
-function goPage(page, navEl) {
-  ['discover','inbox'].forEach(p => document.getElementById('page-'+p).classList.toggle('active', p===page));
-  if (page==='discover'||page==='inbox') {
-    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-    if (navEl) navEl.classList.add('active');
-    document.getElementById('page-profile').classList.remove('active');
-    document.getElementById('topbar').style.display='none';
-    feedEl.querySelectorAll('video').forEach(x => x.pause());
-    if (page==='discover') renderDiscover(); else renderInbox();
+function renderCreators() {
+  const container = document.getElementById('creatorsContainer');
+  container.innerHTML = '';
+  creators.forEach(c => {
+    const card = document.createElement('div');
+    card.className = 'creator-card';
+    card.innerHTML = `
+      <div class="creator-card-av">${c.name[0]}</div>
+      <div class="creator-card-name">${c.name}</div>
+      <div class="creator-card-handle">@${c.handle}</div>
+      <div class="creator-card-followers">${c.followers} followers</div>
+      <button class="creator-follow-btn${c.followed ? ' following' : ''}" onclick="toggleCreatorFollow('${c.id}')">
+        ${c.followed ? 'Following' : 'Follow'}
+      </button>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function toggleCreatorFollow(cid) {
+  const creator = creators.find(c => c.id === cid);
+  if (!creator) return;
+  creator.followed = !creator.followed;
+  profile.following = Math.max(0, profile.following + (creator.followed ? 1 : -1));
+  applyProfile();
+  renderCreators();
+  showToast(creator.followed ? 'Following @' + creator.handle : 'Unfollowed');
+}
+
+function renderDiscover() {
+  const q = (document.getElementById('discoverInput').value || '').trim().toLowerCase();
+  const clearBtn = document.getElementById('searchClearBtn');
+  clearBtn.classList.toggle('show', q.length > 0);
+
+  const body = document.getElementById('discover-body');
+  body.innerHTML = '';
+
+  const filtered = videos.filter(v => {
+    if (!q) return true;
+    const str = ((v.caption || '') + ' ' + (v.hashtags || []).join(' ') + ' ' + (v.username || '')).toLowerCase();
+    return str.includes(q);
+  });
+
+  if (!filtered.length) {
+    const empty = document.createElement('div');
+    empty.className = 'profile-empty';
+    empty.innerHTML = `
+      <span class="material-symbols-rounded">search_off</span>
+      <div class="profile-empty-title">No results found</div>
+      <div class="profile-empty-sub">Try searching for #nature, #animation, #fyp or creator handles</div>
+    `;
+    body.appendChild(empty);
     return;
   }
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+
+  const grid = document.createElement('div');
+  grid.className = 'video-grid';
+
+  filtered.forEach(v => {
+    const originalIndex = videos.findIndex(x => x.id === v.id);
+    const item = document.createElement('div');
+    item.className = 'grid-item';
+    item.onclick = () => openInFeed(originalIndex);
+
+    if (thumbUrls[v.id]) {
+      const img = document.createElement('img');
+      img.src = thumbUrls[v.id];
+      item.appendChild(img);
+    } else if (blobUrls[v.id]) {
+      const vid = document.createElement('video');
+      vid.src = blobUrls[v.id] + '#t=0.1';
+      vid.muted = true;
+      vid.playsInline = true;
+      item.appendChild(vid);
+    } else if (v.videoUrl) {
+      const vid = document.createElement('video');
+      vid.src = v.videoUrl + '#t=0.1';
+      vid.muted = true;
+      vid.playsInline = true;
+      item.appendChild(vid);
+    }
+
+    const badge = document.createElement('div');
+    badge.className = 'grid-badge';
+    badge.innerHTML = `<span class="material-symbols-rounded">play_arrow</span><span>${fmtN(v.views || (v.likes || 0) * 3 || 140)}</span>`;
+    item.appendChild(badge);
+    grid.appendChild(item);
+  });
+
+  body.appendChild(grid);
+}
+
+function clearDiscoverSearch() {
+  document.getElementById('discoverInput').value = '';
+  renderDiscover();
+}
+
+function filterDiscoverTag(chipEl, tag) {
+  document.querySelectorAll('#discoverTags .search-chip').forEach(c => c.classList.remove('active'));
+  chipEl.classList.add('active');
+  document.getElementById('discoverInput').value = tag;
+  renderDiscover();
+}
+
+function searchTag(tag) {
+  goPage('discover', document.getElementById('nav-discover'));
+  document.getElementById('discoverInput').value = tag;
+  renderDiscover();
+}
+
+function viewCreatorProfile(handle) {
+  showToast('Viewing @' + handle);
+}
+
+// ═══════════════════════════════════════════════════════
+//  INBOX & MESSAGING
+// ═══════════════════════════════════════════════════════
+let currentInboxTab = 'activity';
+let currentNotifFilter = 'all';
+
+function switchInboxSubtab(tab) {
+  currentInboxTab = tab;
+  document.getElementById('inbox-sub-activity').classList.toggle('active', tab === 'activity');
+  document.getElementById('inbox-sub-messages').classList.toggle('active', tab === 'messages');
+  document.getElementById('inbox-activity-view').style.display = tab === 'activity' ? 'block' : 'none';
+  document.getElementById('inbox-messages-view').style.display = tab === 'messages' ? 'block' : 'none';
+  if (tab === 'messages') renderChatThreads();
+}
+
+function filterInboxNotifs(el, filter) {
+  document.querySelectorAll('.inbox-filters .inbox-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  currentNotifFilter = filter;
+  renderInbox();
+}
+
+function renderInbox() {
+  const list = document.getElementById('inbox-notifs-list');
+  list.innerHTML = '';
+
+  const mockNotifs = [
+    { type: 'like', user: '@sarah_m', text: 'liked your video', time: '12m ago', icon: 'favorite' },
+    { type: 'comment', user: '@david_k', text: 'commented: “Incredible angles! 🔥”', time: '40m ago', icon: 'chat_bubble' },
+    { type: 'follow', user: '@maya_dance', text: 'started following you', time: '2h ago', icon: 'person', canFollow: true },
+    { type: 'like', user: '@anim_daily', text: 'liked your video', time: '5h ago', icon: 'favorite' },
+    { type: 'follow', user: '@nature_lover', text: 'started following you', time: '1d ago', icon: 'person', canFollow: true }
+  ];
+
+  const filtered = mockNotifs.filter(n => currentNotifFilter === 'all' || n.type === currentNotifFilter);
+
+  filtered.forEach(n => {
+    const item = document.createElement('div');
+    item.className = 'notif-item';
+    item.innerHTML = `
+      <div class="notif-ic ${n.type}"><span class="material-symbols-rounded">${n.icon}</span></div>
+      <div class="notif-content">
+        <div class="notif-text"><strong>${n.user}</strong> ${n.text}</div>
+        <div class="notif-time">${n.time}</div>
+      </div>
+      ${n.canFollow ? `<button class="notif-action-btn" onclick="followBack(this, '${n.user}')">Follow</button>` : ''}
+    `;
+    list.appendChild(item);
+  });
+}
+
+function followBack(btn, user) {
+  const isFollowing = btn.textContent === 'Following';
+  btn.textContent = isFollowing ? 'Follow' : 'Following';
+  btn.style.background = isFollowing ? 'var(--accent)' : 'rgba(255,255,255,0.15)';
+  profile.following = Math.max(0, profile.following + (isFollowing ? -1 : 1));
+  applyProfile();
+  showToast(isFollowing ? 'Unfollowed ' + user : 'Following ' + user + ' ✨');
+}
+
+function renderChatThreads() {
+  const container = document.getElementById('inbox-chats-list');
+  container.innerHTML = '';
+  chatThreads.forEach(t => {
+    const lastMsg = t.messages[t.messages.length - 1] || { text: '', time: '' };
+    const row = document.createElement('div');
+    row.className = 'chat-thread-item';
+    row.onclick = () => openChat(t.id);
+    row.innerHTML = `
+      <div class="chat-thread-av">${t.user[0]}</div>
+      <div class="chat-thread-body">
+        <div class="chat-thread-top">
+          <span class="chat-thread-name">${t.user}</span>
+          <span class="chat-thread-time">${lastMsg.time}</span>
+        </div>
+        <div class="chat-thread-msg">${lastMsg.text}</div>
+      </div>
+    `;
+    container.appendChild(row);
+  });
+}
+
+let activeChatThreadId = null;
+
+function openChat(threadId) {
+  activeChatThreadId = threadId;
+  const thread = chatThreads.find(t => t.id === threadId);
+  if (!thread) return;
+
+  document.getElementById('chat-user-name').textContent = thread.user;
+  document.getElementById('chat-user-handle').textContent = '@' + thread.handle;
+  renderChatMessages(thread);
+  document.getElementById('chat-modal').classList.add('open');
+}
+
+function closeChat() {
+  document.getElementById('chat-modal').classList.remove('open');
+}
+
+function renderChatMessages(thread) {
+  const container = document.getElementById('chatMessages');
+  container.innerHTML = '';
+  thread.messages.forEach(m => {
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble ' + m.sender;
+    bubble.textContent = m.text;
+    container.appendChild(bubble);
+  });
+  container.scrollTop = container.scrollHeight;
+}
+
+function sendChatMessage() {
+  const inp = document.getElementById('chatInput');
+  const text = inp.value.trim();
+  if (!text) return;
+  const thread = chatThreads.find(t => t.id === activeChatThreadId);
+  if (!thread) return;
+
+  thread.messages.push({ sender: 'me', text, time: 'Just now' });
+  inp.value = '';
+  renderChatMessages(thread);
+
+  // Simulated auto response
+  setTimeout(() => {
+    const replies = [
+      'Awesome! Totally agree 🙌',
+      'That looks super clean! Let’s keep building 🔥',
+      'Got it! Watching your latest clip now ✨',
+      'Love the energy on ReelFlow 🌸'
+    ];
+    const reply = replies[Math.floor(Math.random() * replies.length)];
+    thread.messages.push({ sender: 'them', text: reply, time: 'Just now' });
+    renderChatMessages(thread);
+  }, 1000);
+}
+
+// ═══════════════════════════════════════════════════════
+//  NAVIGATION & PAGES
+// ═══════════════════════════════════════════════════════
+function goPage(page, navEl) {
+  ['discover', 'inbox', 'profile'].forEach(p => {
+    document.getElementById('page-' + p).classList.toggle('active', p === page);
+  });
+
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   if (navEl) navEl.classList.add('active');
 
-  const feedPage    = document.getElementById('page-feed');
-  const profilePage = document.getElementById('page-profile');
-  const topbar      = document.getElementById('topbar');
-
-  if (page==='feed') {
-    feedPage.style.transform=''; feedPage.style.opacity=''; feedPage.style.pointerEvents='';
-    profilePage.classList.remove('active');
-    topbar.style.display='';
-    { const a = feedEl.querySelectorAll('.video-slide')[activeIdx]; const av = a && a.querySelector('video'); if (av && av.getAttribute('src')) av.play().catch(()=>{}); }
-  } else if (page==='profile') {
-    profilePage.classList.add('active');
+  const topbar = document.getElementById('topbar');
+  if (page === 'feed') {
+    topbar.style.display = 'flex';
+    const activeSlide = feedEl.querySelectorAll('.video-slide')[activeIdx];
+    const vid = activeSlide && activeSlide.querySelector('video');
+    if (vid) vid.play().catch(()=>{});
+  } else {
+    topbar.style.display = 'none';
     feedEl.querySelectorAll('video').forEach(x => x.pause());
-    topbar.style.display='none';
-    renderProfileGrid();
-    applyProfile();
+    if (page === 'profile') {
+      applyProfile();
+      renderProfileGrid();
+    } else if (page === 'discover') {
+      renderDiscover();
+    } else if (page === 'inbox') {
+      renderInbox();
+    }
   }
 }
 
-function switchTab(tab,el) {
-  document.querySelectorAll('.topbar-tab').forEach(t=>t.classList.remove('active'));
-  el.classList.add('active');
-  if(tab==='following') showToast('Following feed coming soon!');
+function openInFeed(idx) {
+  goPage('feed', document.getElementById('nav-home'));
+  setTimeout(() => {
+    const slide = feedEl.children[idx];
+    if (slide) slide.scrollIntoView({ behavior: 'smooth' });
+  }, 150);
 }
 
-function closeOnBackdrop(e,id) {
-  if(e.target.id===id) document.getElementById(id).classList.remove('open');
+function switchFeedTab(tab) {
+  currentFeedTab = tab;
+  document.getElementById('tab-following').classList.toggle('active', tab === 'following');
+  document.getElementById('tab-foryou').classList.toggle('active', tab === 'foryou');
+  if (tab === 'following') {
+    showToast('Following feed curated for you ✨');
+  } else {
+    showToast('Showing For You recommendations 🔥');
+  }
+}
+
+function closeOnBackdrop(e, id) {
+  if (e.target.id === id) document.getElementById(id).classList.remove('open');
 }
 
 // ═══════════════════════════════════════════════════════
-//  HELPERS
+//  KEYBOARD SHORTCUTS & DESKTOP CONTROLS
 // ═══════════════════════════════════════════════════════
-function fmtC(n) { return n > 0 ? fmtN(n) : ''; }
-function cmCount(v) { return (v.comments||0) + ((v.userComments||[]).length); }
-function refreshCounts(v) {
-  const g = id => document.getElementById(id);
-  const l = g('lc-'+v.id), c = g('cc-'+v.id), s = g('sc-'+v.id);
-  if (l) l.textContent = fmtC(v.likes||0);
-  if (c) c.textContent = fmtC(cmCount(v));
-  if (s) s.textContent = fmtC(v.shares||0);
+window.addEventListener('keydown', e => {
+  if (['input', 'textarea'].includes(document.activeElement?.tagName?.toLowerCase())) return;
+  if (e.key === 'ArrowDown' || e.key === 'j') {
+    e.preventDefault();
+    scrollNextVideo();
+  } else if (e.key === 'ArrowUp' || e.key === 'k') {
+    e.preventDefault();
+    scrollPrevVideo();
+  } else if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    togglePlayPauseActive();
+  } else if (e.key === 'm') {
+    toggleMute();
+  }
+});
+
+function scrollNextVideo() {
+  const slides = feedEl.querySelectorAll('.video-slide');
+  if (activeIdx < slides.length - 1) {
+    slides[activeIdx + 1].scrollIntoView({ behavior: 'smooth' });
+  }
 }
-function fmtN(n) {
-  if(!n) return '0';
-  if(n>=1e6) return (n/1e6).toFixed(n>=10e6?0:1).replace(/\.0$/,'')+'M';
-  if(n>=1e3) return (n/1e3).toFixed(n>=100e3?0:1).replace(/\.0$/,'')+'K';
-  return String(n);
+function scrollPrevVideo() {
+  const slides = feedEl.querySelectorAll('.video-slide');
+  if (activeIdx > 0) {
+    slides[activeIdx - 1].scrollIntoView({ behavior: 'smooth' });
+  }
 }
-function fmtSize(b) {
-  if(b>=1e9) return (b/1e9).toFixed(1)+' GB';
-  if(b>=1e6) return (b/1e6).toFixed(1)+' MB';
-  return (b/1e3).toFixed(0)+' KB';
-}
-function showToast(msg) {
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer=setTimeout(()=>t.classList.remove('show'),2300);
+function togglePlayPauseActive() {
+  const slides = feedEl.querySelectorAll('.video-slide');
+  const slide = slides[activeIdx];
+  if (slide) {
+    const vid = slide.querySelector('video');
+    if (vid) doSingleTap(slide, vid);
+  }
 }
 
-async function deleteVideo(id) {
-  cloudRemove(videos.find(x => x.id === id));
-  try { await dbDelete('videos', id); } catch(e){}
-  videos = videos.filter(v => v.id !== id);
-  if ((profile.saved||[]).includes(id)) { profile.saved = profile.saved.filter(x => x !== id); try { await dbPut('profile', { key:'saved', val:profile.saved.slice() }); } catch(e){} }
-  if (blobUrls[id]) { URL.revokeObjectURL(blobUrls[id]); delete blobUrls[id]; }
-  buildFeed(); renderProfileGrid(); applyProfile();
-  showToast('Video deleted');
-}
-// ── Active slide control: pause/reset previous, unload far videos ──
-let activeIdx = -1, layoutLock = false;
+// ═══════════════════════════════════════════════════════
+//  VIDEO PLAYBACK SYNC
+// ═══════════════════════════════════════════════════════
 function ensureSrc(s) {
-  const v = s.querySelector('video');
-  if (v && !v.getAttribute('src') && blobUrls[s.dataset.id]) { v.src = blobUrls[s.dataset.id]; v.preload = 'auto'; v.load(); }
+  const vid = s.querySelector('video');
+  const vidId = s.dataset.id;
+  const vidObj = videos.find(x => x.id === vidId);
+  if (vid && !vid.getAttribute('src')) {
+    const src = blobUrls[vidId] || vidObj?.videoUrl;
+    if (src) {
+      vid.src = src;
+      vid.preload = 'auto';
+      vid.load();
+    }
+  }
 }
-function syncPlay(v) {
-  v.playbackRate = 1; v.defaultPlaybackRate = 1;
-  const slide = v.closest('.video-slide');
-  const go = () => { if (slide && slide.classList.contains('is-active') && v.paused) v.play().catch(()=>{}); };
-  if (v.readyState >= 2) go(); else v.addEventListener('canplay', go, { once:true });
-}
+
 function setActive(idx) {
   const slides = feedEl.querySelectorAll('.video-slide');
-  if (layoutLock || !slides.length || idx < 0 || idx >= slides.length || idx === activeIdx) return;
+  if (!slides.length || idx < 0 || idx >= slides.length || idx === activeIdx) return;
   activeIdx = idx;
+
   slides.forEach((s, i) => {
-    const v = s.querySelector('video'); if (!v) return;
-    const d = Math.abs(i - idx);
-    if (d === 0) {
-      ensureSrc(s); s.classList.add('is-active');
-      const pi = s.querySelector('.pause-icon'); if (pi) pi.className = 'pause-icon';
-      if (v.currentTime > 0.05) { try { v.currentTime = 0; } catch(_){} }
-      v.muted = window._muted === true;
-      syncPlay(v);
+    const vid = s.querySelector('video');
+    if (!vid) return;
+    const dist = Math.abs(i - idx);
+
+    if (dist === 0) {
+      ensureSrc(s);
+      s.classList.add('is-active');
+      const pi = s.querySelector('.pause-icon');
+      if (pi) pi.className = 'pause-icon';
+      vid.muted = window._muted;
+      vid.play().catch(()=>{});
     } else {
       s.classList.remove('is-active');
-      v.pause();
-      try { v.currentTime = 0; } catch(_){}
-      const pb = s.querySelector('.progress-bar'); if (pb) pb.style.width = '0%';
-      if (d <= 1) ensureSrc(s);
-      else if (v.getAttribute('src')) { v.removeAttribute('src'); v.load(); }
+      vid.pause();
+      try { vid.currentTime = 0; } catch(_){}
+      const pb = s.querySelector('.progress-bar');
+      if (pb) pb.style.width = '0%';
+      if (dist <= 1) ensureSrc(s);
     }
   });
 }
-let _scrollT;
-feedEl.addEventListener('scroll', () => {
-  clearTimeout(_scrollT);
-  _scrollT = setTimeout(() => { const h = feedEl.clientHeight; if (h && !layoutLock) setActive(Math.round(feedEl.scrollTop / h)); }, 120);
-}, { passive: true });
 
-// ── Comments bottom-sheet layout (video adapts to its own aspect ratio) ──
-const cmModal = document.getElementById('comments-modal');
-function cmLayout(open) {
-  const sheet = cmModal.querySelector('.comments-sheet');
-  layoutLock = true; setTimeout(() => { layoutLock = false; }, 450);
-  document.body.classList.toggle('cm-open', open);
-  feedEl.style.scrollSnapType = 'none';
-  if (!open) {
-    feedEl.style.height = ''; sheet.style.height = '';
-    feedEl.scrollTop = Math.max(0, activeIdx) * feedEl.clientHeight;
-  } else {
-    const H = window.innerHeight, W = feedEl.clientWidth || window.innerWidth;
-    const s = feedEl.querySelectorAll('.video-slide')[activeIdx], v = s && s.querySelector('video');
-    let fh = H * 0.4;
-    if (v && v.videoWidth && v.videoHeight) fh = Math.min(H * 0.42, Math.max(H * 0.24, W * v.videoHeight / v.videoWidth));
-    fh = Math.round(fh);
-    feedEl.style.height = fh + 'px'; sheet.style.height = (H - fh) + 'px';
-    feedEl.scrollTop = Math.max(0, activeIdx) * fh;
-  }
-  setTimeout(() => { feedEl.style.scrollSnapType = ''; }, 60);
-}
-function cmLayout2(open) {
-  const sheet = cmModal.querySelector('.comments-sheet');
-  const slide = feedEl.querySelectorAll('.video-slide')[Math.max(0, activeIdx)];
-  const v = slide && slide.querySelector('video');
-  document.body.classList.toggle('cm-open', open);
-  if (!slide || !v) return;
-  if (!open) {
-    ['top','left','width','height'].forEach(p => { v.style[p] = ''; });
-    ['--vt','--vh','--vl','--vw','--pi-top'].forEach(p => slide.style.removeProperty(p));
-    sheet.style.height = '';
-    return;
-  }
-  const H = window.innerHeight, W = feedEl.clientWidth || window.innerWidth;
-  const a = (v.videoWidth && v.videoHeight) ? v.videoWidth / v.videoHeight : 9 / 16;
-  const top = 12;
-  let bh = Math.min(H * 0.40, W / a);
-  let bw = bh * a;
-  bh = Math.round(bh); bw = Math.round(bw);
-  const bl = Math.round((W - bw) / 2);
-  sheet.style.height = Math.round(Math.max(H * 0.55, H - top - bh - 10)) + 'px';
-  v.style.top = top + 'px'; v.style.left = bl + 'px'; v.style.width = bw + 'px'; v.style.height = bh + 'px';
-  slide.style.setProperty('--vt', top + 'px'); slide.style.setProperty('--vh', bh + 'px');
-  slide.style.setProperty('--vl', bl + 'px'); slide.style.setProperty('--vw', bw + 'px');
-  slide.style.setProperty('--pi-top', Math.round(top + bh / 2) + 'px');
-}
-(function () {
-  const sheet = cmModal.querySelector('.comments-sheet'), h = document.getElementById('commentsTitle');
-  let y0 = null, dy = 0;
-  h.addEventListener('touchstart', e => { y0 = e.touches[0].clientY; dy = 0; sheet.style.transition = 'none'; }, { passive: true });
-  h.addEventListener('touchmove', e => { if (y0 === null) return; dy = Math.max(0, e.touches[0].clientY - y0); sheet.style.transform = 'translateY(' + dy + 'px)'; }, { passive: true });
-  const end = () => { if (y0 === null) return; y0 = null; sheet.style.transition = ''; sheet.style.transform = ''; if (dy > 90) cmModal.classList.remove('open'); dy = 0; };
-  h.addEventListener('touchend', end); h.addEventListener('touchcancel', end);
-})();
-new MutationObserver(() => cmLayout2(cmModal.classList.contains('open'))).observe(cmModal, { attributes: true, attributeFilter: ['class'] });
-(function () {
-  const h = document.getElementById('commentsTitle'); let y0 = null;
-  h.addEventListener('touchstart', e => { y0 = e.touches[0].clientY; }, { passive: true });
-  h.addEventListener('touchmove', e => { /* replaced by smooth drag below */ }, { passive: true });
-})();
-
-// ── Discover, Inbox, More options ──
-function openInFeed(i) {
-  goPage('feed', document.getElementById('nav-home'));
-  setTimeout(() => { const s = feedEl.children[i]; if (s) s.scrollIntoView({ behavior:'smooth' }); }, 200);
-}
-function renderDiscover() {
-  const q = (document.getElementById('discoverInput').value || '').trim().toLowerCase();
-  const body = document.getElementById('discover-body'); body.innerHTML = '';
-  const list = videos.map((v,i) => ({v,i})).filter(({v}) => !q || ((v.caption||'')+' '+(v.hashtags||[]).join(' ')+' '+(v.username||'')).toLowerCase().includes(q));
-  if (!list.length) { const e = document.createElement('div'); e.className = 'sp-empty'; e.textContent = videos.length ? 'No results found' : 'No videos yet. Tap + to upload one.'; body.appendChild(e); return; }
-  const grid = document.createElement('div'); grid.className = 'video-grid';
-  list.forEach(({v,i}) => {
-    const it = document.createElement('div'); it.className = 'grid-item'; it.onclick = () => openInFeed(i);
-    if (blobUrls[v.id]) { const vd = document.createElement('video'); vd.src = blobUrls[v.id] + '#t=0.1'; vd.muted = true; vd.playsInline = true; vd.preload = 'metadata'; it.appendChild(vd); }
-    const lr = document.createElement('div'); lr.className = 'grid-like'; lr.innerHTML = '<span class="material-symbols-rounded fi">favorite</span><span class="grid-like-count">' + fmtN(v.likes||0) + '</span>';
-    it.appendChild(lr); grid.appendChild(it);
-  });
-  body.appendChild(grid);
-}
-function renderInbox() {
-  const body = document.getElementById('inbox-body'); body.innerHTML = '';
-  const items = [];
-  videos.forEach(v => {
-    const cap = (v.caption || 'your video').slice(0, 40);
-    if ((v.likes||0) > 0) items.push({ ic:'favorite', t:'Your video “' + cap + '” has ' + fmtN(v.likes) + (v.likes > 1 ? ' likes' : ' like') });
-    (v.userComments||[]).forEach(c => items.push({ ic:'chat_bubble', t:c.user + ' commented on “' + cap + '”: ' + c.text }));
-  });
-  if (!items.length) { const e = document.createElement('div'); e.className = 'sp-empty'; e.textContent = 'No activity yet. Likes and comments on your videos will show up here.'; body.appendChild(e); return; }
-  items.forEach(it => {
-    const row = document.createElement('div'); row.className = 'inbox-item';
-    const ic = document.createElement('div'); ic.className = 'inbox-ic'; ic.innerHTML = '<span class="material-symbols-rounded">' + it.ic + '</span>';
-    const tx = document.createElement('div'); tx.textContent = it.t;
-    row.appendChild(ic); row.appendChild(tx); body.appendChild(row);
-  });
-}
+// ═══════════════════════════════════════════════════════
+//  MORE OPTIONS
+// ═══════════════════════════════════════════════════════
 let moreId = null;
 function openMore(id) {
   moreId = id;
-  document.getElementById('more-mute-tx').textContent = window._muted ? 'Unmute sound' : 'Mute sound';
-  document.getElementById('more-mute-ic').innerHTML = '';
-  document.getElementById('more-mute-ic').classList.remove('h');
-  document.getElementById('more-mute-ic').textContent = window._muted ? 'volume_up' : 'volume_off';
   document.getElementById('more-modal').classList.add('open');
 }
-function moreAct(a) {
+function moreAct(act) {
   document.getElementById('more-modal').classList.remove('open');
-  if (a === 'share') { openShare(moreId); return; }
-  if (a === 'caption') {
-    const v = videos.find(x => x.id === moreId); const t = (v && v.caption) || '';
-    navigator.clipboard.writeText(t).then(() => showToast('Caption copied!')).catch(() => showToast('Copy: ' + t));
-    return;
+  if (act === 'share') { openShare(moreId); }
+  else if (act === 'caption') {
+    const v = videos.find(x => x.id === moreId);
+    if (v) navigator.clipboard.writeText(v.caption || '').then(() => showToast('Caption copied! 📋'));
+  } else if (act === 'mute') {
+    toggleMute();
   }
-  window._muted = !window._muted;
-  feedEl.querySelectorAll('video').forEach(x => { x.muted = window._muted; });
-  showToast(window._muted ? 'Sound off' : 'Sound on');
 }
 
-// ── Save / bookmark ──
-async function toggleSave(id) {
-  if (!profile.saved) profile.saved = [];
-  const i = profile.saved.indexOf(id), on = i < 0;
-  if (on) profile.saved.push(id); else profile.saved.splice(i, 1);
-  const b = document.getElementById('save-' + id); if (b) b.classList.toggle('saved', on);
-  showToast(on ? 'Saved' : 'Removed from saved');
-  try { await dbPut('profile', { key:'saved', val:profile.saved.slice() }); } catch(e){}
+async function deleteVideo(id) {
+  try { await dbDelete('videos', id); } catch(e){}
+  videos = videos.filter(v => v.id !== id);
+  if ((profile.saved || []).includes(id)) {
+    profile.saved = profile.saved.filter(x => x !== id);
+    try { await dbPut('profile', { key: 'saved', val: profile.saved.slice() }); } catch(e){}
+  }
+  if (blobUrls[id]) { URL.revokeObjectURL(blobUrls[id]); delete blobUrls[id]; }
+  buildFeed();
   renderProfileGrid();
-}
-function renderSavedGrid(wrap) {
-  const list = videos.map((v,i) => ({v,i})).filter(({v}) => (profile.saved||[]).includes(v.id));
-  if (!list.length) {
-    const e = document.createElement('div'); e.className = 'profile-empty';
-    e.innerHTML = '<span class="material-symbols-rounded">bookmark</span><div class="profile-empty-title">No saved videos</div><div class="profile-empty-sub">Videos you save will appear here</div>';
-    wrap.appendChild(e); return;
-  }
-  const grid = document.createElement('div'); grid.className = 'video-grid';
-  list.forEach(({v,i}) => {
-    const it = document.createElement('div'); it.className = 'grid-item'; it.onclick = () => openInFeed(i);
-    if (blobUrls[v.id]) { const vd = document.createElement('video'); vd.src = blobUrls[v.id] + '#t=0.1'; vd.muted = true; vd.playsInline = true; vd.preload = 'metadata'; it.appendChild(vd); }
-    const lr = document.createElement('div'); lr.className = 'grid-like'; lr.innerHTML = '<span class="material-symbols-rounded fi">favorite</span><span class="grid-like-count">' + fmtN(v.likes||0) + '</span>';
-    it.appendChild(lr); grid.appendChild(it);
-  });
-  wrap.appendChild(grid);
+  applyProfile();
+  showToast('Video removed 🗑️');
 }
 
-// ── Cloud save (claude.ai assets + db). Local IndexedDB stays as the on-device copy. ──
-let cloudDb = null, cloudAssets = null;
-const _dbPutLocal = dbPut;
-dbPut = function (store, obj) {
-  const p = _dbPutLocal(store, obj);
-  if (store === 'videos') p.then(() => cloudSave(obj)).catch(() => {});
-  return p;
-};
-async function cloudInit() {
-  try { if (window.claude && claude.use) { cloudDb = await claude.use('db'); cloudAssets = await claude.use('assets'); } } catch (e) { console.warn('cloud init', e); }
+// ═══════════════════════════════════════════════════════
+//  HELPERS & FORMATTING
+// ═══════════════════════════════════════════════════════
+function fmtC(n) { return n > 0 ? fmtN(n) : ''; }
+function cmCount(v) { return (v.comments || 0) + ((v.userComments || []).length); }
+function fmtN(n) {
+  if (!n) return '0';
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 10e6 ? 0 : 1).replace(/\.0$/, '') + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(n >= 100e3 ? 0 : 1).replace(/\.0$/, '') + 'K';
+  return String(n);
 }
-function cloudMeta(v) {
-  return { id:v.id, ts:v.ts, caption:v.caption||'', hashtags:v.hashtags||[], music:v.music||'', username:v.username||'you',
-           likes:v.likes||0, comments:v.comments||0, shares:v.shares||0, userComments:v.userComments||[], assetId:v.assetId };
+function fmtSize(b) {
+  if (b >= 1e9) return (b / 1e9).toFixed(1) + ' GB';
+  if (b >= 1e6) return (b / 1e6).toFixed(1) + ' MB';
+  return (b / 1e3).toFixed(0) + ' KB';
 }
-async function cloudSave(v) {
-  if (!cloudDb || !v || !v.assetId) return;
-  try { await cloudDb.doc('videos/' + v.id).set(cloudMeta(v)); } catch (e) { console.warn('cloud save', e); }
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
 }
-async function cloudUpload(v, quiet) {
-  if (!cloudAssets || !cloudDb || !v.blob) return;
-  try {
-    const r = await cloudAssets.upload(v.blob);
-    v.assetId = r.id;
-    await _dbPutLocal('videos', v);
-    await cloudSave(v);
-    if (!quiet) showToast('☁️ Saved to cloud');
-  } catch (e) { console.warn('cloud upload', e); if (!quiet) showToast('☁️ Cloud save failed — kept on this device'); }
-}
-async function cloudRemove(v) {
-  if (!v || !v.assetId) return;
-  try { if (cloudDb) await cloudDb.doc('videos/' + v.id).delete(); if (cloudAssets) await cloudAssets.delete(v.assetId); } catch (e) { console.warn('cloud remove', e); }
-}
-async function cloudBoot() {
-  await cloudInit();
-  if (!cloudDb) return;
-  try {
-    const snap = await cloudDb.collection('videos').get();
-    let added = false;
-    snap.docs.forEach(doc => {
-      const d = doc.data() || {}; if (!d.assetId || !d.id) return;
-      let v = videos.find(x => x.id === d.id);
-      if (!v) { v = Object.assign({}, d, { blob:null }); videos.push(v); added = true; }
-      else { ['likes','comments','shares','userComments','caption','hashtags'].forEach(k => { if (d[k] !== undefined) v[k] = d[k]; }); v.assetId = d.assetId; }
-      if (!v.blob && !blobUrls[v.id]) blobUrls[v.id] = '/_blob/' + d.assetId;
-    });
-    if (added) { videos.sort((a, b) => b.ts - a.ts); buildFeed(); renderProfileGrid(); applyProfile(); }
-    videos.forEach(refreshCounts);
-  } catch (e) { console.warn('cloud load', e); }
-  if (cloudAssets) {
-    for (const v of videos.slice()) {
-      if (v.blob && !v.assetId && v.blob.size < 20 * 1024 * 1024) await cloudUpload(v, true);
-    }
-  }
-}
-
-document.getElementById('avatarInput').addEventListener('change', async function() {
-  const f = this.files[0]; if (!f) return;
-  let b = f; try { b = new Blob([await f.arrayBuffer()], {type:f.type}); } catch(_){}
-  profile.avatar = b; avatarUrl = null;
-  try { await dbPut('profile', {key:'avatar', val:b}); } catch(e){}
-  applyProfile(); buildFeed(); showToast('Photo updated!');
-});
 </script>
 
-</body></html>
+</body>
+</html>
