@@ -2938,9 +2938,9 @@ async function loadUserProfileFromSupabase(userId) {
       return;
     }
 
-    if (data && (data.name || data.username)) {
+    if (data && (data.display_name || data.full_name || data.name || data.username)) {
       profile.id = data.id;
-      profile.name = data.name || profile.name;
+      profile.name = data.display_name || data.full_name || data.name || profile.name;
       profile.handle = (data.username || profile.handle).replace(/^@/, '');
       profile.bio = data.bio !== null && data.bio !== undefined ? data.bio : '';
       profile.avatar_url = data.avatar_url || null;
@@ -3228,9 +3228,9 @@ async function handlePasswordSignIn() {
       console.warn('Profile fetch error:', err);
     }
 
-    if (existingProfile && (existingProfile.name || existingProfile.username)) {
+    if (existingProfile && (existingProfile.display_name || existingProfile.full_name || existingProfile.name || existingProfile.username)) {
       profile.id = user.id;
-      profile.name = existingProfile.name || profile.name;
+      profile.name = existingProfile.display_name || existingProfile.full_name || existingProfile.name || profile.name;
       profile.handle = (existingProfile.username || profile.handle).replace(/^@/, '');
       profile.bio = existingProfile.bio || '';
       profile.avatar_url = existingProfile.avatar_url || null;
@@ -3398,9 +3398,9 @@ async function verifyAuthOtp() {
       console.warn('Profile lookup note:', err);
     }
 
-    if (existingProfile && (existingProfile.name || existingProfile.username)) {
+    if (existingProfile && (existingProfile.display_name || existingProfile.full_name || existingProfile.name || existingProfile.username)) {
       profile.id = user.id;
-      profile.name = existingProfile.name || profile.name;
+      profile.name = existingProfile.display_name || existingProfile.full_name || existingProfile.name || profile.name;
       profile.handle = (existingProfile.username || profile.handle).replace(/^@/, '');
       profile.bio = existingProfile.bio || '';
       profile.avatar_url = existingProfile.avatar_url || null;
@@ -3537,6 +3537,61 @@ async function uploadAvatarToStorage(userId, file) {
   });
 }
 
+// Resilient database profile save that supports Lovable, custom, and standard Supabase schemas
+// Lovable schema uses: display_name, full_name, username, bio, avatar_url, updated_at
+async function persistProfileToSupabase({ id, name, handle, bio, avatarUrl, email, isNew = false }) {
+  if (!supabaseClient || !id) return { data: null, error: null };
+
+  const payload = {
+    display_name: name,
+    full_name: name,
+    username: handle,
+    bio: bio,
+    updated_at: new Date().toISOString()
+  };
+  if (isNew) {
+    payload.id = id;
+    if (email) payload.email = email;
+  }
+  if (avatarUrl) {
+    payload.avatar_url = avatarUrl;
+  }
+
+  const runQuery = async (data) => {
+    if (isNew) {
+      return await supabaseClient.from('profiles').upsert(data);
+    } else {
+      return await supabaseClient.from('profiles').update(data).eq('id', id);
+    }
+  };
+
+  let res = await runQuery(payload);
+
+  // If a column is not recognized in the PostgREST schema cache, dynamically strip it and retry
+  let retries = 0;
+  while (res && res.error && retries < 5) {
+    retries++;
+    const msg = res.error.message || '';
+    const match = msg.match(/Could not find the '([^']+)' column of 'profiles' in the schema cache/i);
+    if (match && match[1]) {
+      const missingColumn = match[1];
+      console.warn(`Stripping unknown column '${missingColumn}' from profiles payload`);
+      delete payload[missingColumn];
+
+      // If both display_name and full_name were stripped, try 'name'
+      if (!payload.display_name && !payload.full_name && !payload.name) {
+        payload.name = name;
+      }
+
+      res = await runQuery(payload);
+    } else {
+      break;
+    }
+  }
+
+  return res;
+}
+
 async function saveProfileSetup() {
   if (!currentAuthUser) {
     showToast('Please sign in first');
@@ -3592,27 +3647,22 @@ async function saveProfileSetup() {
 
     // 2. Insert/Upsert into public.profiles linked to auth.users.id
     submitBtn.innerHTML = '<span class="loading-ring-sm"></span> Creating Profile Record…';
-    const profileRow = {
+    const { error: saveErr } = await persistProfileToSupabase({
       id: currentAuthUser.id,
       name: name,
-      username: handle,
+      handle: handle,
       bio: bio,
-      updated_at: new Date().toISOString()
-    };
-    if (avatarUrl) profileRow.avatar_url = avatarUrl;
+      avatarUrl: avatarUrl,
+      email: currentAuthUser.email,
+      isNew: true
+    });
 
-    if (supabaseClient) {
-      const { error: upsertErr } = await supabaseClient
-        .from('profiles')
-        .upsert(profileRow);
-
-      if (upsertErr) {
-        errBox.textContent = 'Database error: ' + upsertErr.message;
-        errBox.style.display = 'block';
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = '<span class="material-symbols-rounded">check</span> Complete Profile';
-        return;
-      }
+    if (saveErr) {
+      errBox.textContent = 'Database error: ' + saveErr.message;
+      errBox.style.display = 'block';
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<span class="material-symbols-rounded">check</span> Complete Profile';
+      return;
     }
 
     profile.id = currentAuthUser.id;
@@ -3725,18 +3775,14 @@ async function saveProfile() {
     // 2. Update existing public.profiles row
     if (supabaseClient && currentAuthUser) {
       saveBtn.innerHTML = '<span class="loading-ring-sm"></span> Updating Profile…';
-      const updateData = {
+      const { error: updateErr } = await persistProfileToSupabase({
+        id: currentAuthUser.id,
         name: name,
-        username: handle,
+        handle: handle,
         bio: bio,
-        updated_at: new Date().toISOString()
-      };
-      if (avatarUrl) updateData.avatar_url = avatarUrl;
-
-      const { error: updateErr } = await supabaseClient
-        .from('profiles')
-        .update(updateData)
-        .eq('id', currentAuthUser.id);
+        avatarUrl: avatarUrl,
+        isNew: false
+      });
 
       if (updateErr) {
         console.warn('public.profiles update error:', updateErr.message);
