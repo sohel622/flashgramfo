@@ -775,7 +775,7 @@
       width: 100%;
       height: 44px;
       background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.16);
       color: #fff;
       border-radius: 10px;
       font-size: 14px;
@@ -785,8 +785,101 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
+      transition: background .15s, border-color .15s;
     }
     .auth-btn-secondary:active { background: rgba(255, 255, 255, 0.15); }
+    .auth-btn-secondary:hover { border-color: rgba(255, 255, 255, 0.3); }
+
+    /* Password Flow & Tabs Styling */
+    .password-input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .password-input-wrap .text-input {
+      padding-right: 44px;
+    }
+    .password-toggle-btn {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--fg2);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px;
+      border-radius: 6px;
+      transition: color .15s;
+    }
+    .password-toggle-btn:hover {
+      color: #fff;
+    }
+    .auth-tab-bar {
+      display: flex;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 4px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .auth-tab-btn {
+      flex: 1;
+      height: 38px;
+      border: none;
+      background: transparent;
+      color: var(--fg2);
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: all .15s ease;
+    }
+    .auth-tab-btn.active {
+      background: #222;
+      color: #fff;
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+    .auth-divider {
+      display: flex;
+      align-items: center;
+      text-align: center;
+      margin: 22px 0 16px;
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 11.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .auth-divider::before, .auth-divider::after {
+      content: '';
+      flex: 1;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .auth-divider::before {
+      margin-right: 14px;
+    }
+    .auth-divider::after {
+      margin-left: 14px;
+    }
+    .auth-link-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0;
+      transition: opacity .15s;
+    }
+    .auth-link-btn:hover {
+      opacity: 0.85;
+      text-decoration: underline;
+    }
 
     /* Avatar Upload in Profile Setup */
     .avatar-upload-center {
@@ -1986,7 +2079,7 @@
   </div>
 
   <div class="fs-body">
-    <!-- Step 1: Email Form -->
+    <!-- Step 1: Email Form (OTP Flow) -->
     <div id="auth-email-step">
       <div class="auth-brand">
         <div class="auth-brand-logo">
@@ -2009,9 +2102,17 @@
         Send Verification Code
       </button>
 
-      <div style="margin-top:24px;text-align:center;font-size:12px;color:rgba(255,255,255,0.4);line-height:1.5;">
+      <div style="margin-top:20px;text-align:center;font-size:12px;color:rgba(255,255,255,0.4);line-height:1.5;">
         By continuing, you agree to ReelFlow's Terms of Service and acknowledge our Privacy Policy.
       </div>
+
+      <!-- New Option: Continue with Email & Password -->
+      <div class="auth-divider">or</div>
+
+      <button id="auth-switch-pwd-btn" class="auth-btn-secondary" onclick="openPasswordAuthStep()">
+        <span class="material-symbols-rounded" style="font-size:18px;">lock</span>
+        Continue with Email & Password
+      </button>
     </div>
 
     <!-- Step 2: OTP Verification Form -->
@@ -2048,6 +2149,91 @@
         </button>
       </div>
     </div>
+
+    <!-- Step 3: Email & Password Flow (Sign In & Sign Up Tabs) -->
+    <div id="auth-pwd-step" style="display:none;">
+      <div class="auth-brand" style="margin-bottom:18px;">
+        <div class="auth-brand-logo">
+          <span class="material-symbols-rounded">lock</span>
+        </div>
+        <div class="auth-title" id="auth-pwd-title">Email & Password</div>
+        <div class="auth-sub">Sign in to your account or create a new creator profile</div>
+      </div>
+
+      <!-- Two Tabs: Sign In / Sign Up -->
+      <div class="auth-tab-bar">
+        <button id="auth-tab-signin" class="auth-tab-btn active" onclick="switchAuthPwdTab('signin')">Sign In</button>
+        <button id="auth-tab-signup" class="auth-tab-btn" onclick="switchAuthPwdTab('signup')">Sign Up</button>
+      </div>
+
+      <div class="auth-error-box" id="auth-pwd-error"></div>
+      <div class="auth-success-box" id="auth-pwd-success"></div>
+
+      <!-- Tab 1: Sign In (Existing User) -->
+      <div id="auth-pwd-signin-form">
+        <div class="auth-input-group">
+          <label class="auth-label" for="pwd-signin-email">Email Address</label>
+          <input id="pwd-signin-email" type="email" class="text-input" placeholder="creator@gmail.com" onkeydown="if(event.key==='Enter')handlePasswordSignIn()">
+        </div>
+
+        <div class="auth-input-group">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <label class="auth-label" style="margin-bottom:0;" for="pwd-signin-pass">Password</label>
+            <button type="button" class="auth-link-btn" onclick="handleForgotPassword()">Forgot password?</button>
+          </div>
+          <div class="password-input-wrap">
+            <input id="pwd-signin-pass" type="password" class="text-input" placeholder="Enter your password" onkeydown="if(event.key==='Enter')handlePasswordSignIn()">
+            <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('pwd-signin-pass', this)" title="Show/Hide Password">
+              <span class="material-symbols-rounded" style="font-size:20px;">visibility</span>
+            </button>
+          </div>
+        </div>
+
+        <button id="pwd-signin-btn" class="auth-btn-primary" onclick="handlePasswordSignIn()">
+          <span class="material-symbols-rounded">login</span>
+          Sign In
+        </button>
+      </div>
+
+      <!-- Tab 2: Sign Up (New User) -->
+      <div id="auth-pwd-signup-form" style="display:none;">
+        <div class="auth-input-group">
+          <label class="auth-label" for="pwd-signup-email">Email Address</label>
+          <input id="pwd-signup-email" type="email" class="text-input" placeholder="creator@gmail.com">
+        </div>
+
+        <div class="auth-input-group">
+          <label class="auth-label" for="pwd-signup-pass">New Password (min 8 characters)</label>
+          <div class="password-input-wrap">
+            <input id="pwd-signup-pass" type="password" class="text-input" placeholder="Create a password (min 8 chars)">
+            <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('pwd-signup-pass', this)" title="Show/Hide Password">
+              <span class="material-symbols-rounded" style="font-size:20px;">visibility</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="auth-input-group">
+          <label class="auth-label" for="pwd-signup-pass-confirm">Confirm Password</label>
+          <div class="password-input-wrap">
+            <input id="pwd-signup-pass-confirm" type="password" class="text-input" placeholder="Repeat your password" onkeydown="if(event.key==='Enter')handlePasswordSignUp()">
+            <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('pwd-signup-pass-confirm', this)" title="Show/Hide Password">
+              <span class="material-symbols-rounded" style="font-size:20px;">visibility</span>
+            </button>
+          </div>
+        </div>
+
+        <button id="pwd-signup-btn" class="auth-btn-primary" onclick="handlePasswordSignUp()">
+          <span class="material-symbols-rounded">person_add</span>
+          Create Account
+        </button>
+      </div>
+
+      <!-- Return to OTP Flow -->
+      <button class="auth-btn-secondary" style="margin-top:16px;" onclick="openOtpAuthStep()">
+        <span class="material-symbols-rounded" style="font-size:18px;">mail</span>
+        Sign in with Email Verification Code (OTP)
+      </button>
+    </div>
   </div>
 </div>
 
@@ -2062,12 +2248,12 @@
   <div class="fs-body">
     <div class="auth-brand" style="margin-bottom:20px;">
       <div class="auth-title" style="font-size:22px;">Create Creator Profile</div>
-      <div class="auth-sub">Set up your avatar, display name, and unique handle for the community</div>
+      <div class="auth-sub">Set up your avatar and required display name for the community</div>
     </div>
 
     <div class="auth-error-box" id="setup-error"></div>
 
-    <!-- Avatar Picker -->
+    <!-- Avatar Picker with Skip Option -->
     <div class="avatar-upload-center">
       <input type="file" id="setup-avatar-file-input" accept="image/*" style="display:none" onchange="handleSetupAvatarSelected(event)">
       <div class="avatar-upload-circle" onclick="document.getElementById('setup-avatar-file-input').click()" title="Upload profile picture">
@@ -2079,18 +2265,22 @@
           <span class="material-symbols-rounded">photo_camera</span>
         </div>
       </div>
-      <div class="avatar-upload-tip">Tap to select your profile picture / logo</div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px;">
+        <span class="avatar-upload-tip" style="margin-top:0;">Tap circle to select photo</span>
+        <span style="color:rgba(255,255,255,0.3);font-size:12px;">•</span>
+        <button type="button" class="auth-link-btn" onclick="skipAvatarPhoto()" style="font-size:12.5px;">Skip Photo</button>
+      </div>
     </div>
 
-    <!-- Display Name -->
+    <!-- Display Name (Required) -->
     <div class="auth-input-group">
       <label class="auth-label" for="setup-name">Creator Display Name *</label>
-      <input id="setup-name" type="text" class="text-input" placeholder="e.g. Jordan Smith">
+      <input id="setup-name" type="text" class="text-input" placeholder="e.g. Jordan Smith" required>
     </div>
 
     <!-- Username Handle -->
     <div class="auth-input-group">
-      <label class="auth-label" for="setup-handle">Unique Username Handle *</label>
+      <label class="auth-label" for="setup-handle">Unique Username Handle</label>
       <input id="setup-handle" type="text" class="text-input" placeholder="jordansmith">
     </div>
 
@@ -2487,6 +2677,92 @@ function createLocalSupabaseAdapter() {
         });
         return { data: { session, user: session.user }, error: null };
       },
+      async signUp({ email, password }) {
+        const norm = (email || '').trim().toLowerCase();
+        if (!norm || !norm.includes('@') || !norm.includes('.')) {
+          return { data: { user: null }, error: { message: 'Please enter a valid email address' } };
+        }
+        if (!password || password.length < 8) {
+          return { data: { user: null }, error: { message: 'Password must be at least 8 characters long' } };
+        }
+        let users = {};
+        try {
+          users = JSON.parse(localStorage.getItem('reelflow_users_db') || '{}');
+        } catch(_) {}
+        if (users[norm]) {
+          return { data: { user: null }, error: { message: 'Account already exists, please sign in' } };
+        }
+        const uid = 'usr_' + (window.crypto && crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).substr(2, 8)));
+        users[norm] = {
+          id: uid,
+          email: norm,
+          password: password,
+          created_at: new Date().toISOString()
+        };
+        try {
+          localStorage.setItem('reelflow_users_db', JSON.stringify(users));
+        } catch(_) {}
+
+        const session = {
+          access_token: 'local_reelflow_token_' + Date.now(),
+          user: {
+            id: uid,
+            email: norm,
+            created_at: users[norm].created_at
+          }
+        };
+        try {
+          localStorage.setItem('reelflow_session', JSON.stringify(session));
+        } catch(_) {}
+        listeners.forEach(cb => {
+          try { cb('SIGNED_IN', session); } catch(_) {}
+        });
+        return { data: { user: session.user, session: session }, error: null };
+      },
+      async signInWithPassword({ email, password }) {
+        const norm = (email || '').trim().toLowerCase();
+        if (!norm) {
+          return { data: { user: null }, error: { message: 'Please enter your email' } };
+        }
+        if (!password) {
+          return { data: { user: null }, error: { message: 'Please enter your password' } };
+        }
+        let users = {};
+        try {
+          users = JSON.parse(localStorage.getItem('reelflow_users_db') || '{}');
+        } catch(_) {}
+
+        const user = users[norm];
+        if (!user) {
+          return { data: { user: null }, error: { message: 'Invalid login credentials. User not found.' } };
+        }
+        if (user.password !== password) {
+          return { data: { user: null }, error: { message: 'Invalid login credentials. Incorrect password.' } };
+        }
+
+        const session = {
+          access_token: 'local_reelflow_token_' + Date.now(),
+          user: {
+            id: user.id,
+            email: user.email,
+            created_at: user.created_at
+          }
+        };
+        try {
+          localStorage.setItem('reelflow_session', JSON.stringify(session));
+        } catch(_) {}
+        listeners.forEach(cb => {
+          try { cb('SIGNED_IN', session); } catch(_) {}
+        });
+        return { data: { user: session.user, session: session }, error: null };
+      },
+      async resetPasswordForEmail(email) {
+        const norm = (email || '').trim().toLowerCase();
+        if (!norm || !norm.includes('@')) {
+          return { data: null, error: { message: 'Please enter a valid email address' } };
+        }
+        return { data: {}, error: null };
+      },
       async signOut() {
         localStorage.removeItem('reelflow_session');
         listeners.forEach(cb => {
@@ -2715,6 +2991,7 @@ function handleAuthTopBarClick() {
 function openAuthPage() {
   document.getElementById('auth-email-step').style.display = 'block';
   document.getElementById('auth-otp-step').style.display = 'none';
+  document.getElementById('auth-pwd-step').style.display = 'none';
   document.getElementById('auth-error').style.display = 'none';
   document.getElementById('auth-success').style.display = 'none';
   document.getElementById('auth-email-input').value = '';
@@ -2731,8 +3008,281 @@ function closeAuthPage() {
 
 function backToEmailStep() {
   document.getElementById('auth-otp-step').style.display = 'none';
+  document.getElementById('auth-pwd-step').style.display = 'none';
   document.getElementById('auth-email-step').style.display = 'block';
   document.getElementById('auth-error').style.display = 'none';
+}
+
+function openPasswordAuthStep() {
+  document.getElementById('auth-email-step').style.display = 'none';
+  document.getElementById('auth-otp-step').style.display = 'none';
+  document.getElementById('auth-pwd-step').style.display = 'block';
+  const errBox = document.getElementById('auth-pwd-error');
+  const succBox = document.getElementById('auth-pwd-success');
+  if (errBox) errBox.style.display = 'none';
+  if (succBox) succBox.style.display = 'none';
+
+  // Carry over email typed in the OTP screen if available
+  const existingEmail = (document.getElementById('auth-email-input').value || '').trim();
+  if (existingEmail) {
+    const signinEmail = document.getElementById('pwd-signin-email');
+    const signupEmail = document.getElementById('pwd-signup-email');
+    if (signinEmail) signinEmail.value = existingEmail;
+    if (signupEmail) signupEmail.value = existingEmail;
+  }
+
+  switchAuthPwdTab('signin');
+}
+
+function openOtpAuthStep() {
+  document.getElementById('auth-pwd-step').style.display = 'none';
+  document.getElementById('auth-otp-step').style.display = 'none';
+  document.getElementById('auth-email-step').style.display = 'block';
+  document.getElementById('auth-error').style.display = 'none';
+  document.getElementById('auth-success').style.display = 'none';
+}
+
+function switchAuthPwdTab(tab) {
+  const signinBtn = document.getElementById('auth-tab-signin');
+  const signupBtn = document.getElementById('auth-tab-signup');
+  const signinForm = document.getElementById('auth-pwd-signin-form');
+  const signupForm = document.getElementById('auth-pwd-signup-form');
+  const title = document.getElementById('auth-pwd-title');
+  const errBox = document.getElementById('auth-pwd-error');
+  const succBox = document.getElementById('auth-pwd-success');
+  if (errBox) errBox.style.display = 'none';
+  if (succBox) succBox.style.display = 'none';
+
+  if (tab === 'signin') {
+    if (signinBtn) signinBtn.classList.add('active');
+    if (signupBtn) signupBtn.classList.remove('active');
+    if (signinForm) signinForm.style.display = 'block';
+    if (signupForm) signupForm.style.display = 'none';
+    if (title) title.textContent = 'Sign In';
+    setTimeout(() => {
+      const email = document.getElementById('pwd-signin-email');
+      if (email && !email.value) email.focus();
+      else {
+        const pass = document.getElementById('pwd-signin-pass');
+        if (pass) pass.focus();
+      }
+    }, 100);
+  } else {
+    if (signupBtn) signupBtn.classList.add('active');
+    if (signinBtn) signinBtn.classList.remove('active');
+    if (signinForm) signinForm.style.display = 'none';
+    if (signupForm) signupForm.style.display = 'block';
+    if (title) title.textContent = 'Create Account';
+    const signinEmail = (document.getElementById('pwd-signin-email').value || '').trim();
+    const signupEmail = document.getElementById('pwd-signup-email');
+    if (signinEmail && signupEmail && !signupEmail.value) {
+      signupEmail.value = signinEmail;
+    }
+    setTimeout(() => {
+      const email = document.getElementById('pwd-signup-email');
+      if (email && !email.value) email.focus();
+      else {
+        const pass = document.getElementById('pwd-signup-pass');
+        if (pass) pass.focus();
+      }
+    }, 100);
+  }
+}
+
+function togglePasswordVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const isPass = input.type === 'password';
+  input.type = isPass ? 'text' : 'password';
+  const icon = btn.querySelector('.material-symbols-rounded');
+  if (icon) {
+    icon.textContent = isPass ? 'visibility_off' : 'visibility';
+  }
+}
+
+async function handlePasswordSignUp() {
+  const email = (document.getElementById('pwd-signup-email').value || '').trim();
+  const password = document.getElementById('pwd-signup-pass').value;
+  const confirm = document.getElementById('pwd-signup-pass-confirm').value;
+  const errBox = document.getElementById('auth-pwd-error');
+  const succBox = document.getElementById('auth-pwd-success');
+  const btn = document.getElementById('pwd-signup-btn');
+
+  errBox.style.display = 'none';
+  succBox.style.display = 'none';
+
+  if (!email || !email.includes('@') || !email.includes('.')) {
+    errBox.textContent = 'Please enter a valid email address';
+    errBox.style.display = 'block';
+    return;
+  }
+  if (!password || password.length < 8) {
+    errBox.textContent = 'Password must be at least 8 characters long';
+    errBox.style.display = 'block';
+    return;
+  }
+  if (password !== confirm) {
+    errBox.textContent = 'Passwords do not match. Please verify both fields.';
+    errBox.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-ring-sm"></span> Creating Account…';
+
+  try {
+    const { data, error } = await supabaseClient.auth.signUp({
+      email: email,
+      password: password
+    });
+
+    if (error) {
+      const msg = error.message || '';
+      if (/already registered|already in use|User already registered|already exists/i.test(msg)) {
+        errBox.textContent = 'Account already exists, please sign in';
+        errBox.style.display = 'block';
+        setTimeout(() => switchAuthPwdTab('signin'), 1200);
+      } else {
+        errBox.textContent = msg || 'Failed to create account. Please check your information.';
+        errBox.style.display = 'block';
+      }
+      return;
+    }
+
+    const user = data && data.user;
+    if (user) {
+      currentAuthUser = user;
+      closeAuthPage();
+      showToast('Account created! Welcome to ReelFlow 🎉');
+      openProfileSetupPage(user.id, email);
+    } else {
+      succBox.textContent = 'Verification email sent! Please check your email to activate your account, then sign in.';
+      succBox.style.display = 'block';
+    }
+  } catch(err) {
+    errBox.textContent = err.message || 'Network error during sign up. Please try again.';
+    errBox.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-symbols-rounded">person_add</span> Create Account';
+  }
+}
+
+async function handlePasswordSignIn() {
+  const email = (document.getElementById('pwd-signin-email').value || '').trim();
+  const password = document.getElementById('pwd-signin-pass').value;
+  const errBox = document.getElementById('auth-pwd-error');
+  const succBox = document.getElementById('auth-pwd-success');
+  const btn = document.getElementById('pwd-signin-btn');
+
+  errBox.style.display = 'none';
+  succBox.style.display = 'none';
+
+  if (!email || !email.includes('@') || !email.includes('.')) {
+    errBox.textContent = 'Please enter a valid email address';
+    errBox.style.display = 'block';
+    return;
+  }
+  if (!password) {
+    errBox.textContent = 'Please enter your password';
+    errBox.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-ring-sm"></span> Signing In…';
+
+  try {
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
+      email: email,
+      password: password
+    });
+
+    if (error) {
+      const msg = error.message || '';
+      if (/invalid login credentials|invalid credentials|incorrect/i.test(msg)) {
+        errBox.textContent = 'Invalid login credentials. Please check your email and password.';
+      } else {
+        errBox.textContent = msg || 'Failed to sign in. Please try again.';
+      }
+      errBox.style.display = 'block';
+      return;
+    }
+
+    const user = data && data.user;
+    currentAuthUser = user;
+    console.log('User signed in with password:', user.id);
+
+    closeAuthPage();
+
+    // Restore user profile from Supabase database (profiles table)
+    let existingProfile = null;
+    try {
+      const { data: pData } = await supabaseClient
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (pData) existingProfile = pData;
+    } catch(err) {
+      console.warn('Profile fetch error:', err);
+    }
+
+    if (existingProfile && (existingProfile.name || existingProfile.username)) {
+      profile.id = user.id;
+      profile.name = existingProfile.name || profile.name;
+      profile.handle = (existingProfile.username || profile.handle).replace(/^@/, '');
+      profile.bio = existingProfile.bio || '';
+      profile.avatar_url = existingProfile.avatar_url || null;
+      applyProfile();
+      renderProfileGrid();
+      showToast('Welcome back, ' + (profile.name || '@' + profile.handle) + ' 👋');
+    } else {
+      // Direct user to profile setup if no profile record exists yet
+      openProfileSetupPage(user.id, email);
+    }
+  } catch(err) {
+    errBox.textContent = err.message || 'Network error signing in. Please check your connection.';
+    errBox.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-symbols-rounded">login</span> Sign In';
+  }
+}
+
+async function handleForgotPassword() {
+  const email = (document.getElementById('pwd-signin-email').value || '').trim();
+  const errBox = document.getElementById('auth-pwd-error');
+  const succBox = document.getElementById('auth-pwd-success');
+
+  errBox.style.display = 'none';
+  succBox.style.display = 'none';
+
+  if (!email || !email.includes('@') || !email.includes('.')) {
+    errBox.textContent = 'Please enter your email address above to receive a password reset link';
+    errBox.style.display = 'block';
+    document.getElementById('pwd-signin-email').focus();
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin
+    });
+
+    if (error) {
+      errBox.textContent = error.message || 'Could not send reset link. Please try again.';
+      errBox.style.display = 'block';
+      return;
+    }
+
+    succBox.textContent = `Password reset link sent to ${email} ✉️. Please check your inbox or spam.`;
+    succBox.style.display = 'block';
+    showToast('Reset link sent to ' + email + ' ✉️');
+  } catch(err) {
+    errBox.textContent = err.message || 'Error requesting password reset';
+    errBox.style.display = 'block';
+  }
 }
 
 async function sendAuthOtp() {
@@ -2931,6 +3481,17 @@ function handleEditAvatarSelected(e) {
   reader.readAsDataURL(file);
 }
 
+function skipAvatarPhoto() {
+  setupAvatarFile = null;
+  const preview = document.getElementById('setup-avatar-preview');
+  const icon = document.getElementById('setup-avatar-icon');
+  if (preview) { preview.src = ''; preview.style.display = 'none'; }
+  if (icon) { icon.style.display = 'flex'; }
+  showToast('Photo skipped. You can add one anytime.');
+  const nameInput = document.getElementById('setup-name');
+  if (nameInput) nameInput.focus();
+}
+
 // Uploads avatar permanently to Supabase Storage bucket 'avatars'
 // Target path: avatars/{authenticated_user_id}/profile-image-{timestamp}.jpg
 async function uploadAvatarToStorage(userId, file) {
@@ -2990,12 +3551,24 @@ async function saveProfileSetup() {
   errBox.style.display = 'none';
 
   if (!name) {
-    errBox.textContent = 'Creator display name is required';
+    errBox.textContent = 'Profile Name is required';
     errBox.style.display = 'block';
     return;
   }
-  if (!handle || handle.length < 3) {
-    errBox.textContent = 'Username must be at least 3 characters';
+
+  // Auto-generate unique username handle if user left it blank
+  if (!handle) {
+    handle = name.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+    if (!handle && currentAuthUser?.email) {
+      handle = currentAuthUser.email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+    }
+    if (!handle || handle.length < 3) {
+      handle = 'creator_' + (currentAuthUser?.id ? currentAuthUser.id.slice(-4) : Math.floor(1000 + Math.random() * 9000));
+    }
+  }
+
+  if (handle.length < 3) {
+    errBox.textContent = 'Username handle must be at least 3 characters';
     errBox.style.display = 'block';
     return;
   }
