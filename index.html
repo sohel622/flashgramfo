@@ -7,6 +7,13 @@
   <meta name="description" content="ReelFlow - Video sharing and social feed web application featuring short-form video streaming, uploads, profile, and discovery.">
   <meta property="og:title" content="ReelFlow">
   <meta property="og:description" content="ReelFlow - Video sharing and social feed web application featuring short-form video streaming, uploads, profile, and discovery.">
+  <!-- Supabase JS Client (Local UMD Bundle with CDN Fallback) -->
+  <script src="/vendor/supabase.js"></script>
+  <script>
+    if (!window.supabase) {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"><\\/script>');
+    }
+  </script>
   <style>
     :root {
       color-scheme: dark;
@@ -507,13 +514,50 @@
     }
     .profile-topbar-icon:active { background: rgba(255,255,255,0.18); }
 
-    /* Large bold white typography for Name, username below, NO avatar */
+    /* Profile Topbar Auth Status Chip */
+    .auth-status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      cursor: pointer;
+      transition: background .15s, transform .12s;
+    }
+    .auth-status-chip:active {
+      transform: scale(0.96);
+      background: rgba(255, 255, 255, 0.16);
+    }
+    .auth-status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10b981;
+    }
+    .auth-status-dot.signed-out {
+      background: #f59e0b;
+    }
+
+    /* Profile Hero: Name & handle on left, Profile avatar/logo in top-right area */
     .profile-hero {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
       margin-bottom: 22px;
       text-align: left;
     }
+    .profile-hero-info {
+      flex: 1;
+      min-width: 0;
+    }
     .profile-hero-name {
-      font-size: 32px;
+      font-size: 28px;
       font-weight: 800;
       color: #fff;
       letter-spacing: -0.03em;
@@ -526,6 +570,195 @@
       font-weight: 500;
       color: rgba(255, 255, 255, 0.55);
       margin: 0;
+    }
+    .profile-hero-avatar-wrap {
+      width: 76px;
+      height: 76px;
+      min-width: 76px;
+      border-radius: 50%;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.08);
+      border: 2px solid rgba(255, 255, 255, 0.18);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+      cursor: pointer;
+      transition: transform .15s, border-color .15s;
+    }
+    .profile-hero-avatar-wrap:hover {
+      border-color: rgba(255, 255, 255, 0.35);
+      transform: scale(1.02);
+    }
+    .profile-hero-avatar-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .profile-hero-avatar-placeholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04));
+      color: rgba(255, 255, 255, 0.7);
+    }
+    .profile-hero-avatar-placeholder .material-symbols-rounded {
+      font-size: 40px;
+    }
+
+    /* Auth & Profile Setup Sheet Styles */
+    .auth-sheet {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #141414;
+      border-top: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 20px 20px 0 0;
+      padding: 24px 20px calc(24px + env(safe-area-inset-bottom, 0px));
+      box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.9);
+      animation: sheetSlideUp .22s cubic-bezier(.4,0,.2,1);
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .auth-header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .auth-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
+    }
+    .auth-sub {
+      font-size: 13.5px;
+      color: var(--fg2);
+      line-height: 1.45;
+    }
+    .auth-error-box {
+      background: rgba(254, 44, 85, 0.14);
+      border: 1px solid rgba(254, 44, 85, 0.35);
+      color: #ff6b8b;
+      font-size: 13px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      margin-bottom: 14px;
+      display: none;
+      line-height: 1.4;
+      text-align: center;
+    }
+    .auth-otp-input {
+      letter-spacing: 10px;
+      text-align: center;
+      font-size: 26px;
+      font-weight: 800;
+      font-family: monospace;
+      padding: 14px 12px;
+    }
+    .auth-btn-primary {
+      width: 100%;
+      height: 48px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: opacity .15s, transform .12s;
+    }
+    .auth-btn-primary:active { opacity: 0.85; transform: scale(0.98); }
+    .auth-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+    
+    .auth-btn-secondary {
+      width: 100%;
+      height: 44px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #fff;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .auth-btn-secondary:active { background: rgba(255, 255, 255, 0.15); }
+
+    /* Avatar Upload in Profile Setup */
+    .avatar-upload-center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 8px 0 20px 0;
+    }
+    .avatar-upload-circle {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      border: 2px dashed rgba(255, 255, 255, 0.28);
+      position: relative;
+      cursor: pointer;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color .15s, background .15s;
+    }
+    .avatar-upload-circle:hover {
+      border-color: var(--accent);
+      background: rgba(254, 44, 85, 0.06);
+    }
+    .avatar-upload-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+    .avatar-upload-badge {
+      position: absolute;
+      bottom: 2px;
+      right: 2px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    }
+    .avatar-upload-badge .material-symbols-rounded { font-size: 16px; }
+    .avatar-upload-tip {
+      font-size: 12px;
+      color: var(--fg2);
+      margin-top: 8px;
+      font-weight: 500;
+    }
+
+    .loading-ring-sm {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: inline-block;
     }
 
     /* Statistics: Following, Followers, Likes */
@@ -1357,17 +1590,28 @@
 <div id="page-profile">
   <div class="profile-header">
     <div class="profile-topbar">
-      <div style="width:36px"></div>
+      <div id="auth-status-chip" class="auth-status-chip" onclick="handleAuthTopBarClick()" title="Authentication Status">
+        <span class="auth-status-dot signed-out" id="auth-status-dot"></span>
+        <span id="auth-status-text">Sign In</span>
+      </div>
       <div class="profile-topbar-title">Profile</div>
       <div class="profile-topbar-icon" onclick="openEditProfile()" title="Edit Profile">
         <span class="material-symbols-rounded">edit</span>
       </div>
     </div>
 
-    <!-- Big bold white Name and handle below, NO avatar -->
+    <!-- Big bold white Name and handle on left, Profile avatar/logo on top-right -->
     <div class="profile-hero">
-      <h1 class="profile-hero-name" id="profile-display-name">Alex Johnson</h1>
-      <div class="profile-hero-handle" id="profile-handle">@alexjohnson</div>
+      <div class="profile-hero-info">
+        <h1 class="profile-hero-name" id="profile-display-name">Sign In</h1>
+        <div class="profile-hero-handle" id="profile-handle">@user</div>
+      </div>
+      <div class="profile-hero-avatar-wrap" id="profile-avatar-wrap" onclick="openEditProfile()" title="Profile picture">
+        <img id="profile-avatar-img" class="profile-hero-avatar-img" src="" alt="Profile picture" style="display:none;" />
+        <div id="profile-avatar-placeholder" class="profile-hero-avatar-placeholder">
+          <span class="material-symbols-rounded">person</span>
+        </div>
+      </div>
     </div>
 
     <!-- Stats counters -->
@@ -1604,6 +1848,21 @@
     <div class="modal-title">Edit Profile</div>
     <div class="modal-sub">Update your public profile information</div>
 
+    <!-- Avatar Picker in Edit Modal -->
+    <div class="avatar-upload-center" style="margin-bottom:14px;">
+      <input type="file" id="edit-avatar-file-input" accept="image/*" style="display:none" onchange="handleEditAvatarSelected(event)">
+      <div class="avatar-upload-circle" onclick="document.getElementById('edit-avatar-file-input').click()" title="Change avatar">
+        <img id="ep-avatar-preview" class="avatar-upload-img" src="" alt="Avatar" />
+        <div id="ep-avatar-icon" style="display:flex;align-items:center;justify-content:center;color:var(--fg2);">
+          <span class="material-symbols-rounded" style="font-size:42px;">person</span>
+        </div>
+        <div class="avatar-upload-badge">
+          <span class="material-symbols-rounded">photo_camera</span>
+        </div>
+      </div>
+      <div class="avatar-upload-tip">Change Profile Picture</div>
+    </div>
+
     <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Display Name</div>
     <input id="ep-name" type="text" class="text-input" placeholder="Your Name" style="margin-bottom:14px;">
 
@@ -1613,9 +1872,141 @@
     <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Bio</div>
     <textarea id="ep-bio" class="text-input" rows="3" placeholder="Tell the world about yourself…" style="margin-bottom:18px;resize:none;"></textarea>
 
-    <button class="upload-btn" onclick="saveProfile()">
+    <button id="ep-save-btn" class="upload-btn" onclick="saveProfile()">
       <span class="material-symbols-rounded">check</span>
       Save Changes
+    </button>
+
+    <button id="ep-logout-btn" class="auth-btn-secondary" style="margin-top:10px;color:#fe2c55;border-color:rgba(254,44,85,0.25);display:none;" onclick="handleSignOut()">
+      <span class="material-symbols-rounded" style="font-size:18px;">logout</span>
+      Log Out of Account
+    </button>
+  </div>
+</div>
+
+<!-- AUTHENTICATION MODAL (Email OTP Verification) -->
+<div id="auth-modal" onclick="closeOnBackdrop(event,'auth-modal')">
+  <div class="auth-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    
+    <!-- Step 1: Email Form -->
+    <div id="auth-email-step">
+      <div class="auth-header">
+        <div class="auth-title">Log In or Sign Up</div>
+        <div class="auth-sub">Enter your Gmail or email address to receive a secure 6-digit OTP verification code</div>
+      </div>
+      <div class="auth-error-box" id="auth-error"></div>
+      
+      <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Email Address</div>
+      <input id="auth-email-input" type="email" class="text-input" placeholder="you@gmail.com" style="margin-bottom:16px;" onkeydown="if(event.key==='Enter')sendAuthOtp()">
+
+      <button id="auth-send-btn" class="auth-btn-primary" onclick="sendAuthOtp()">
+        <span class="material-symbols-rounded">mail</span>
+        Send Verification Code
+      </button>
+
+      <button class="auth-btn-secondary" style="margin-top:12px;" onclick="openSupabaseConfigModal()">
+        <span class="material-symbols-rounded" style="font-size:18px;">settings</span>
+        Supabase Connection Settings
+      </button>
+    </div>
+
+    <!-- Step 2: OTP Verification Form -->
+    <div id="auth-otp-step" style="display:none;">
+      <div class="auth-header">
+        <div class="auth-title">Enter Verification Code</div>
+        <div class="auth-sub">Enter the 6-digit OTP sent to <strong id="auth-target-email" style="color:#fff;"></strong></div>
+      </div>
+      <div class="auth-error-box" id="auth-otp-error"></div>
+
+      <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;text-align:center;">6-Digit OTP</div>
+      <input id="auth-otp-input" type="text" maxlength="6" class="text-input auth-otp-input" placeholder="••••••" style="margin-bottom:16px;" onkeydown="if(event.key==='Enter')verifyAuthOtp()">
+
+      <button id="auth-verify-btn" class="auth-btn-primary" onclick="verifyAuthOtp()">
+        <span class="material-symbols-rounded">check</span>
+        Verify & Sign In
+      </button>
+
+      <div style="display:flex;gap:10px;margin-top:12px;">
+        <button class="auth-btn-secondary" style="flex:1;" onclick="sendAuthOtp()">
+          Resend Code
+        </button>
+        <button class="auth-btn-secondary" style="flex:1;" onclick="document.getElementById('auth-otp-step').style.display='none';document.getElementById('auth-email-step').style.display='block';">
+          Change Email
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PROFILE SETUP MODAL (After successful OTP verification) -->
+<div id="profile-setup-modal" onclick="closeOnBackdrop(event,'profile-setup-modal')">
+  <div class="auth-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="auth-header">
+      <div class="auth-title">Complete Your Profile</div>
+      <div class="auth-sub">Upload your picture, choose your creator name, and set a unique handle</div>
+    </div>
+    <div class="auth-error-box" id="setup-error"></div>
+
+    <!-- Avatar Picker -->
+    <div class="avatar-upload-center">
+      <input type="file" id="setup-avatar-file-input" accept="image/*" style="display:none" onchange="handleSetupAvatarSelected(event)">
+      <div class="avatar-upload-circle" onclick="document.getElementById('setup-avatar-file-input').click()" title="Upload avatar">
+        <img id="setup-avatar-preview" class="avatar-upload-img" src="" alt="Avatar Preview" />
+        <div id="setup-avatar-icon" style="display:flex;align-items:center;justify-content:center;color:var(--fg2);">
+          <span class="material-symbols-rounded" style="font-size:42px;">person</span>
+        </div>
+        <div class="avatar-upload-badge">
+          <span class="material-symbols-rounded">photo_camera</span>
+        </div>
+      </div>
+      <div class="avatar-upload-tip">Tap circle to select profile picture</div>
+    </div>
+
+    <!-- Display Name -->
+    <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Display Name *</div>
+    <input id="setup-name" type="text" class="text-input" placeholder="e.g. Alex Johnson" style="margin-bottom:14px;">
+
+    <!-- Username -->
+    <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Username Handle *</div>
+    <input id="setup-handle" type="text" class="text-input" placeholder="alexjohnson" style="margin-bottom:14px;">
+
+    <!-- Bio -->
+    <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Bio (Optional)</div>
+    <textarea id="setup-bio" class="text-input" rows="3" placeholder="Tell everyone what you create…" style="margin-bottom:18px;resize:none;"></textarea>
+
+    <button id="setup-submit-btn" class="auth-btn-primary" onclick="saveProfileSetup()">
+      <span class="material-symbols-rounded">check</span>
+      Complete Profile
+    </button>
+  </div>
+</div>
+
+<!-- SUPABASE CONNECTION CONFIG MODAL -->
+<div id="supabase-config-modal" onclick="closeOnBackdrop(event,'supabase-config-modal')">
+  <div class="auth-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="auth-header">
+      <div class="auth-title">Supabase Connection</div>
+      <div class="auth-sub">Enter your Supabase Project URL and Public Anon Key to link your database & storage</div>
+    </div>
+    <div class="auth-error-box" id="config-error"></div>
+
+    <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Supabase Project URL</div>
+    <input id="cfg-url" type="url" class="text-input" placeholder="https://your-project.supabase.co" style="margin-bottom:14px;">
+
+    <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Supabase Anon Key (Public)</div>
+    <input id="cfg-key" type="text" class="text-input" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." style="margin-bottom:16px;">
+
+    <button id="cfg-save-btn" class="auth-btn-primary" onclick="saveSupabaseConfig()">
+      <span class="material-symbols-rounded">check</span>
+      Save & Connect
+    </button>
+
+    <button class="auth-btn-secondary" onclick="copySupabaseSchemaSql()" style="margin-top:12px;">
+      <span class="material-symbols-rounded" style="font-size:18px;">content_copy</span>
+      Copy SQL Schema (profiles & avatars)
     </button>
   </div>
 </div>
@@ -1695,7 +2086,10 @@ const P={
   photo_camera:'<path d="M4 7h4l2-3h4l2 3h4v13H4z"/><circle cx="12" cy="13" r="3.5"/>',
   image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
   arrow_back:'<path d="M19 12H5M12 19l-7-7 7-7"/>',
-  trending_up:'<path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/>'
+  trending_up:'<path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/>',
+  logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  login:'<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/>',
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'
 };
 const FILL={home:1,person:1,favorite:1,chat_bubble:1,videocam:1,notifications:1,play_arrow:1};
 function hyd(el){
@@ -1769,17 +2163,29 @@ function dbDelete(store, key) {
 }
 
 // ═══════════════════════════════════════════════════════
-//  APP STATE
+//  APP STATE & SUPABASE CLIENT
 // ═══════════════════════════════════════════════════════
 let videos = [];
 let profile = {
+  id: null,
   saved: [],
-  name: 'Alex Johnson',
-  handle: 'alexjohnson',
-  bio: 'Capturing motion & short stories 🎬 Exploring creative flow ✨',
-  following: 148,
-  followers: 18400,
-  likes: 54200
+  name: 'Sign In',
+  handle: 'user',
+  bio: '',
+  avatar_url: null,
+  following: 0,
+  followers: 0,
+  likes: 0
+};
+let supabaseClient = null;
+let currentAuthUser = null;
+let currentPendingEmail = '';
+let setupAvatarFile = null;
+let editAvatarFile = null;
+let supabaseConfig = {
+  url: '',
+  anonKey: '',
+  configured: false
 };
 let storageOk = false;
 let blobUrls = {};
@@ -1926,6 +2332,7 @@ let chatThreads = [
     videos = defaultSeedVideos.slice();
   }
 
+  await initSupabase();
   applyProfile();
   buildFeed();
   renderCreators();
@@ -1935,44 +2342,676 @@ let chatThreads = [
 })();
 
 // ═══════════════════════════════════════════════════════
-//  OWN PROFILE (Reference Image 2 Style)
+//  SUPABASE INTEGRATION (Auth, Profiles, Storage)
+// ═══════════════════════════════════════════════════════
+async function initSupabase() {
+  try {
+    const res = await fetch('/api/config');
+    const data = await res.json();
+    if (data.supabaseUrl && data.supabaseAnonKey) {
+      supabaseConfig.url = data.supabaseUrl;
+      supabaseConfig.anonKey = data.supabaseAnonKey;
+      supabaseConfig.configured = true;
+    }
+  } catch(e) {
+    console.warn('Could not read /api/config', e);
+  }
+
+  // Fallback to local storage if user saved config in browser
+  if (!supabaseConfig.url) {
+    supabaseConfig.url = localStorage.getItem('reelflow_supabase_url') || '';
+    supabaseConfig.anonKey = localStorage.getItem('reelflow_supabase_anon_key') || '';
+    if (supabaseConfig.url && supabaseConfig.anonKey) {
+      supabaseConfig.configured = true;
+    }
+  }
+
+  if (supabaseConfig.configured && window.supabase && window.supabase.createClient) {
+    try {
+      supabaseClient = window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true
+        }
+      });
+      console.log('Supabase client initialized');
+
+      // Check existing authenticated session
+      const { data: sessionData, error: sessErr } = await supabaseClient.auth.getSession();
+      if (sessionData && sessionData.session && sessionData.session.user) {
+        currentAuthUser = sessionData.session.user;
+        await loadUserProfileFromSupabase(currentAuthUser.id);
+      }
+
+      // Listen for auth state transitions (Sign-in, Sign-out, OTP verify)
+      supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        console.log('Supabase Auth Event:', event, session?.user?.id);
+        if (session && session.user) {
+          currentAuthUser = session.user;
+          await loadUserProfileFromSupabase(session.user.id);
+        } else {
+          currentAuthUser = null;
+          updateAuthStatusUI();
+        }
+      });
+    } catch(err) {
+      console.error('Supabase initialization error:', err);
+    }
+  }
+
+  updateAuthStatusUI();
+}
+
+async function loadUserProfileFromSupabase(userId) {
+  if (!supabaseClient || !userId) return;
+  try {
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('public.profiles query error:', error.message);
+      return;
+    }
+
+    if (data && (data.name || data.username)) {
+      profile.id = data.id;
+      profile.name = data.name || profile.name;
+      profile.handle = (data.username || profile.handle).replace(/^@/, '');
+      profile.bio = data.bio !== null && data.bio !== undefined ? data.bio : '';
+      profile.avatar_url = data.avatar_url || null;
+
+      // Cache locally
+      try {
+        await dbPut('profile', { key: 'name', val: profile.name });
+        await dbPut('profile', { key: 'handle', val: profile.handle });
+        await dbPut('profile', { key: 'bio', val: profile.bio });
+        if (profile.avatar_url) await dbPut('profile', { key: 'avatar_url', val: profile.avatar_url });
+      } catch(_) {}
+
+      applyProfile();
+      renderProfileGrid();
+    } else {
+      // Authenticated but no profile record -> trigger Profile Setup Screen
+      openProfileSetup(userId, currentAuthUser?.email || '');
+    }
+  } catch(e) {
+    console.error('Error in loadUserProfileFromSupabase:', e);
+  }
+}
+
+function updateAuthStatusUI() {
+  const chipDot = document.getElementById('auth-status-dot');
+  const chipText = document.getElementById('auth-status-text');
+  const logoutBtn = document.getElementById('ep-logout-btn');
+
+  if (currentAuthUser) {
+    if (chipDot) chipDot.className = 'auth-status-dot';
+    if (chipText) chipText.textContent = '@' + (profile.handle || 'me');
+    if (logoutBtn) logoutBtn.style.display = 'flex';
+  } else {
+    if (chipDot) chipDot.className = 'auth-status-dot signed-out';
+    if (chipText) chipText.textContent = 'Sign In';
+    if (logoutBtn) logoutBtn.style.display = 'none';
+  }
+}
+
+function handleAuthTopBarClick() {
+  if (currentAuthUser) {
+    openEditProfile();
+  } else {
+    openAuthModal();
+  }
+}
+
+function openAuthModal() {
+  if (!supabaseConfig.configured) {
+    openSupabaseConfigModal();
+    return;
+  }
+  document.getElementById('auth-email-step').style.display = 'block';
+  document.getElementById('auth-otp-step').style.display = 'none';
+  document.getElementById('auth-error').style.display = 'none';
+  document.getElementById('auth-email-input').value = '';
+  document.getElementById('auth-otp-input').value = '';
+  document.getElementById('auth-modal').classList.add('open');
+  setTimeout(() => document.getElementById('auth-email-input').focus(), 120);
+}
+
+async function sendAuthOtp() {
+  const emailInput = document.getElementById('auth-email-input');
+  const email = (emailInput.value || currentPendingEmail || '').trim();
+  const errBox = document.getElementById('auth-error');
+  const sendBtn = document.getElementById('auth-send-btn');
+
+  errBox.style.display = 'none';
+
+  if (!email || !email.includes('@') || !email.includes('.')) {
+    errBox.textContent = 'Please enter a valid Gmail / email address';
+    errBox.style.display = 'block';
+    return;
+  }
+
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<span class="loading-ring-sm"></span> Sending Code…';
+
+  try {
+    const { data, error } = await supabaseClient.auth.signInWithOtp({
+      email: email,
+      options: {
+        shouldCreateUser: true
+      }
+    });
+
+    if (error) {
+      errBox.textContent = error.message || 'Failed to send OTP verification code';
+      errBox.style.display = 'block';
+      return;
+    }
+
+    currentPendingEmail = email;
+    document.getElementById('auth-email-step').style.display = 'none';
+    document.getElementById('auth-otp-step').style.display = 'block';
+    document.getElementById('auth-target-email').textContent = email;
+    document.getElementById('auth-otp-input').value = '';
+    document.getElementById('auth-otp-error').style.display = 'none';
+    setTimeout(() => document.getElementById('auth-otp-input').focus(), 150);
+    showToast('6-digit code sent to your email ✉️');
+  } catch(err) {
+    errBox.textContent = err.message || 'Network error sending OTP';
+    errBox.style.display = 'block';
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = '<span class="material-symbols-rounded">mail</span> Send Verification Code';
+  }
+}
+
+async function verifyAuthOtp() {
+  const otpInput = document.getElementById('auth-otp-input');
+  const token = (otpInput.value || '').trim();
+  const errBox = document.getElementById('auth-otp-error');
+  const verifyBtn = document.getElementById('auth-verify-btn');
+
+  errBox.style.display = 'none';
+
+  if (!token || token.length < 6) {
+    errBox.textContent = 'Please enter the complete 6-digit OTP code';
+    errBox.style.display = 'block';
+    return;
+  }
+
+  verifyBtn.disabled = true;
+  verifyBtn.innerHTML = '<span class="loading-ring-sm"></span> Verifying OTP…';
+
+  try {
+    const { data, error } = await supabaseClient.auth.verifyOtp({
+      email: currentPendingEmail,
+      token: token,
+      type: 'email'
+    });
+
+    if (error) {
+      errBox.textContent = error.message || 'Invalid or expired code. Please try again.';
+      errBox.style.display = 'block';
+      return;
+    }
+
+    // Success! Real authenticated Supabase user ID (auth.uid())
+    const user = data.user;
+    currentAuthUser = user;
+    console.log('Real Supabase authenticated user ID:', user.id);
+
+    document.getElementById('auth-modal').classList.remove('open');
+    showToast('Email verified successfully! 🎉');
+
+    // Query existing profile in public.profiles
+    const { data: existingProfile, error: pErr } = await supabaseClient
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (existingProfile && (existingProfile.name || existingProfile.username)) {
+      profile.id = user.id;
+      profile.name = existingProfile.name || profile.name;
+      profile.handle = (existingProfile.username || profile.handle).replace(/^@/, '');
+      profile.bio = existingProfile.bio || '';
+      profile.avatar_url = existingProfile.avatar_url || null;
+      applyProfile();
+      renderProfileGrid();
+      showToast('Welcome back, @' + profile.handle + ' 👋');
+    } else {
+      // New user -> open Profile Setup Screen
+      openProfileSetup(user.id, currentPendingEmail);
+    }
+  } catch(err) {
+    errBox.textContent = err.message || 'Verification failed';
+    errBox.style.display = 'block';
+  } finally {
+    verifyBtn.disabled = false;
+    verifyBtn.innerHTML = '<span class="material-symbols-rounded">check</span> Verify & Sign In';
+  }
+}
+
+function openProfileSetup(userId, email = '') {
+  setupAvatarFile = null;
+  let suggestedName = '';
+  let suggestedHandle = '';
+  if (email && email.includes('@')) {
+    const prefix = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '');
+    suggestedHandle = prefix.toLowerCase().slice(0, 20);
+    suggestedName = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+  }
+
+  document.getElementById('setup-name').value = suggestedName || '';
+  document.getElementById('setup-handle').value = suggestedHandle || '';
+  document.getElementById('setup-bio').value = '';
+  document.getElementById('setup-error').style.display = 'none';
+
+  const preview = document.getElementById('setup-avatar-preview');
+  const icon = document.getElementById('setup-avatar-icon');
+  preview.style.display = 'none';
+  preview.src = '';
+  icon.style.display = 'flex';
+
+  document.getElementById('profile-setup-modal').classList.add('open');
+}
+
+function handleSetupAvatarSelected(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  setupAvatarFile = file;
+
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    const preview = document.getElementById('setup-avatar-preview');
+    const icon = document.getElementById('setup-avatar-icon');
+    preview.src = evt.target.result;
+    preview.style.display = 'block';
+    icon.style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+
+function handleEditAvatarSelected(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  editAvatarFile = file;
+
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    const preview = document.getElementById('ep-avatar-preview');
+    const icon = document.getElementById('ep-avatar-icon');
+    preview.src = evt.target.result;
+    preview.style.display = 'block';
+    icon.style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveProfileSetup() {
+  if (!currentAuthUser) {
+    showToast('Please sign in first');
+    return;
+  }
+  const name = document.getElementById('setup-name').value.trim();
+  let handle = document.getElementById('setup-handle').value.trim().toLowerCase().replace(/^@/, '');
+  const bio = document.getElementById('setup-bio').value.trim();
+  const errBox = document.getElementById('setup-error');
+  const submitBtn = document.getElementById('setup-submit-btn');
+
+  errBox.style.display = 'none';
+
+  if (!name) {
+    errBox.textContent = 'Display name is required';
+    errBox.style.display = 'block';
+    return;
+  }
+  if (!handle || handle.length < 3) {
+    errBox.textContent = 'Username must be at least 3 characters';
+    errBox.style.display = 'block';
+    return;
+  }
+  if (!/^[a-z0-9_]+$/.test(handle)) {
+    errBox.textContent = 'Username can only contain lowercase letters, numbers, and underscores';
+    errBox.style.display = 'block';
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<span class="loading-ring-sm"></span> Saving Profile…';
+
+  try {
+    let avatarUrl = null;
+
+    // 1. Upload avatar to Supabase Storage bucket 'avatars'
+    if (setupAvatarFile) {
+      submitBtn.innerHTML = '<span class="loading-ring-sm"></span> Uploading Picture…';
+      const ext = setupAvatarFile.name.split('.').pop() || 'jpg';
+      const filePath = `${currentAuthUser.id}/avatar_${Date.now()}.${ext}`;
+
+      const { data: uploadData, error: upErr } = await supabaseClient.storage
+        .from('avatars')
+        .upload(filePath, setupAvatarFile, { upsert: true });
+
+      if (upErr) {
+        console.warn('Storage upload note:', upErr.message);
+      } else {
+        const { data: pubData } = supabaseClient.storage
+          .from('avatars')
+          .getPublicUrl(filePath);
+        avatarUrl = pubData.publicUrl;
+      }
+    }
+
+    // 2. Insert/Upsert into public.profiles linked to auth.users.id
+    submitBtn.innerHTML = '<span class="loading-ring-sm"></span> Creating Profile Record…';
+    const profileRow = {
+      id: currentAuthUser.id,
+      name: name,
+      username: handle,
+      bio: bio,
+      updated_at: new Date().toISOString()
+    };
+    if (avatarUrl) profileRow.avatar_url = avatarUrl;
+
+    const { error: upsertErr } = await supabaseClient
+      .from('profiles')
+      .upsert(profileRow);
+
+    if (upsertErr) {
+      errBox.textContent = 'Database error: ' + upsertErr.message;
+      errBox.style.display = 'block';
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<span class="material-symbols-rounded">check</span> Complete Profile';
+      return;
+    }
+
+    profile.id = currentAuthUser.id;
+    profile.name = name;
+    profile.handle = handle;
+    profile.bio = bio;
+    if (avatarUrl) profile.avatar_url = avatarUrl;
+
+    document.getElementById('profile-setup-modal').classList.remove('open');
+    applyProfile();
+    renderProfileGrid();
+    showToast('Profile created! Welcome to ReelFlow 🎉');
+  } catch(err) {
+    errBox.textContent = err.message || 'Failed to complete profile';
+    errBox.style.display = 'block';
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = '<span class="material-symbols-rounded">check</span> Complete Profile';
+  }
+}
+
+function openSupabaseConfigModal() {
+  document.getElementById('cfg-url').value = supabaseConfig.url || '';
+  document.getElementById('cfg-key').value = supabaseConfig.anonKey || '';
+  document.getElementById('config-error').style.display = 'none';
+  document.getElementById('supabase-config-modal').classList.add('open');
+}
+
+async function saveSupabaseConfig() {
+  const url = document.getElementById('cfg-url').value.trim();
+  const key = document.getElementById('cfg-key').value.trim();
+  const errBox = document.getElementById('config-error');
+  const btn = document.getElementById('cfg-save-btn');
+
+  errBox.style.display = 'none';
+
+  if (!url || !url.startsWith('http')) {
+    errBox.textContent = 'Please enter a valid Supabase project URL (https://xxxx.supabase.co)';
+    errBox.style.display = 'block';
+    return;
+  }
+  if (!key || key.length < 20) {
+    errBox.textContent = 'Please enter your Supabase public anon key';
+    errBox.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-ring-sm"></span> Connecting…';
+
+  try {
+    // 1. Save to server .env
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ supabaseUrl: url, supabaseAnonKey: key })
+    });
+    const data = await res.json();
+
+    // 2. Save to localStorage as backup
+    localStorage.setItem('reelflow_supabase_url', url);
+    localStorage.setItem('reelflow_supabase_anon_key', key);
+
+    supabaseConfig.url = url;
+    supabaseConfig.anonKey = key;
+    supabaseConfig.configured = true;
+
+    // 3. Re-init client
+    await initSupabase();
+
+    document.getElementById('supabase-config-modal').classList.remove('open');
+    showToast('Connected to Supabase! ⚡');
+    openAuthModal();
+  } catch(err) {
+    errBox.textContent = err.message || 'Error saving Supabase connection';
+    errBox.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-symbols-rounded">check</span> Save & Connect';
+  }
+}
+
+function copySupabaseSchemaSql() {
+  const sql = `-- ReelFlow Supabase Database & Storage Setup
+-- Run this in your Supabase Project's SQL Editor
+
+-- 1. Create public.profiles table
+create table if not exists public.profiles (
+  id uuid references auth.users(id) on delete cascade primary key,
+  name text,
+  username text unique,
+  bio text,
+  avatar_url text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 2. Enable Row Level Security (RLS)
+alter table public.profiles enable row level security;
+
+-- 3. RLS Policies for profiles
+create policy "Public profiles are viewable by everyone" 
+on public.profiles for select using (true);
+
+create policy "Users can insert their own profile" 
+on public.profiles for insert with check (auth.uid() = id);
+
+create policy "Users can update their own profile" 
+on public.profiles for update using (auth.uid() = id);
+
+-- 4. Create public storage bucket for avatars
+insert into storage.buckets (id, name, public) 
+values ('avatars', 'avatars', true) 
+on conflict (id) do update set public = true;
+
+-- 5. Storage RLS Policies
+create policy "Avatars are publicly readable" 
+on storage.objects for select using (bucket_id = 'avatars');
+
+create policy "Users can upload their own avatar" 
+on storage.objects for insert with check (bucket_id = 'avatars');
+
+create policy "Users can update their own avatar" 
+on storage.objects for update using (bucket_id = 'avatars');`;
+
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(sql).then(() => {
+      showToast('SQL Schema copied to clipboard! 📋');
+    });
+  } else {
+    prompt('Copy this SQL schema:', sql);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  OWN PROFILE (Reference Image 2 Style + Supabase Avatar)
 // ═══════════════════════════════════════════════════════
 function applyProfile() {
-  document.getElementById('profile-display-name').textContent = profile.name;
-  document.getElementById('profile-handle').textContent = '@' + profile.handle;
-  document.getElementById('profile-bio').textContent = profile.bio;
-  document.getElementById('stat-following').textContent = fmtN(profile.following);
-  document.getElementById('stat-followers').textContent = fmtN(profile.followers);
+  document.getElementById('profile-display-name').textContent = profile.name || (currentAuthUser ? 'Creator' : 'Sign In');
+  document.getElementById('profile-handle').textContent = '@' + (profile.handle || 'user');
+  document.getElementById('profile-bio').textContent = profile.bio || '';
+  document.getElementById('stat-following').textContent = fmtN(profile.following || 0);
+  document.getElementById('stat-followers').textContent = fmtN(profile.followers || 0);
+
+  // Profile Avatar in top-right area of header
+  const avatarImg = document.getElementById('profile-avatar-img');
+  const avatarPlaceholder = document.getElementById('profile-avatar-placeholder');
+  if (profile.avatar_url) {
+    avatarImg.src = profile.avatar_url;
+    avatarImg.style.display = 'block';
+    avatarPlaceholder.style.display = 'none';
+  } else {
+    avatarImg.style.display = 'none';
+    avatarPlaceholder.style.display = 'flex';
+  }
 
   const ownVideos = videos.filter(v => !v.isSeed || v.username === profile.handle);
   const totalLikes = ownVideos.reduce((sum, v) => sum + (v.likes || 0), 0) + (profile.likes || 0);
   document.getElementById('stat-likes').textContent = fmtN(totalLikes);
+
+  updateAuthStatusUI();
 }
 
 function openEditProfile() {
-  document.getElementById('ep-name').value = profile.name;
-  document.getElementById('ep-handle').value = profile.handle;
-  document.getElementById('ep-bio').value = profile.bio;
+  if (!currentAuthUser) {
+    openAuthModal();
+    return;
+  }
+  editAvatarFile = null;
+  document.getElementById('ep-name').value = profile.name || '';
+  document.getElementById('ep-handle').value = profile.handle || '';
+  document.getElementById('ep-bio').value = profile.bio || '';
+
+  const epPreview = document.getElementById('ep-avatar-preview');
+  const epIcon = document.getElementById('ep-avatar-icon');
+  if (profile.avatar_url) {
+    epPreview.src = profile.avatar_url;
+    epPreview.style.display = 'block';
+    epIcon.style.display = 'none';
+  } else {
+    epPreview.style.display = 'none';
+    epIcon.style.display = 'flex';
+  }
+
+  const logoutBtn = document.getElementById('ep-logout-btn');
+  if (logoutBtn) logoutBtn.style.display = currentAuthUser ? 'flex' : 'none';
+
   document.getElementById('edit-profile-modal').classList.add('open');
 }
 
 async function saveProfile() {
-  profile.name = document.getElementById('ep-name').value.trim() || profile.name;
-  profile.handle = document.getElementById('ep-handle').value.replace(/^@/,'').trim() || profile.handle;
-  profile.bio = document.getElementById('ep-bio').value.trim() || profile.bio;
+  const name = document.getElementById('ep-name').value.trim() || profile.name;
+  const handle = document.getElementById('ep-handle').value.replace(/^@/,'').trim().toLowerCase() || profile.handle;
+  const bio = document.getElementById('ep-bio').value.trim();
+  const saveBtn = document.getElementById('ep-save-btn');
+
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="loading-ring-sm"></span> Saving…';
+
+  try {
+    let avatarUrl = profile.avatar_url;
+
+    // 1. Upload new picture if user changed photo
+    if (editAvatarFile && supabaseClient && currentAuthUser) {
+      saveBtn.innerHTML = '<span class="loading-ring-sm"></span> Uploading Picture…';
+      const ext = editAvatarFile.name.split('.').pop() || 'jpg';
+      const filePath = `${currentAuthUser.id}/avatar_${Date.now()}.${ext}`;
+
+      const { data: uploadData, error: upErr } = await supabaseClient.storage
+        .from('avatars')
+        .upload(filePath, editAvatarFile, { upsert: true });
+
+      if (!upErr) {
+        const { data: pubData } = supabaseClient.storage
+          .from('avatars')
+          .getPublicUrl(filePath);
+        avatarUrl = pubData.publicUrl;
+      } else {
+        console.warn('Storage upload error in saveProfile:', upErr);
+      }
+    }
+
+    profile.name = name;
+    profile.handle = handle;
+    profile.bio = bio;
+    profile.avatar_url = avatarUrl;
+
+    // 2. Update existing public.profiles row
+    if (supabaseClient && currentAuthUser) {
+      saveBtn.innerHTML = '<span class="loading-ring-sm"></span> Updating Profile…';
+      const updateData = {
+        name: name,
+        username: handle,
+        bio: bio,
+        updated_at: new Date().toISOString()
+      };
+      if (avatarUrl) updateData.avatar_url = avatarUrl;
+
+      const { error: updateErr } = await supabaseClient
+        .from('profiles')
+        .update(updateData)
+        .eq('id', currentAuthUser.id);
+
+      if (updateErr) {
+        console.warn('public.profiles update error:', updateErr.message);
+      }
+    }
+
+    // Also persist in local offline store
+    try {
+      await dbPut('profile', { key: 'name', val: profile.name });
+      await dbPut('profile', { key: 'handle', val: profile.handle });
+      await dbPut('profile', { key: 'bio', val: profile.bio });
+      if (profile.avatar_url) await dbPut('profile', { key: 'avatar_url', val: profile.avatar_url });
+    } catch(e) {}
+
+    document.getElementById('edit-profile-modal').classList.remove('open');
+    applyProfile();
+    renderProfileGrid();
+    showToast('Profile updated ✨');
+  } catch(err) {
+    console.error('saveProfile error:', err);
+    showToast('Error updating profile');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = '<span class="material-symbols-rounded">check</span> Save Changes';
+  }
+}
+
+async function handleSignOut() {
+  if (supabaseClient) {
+    await supabaseClient.auth.signOut();
+  }
+  currentAuthUser = null;
+  profile.id = null;
+  profile.name = 'Sign In';
+  profile.handle = 'user';
+  profile.bio = '';
+  profile.avatar_url = null;
 
   document.getElementById('edit-profile-modal').classList.remove('open');
   applyProfile();
   renderProfileGrid();
-  showToast('Profile updated ✨');
-
-  try {
-    await dbPut('profile', { key: 'name', val: profile.name });
-    await dbPut('profile', { key: 'handle', val: profile.handle });
-    await dbPut('profile', { key: 'bio', val: profile.bio });
-  } catch(e) {
-    console.warn('Error saving profile', e);
-  }
+  showToast('Signed out of ReelFlow 👋');
 }
 
 function switchProfileTab(tab) {
@@ -2328,8 +3367,12 @@ function toggleMute() {
 
 // ═══════════════════════════════════════════════════════
 //  VIDEO UPLOAD (With Custom Thumbnail & Preview)
-// ═══════════════════════════════════════════════════════
 function openUpload() {
+  if (!currentAuthUser) {
+    showToast('Please sign in to upload videos');
+    openAuthModal();
+    return;
+  }
   document.getElementById('upload-modal').classList.add('open');
 }
 
@@ -2431,7 +3474,7 @@ async function submitUpload() {
     caption,
     hashtags,
     music: file.name.replace(/\.[^.]+$/,'') + ' - Original Sound',
-    username: profile.handle || 'alexjohnson',
+    username: profile.handle || 'user',
     likes: 0,
     comments: 0,
     shares: 0,
@@ -2827,6 +3870,9 @@ function goPage(page, navEl) {
     topbar.style.display = 'none';
     feedEl.querySelectorAll('video').forEach(x => x.pause());
     if (page === 'profile') {
+      if (currentAuthUser && supabaseClient) {
+        loadUserProfileFromSupabase(currentAuthUser.id);
+      }
       applyProfile();
       renderProfileGrid();
     } else if (page === 'discover') {
