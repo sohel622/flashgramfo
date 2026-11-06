@@ -790,6 +790,74 @@
     .auth-btn-secondary:active { background: rgba(255, 255, 255, 0.15); }
     .auth-btn-secondary:hover { border-color: rgba(255, 255, 255, 0.3); }
 
+    /* Clean Google Auth Screen Styling */
+    .auth-fullscreen-body {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      min-height: calc(100vh - 64px);
+      padding: 44px 24px calc(36px + env(safe-area-inset-bottom, 0px));
+      box-sizing: border-box;
+      max-width: 440px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .auth-center-section {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: auto 0;
+      padding: 24px 0;
+    }
+    .auth-google-btn {
+      width: 100%;
+      height: 52px;
+      background: #ffffff;
+      color: #1f1f1f;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 26px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+      transition: background-color .15s ease, transform .12s ease, box-shadow .15s ease;
+      user-select: none;
+    }
+    .auth-google-btn:hover {
+      background: #f7f7f7;
+      box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+    }
+    .auth-google-btn:active {
+      transform: scale(0.985);
+      background: #ededed;
+    }
+    .auth-google-btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .auth-google-btn-text {
+      color: #1f1f1f;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+    }
+    .auth-footer-terms {
+      text-align: center;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.42);
+      line-height: 1.55;
+      max-width: 320px;
+      margin-top: 24px;
+    }
+
     /* Password Flow & Tabs Styling */
     .password-input-wrap {
       position: relative;
@@ -2078,161 +2146,34 @@
     <div style="width:40px;"></div>
   </div>
 
-  <div class="fs-body">
-    <!-- Step 1: Email Form (OTP Flow) -->
-    <div id="auth-email-step">
-      <div class="auth-brand">
-        <div class="auth-brand-logo">
-          <span class="material-symbols-rounded">play_circle</span>
-        </div>
-        <div class="auth-title">Welcome to ReelFlow</div>
-        <div class="auth-sub">Enter your Gmail or email to receive a secure 6-digit verification code</div>
+  <div class="fs-body auth-fullscreen-body">
+    <!-- Top App Logo & Welcome Title -->
+    <div class="auth-brand">
+      <div class="auth-brand-logo">
+        <span class="material-symbols-rounded">play_circle</span>
       </div>
+      <div class="auth-title">Welcome to ReelFlow</div>
+    </div>
 
+    <!-- Center Section: Continue with Google Button -->
+    <div class="auth-center-section">
       <div class="auth-error-box" id="auth-error"></div>
       <div class="auth-success-box" id="auth-success"></div>
 
-      <div class="auth-input-group">
-        <label class="auth-label" for="auth-email-input">Gmail / Email Address</label>
-        <input id="auth-email-input" type="email" class="text-input" placeholder="creator@gmail.com" onkeydown="if(event.key==='Enter')sendAuthOtp()">
-      </div>
-
-      <button id="auth-send-btn" class="auth-btn-primary" onclick="sendAuthOtp()">
-        <span class="material-symbols-rounded">mail</span>
-        Send Verification Code
-      </button>
-
-      <div style="margin-top:20px;text-align:center;font-size:12px;color:rgba(255,255,255,0.4);line-height:1.5;">
-        By continuing, you agree to ReelFlow's Terms of Service and acknowledge our Privacy Policy.
-      </div>
-
-      <!-- New Option: Continue with Email & Password -->
-      <div class="auth-divider">or</div>
-
-      <button id="auth-switch-pwd-btn" class="auth-btn-secondary" onclick="openPasswordAuthStep()">
-        <span class="material-symbols-rounded" style="font-size:18px;">lock</span>
-        Continue with Email & Password
+      <button id="auth-google-btn" class="auth-google-btn" onclick="handleGoogleSignIn()" type="button" aria-label="Continue with Google">
+        <svg class="google-logo-svg" width="22" height="22" viewBox="0 0 24 24" style="flex-shrink:0;">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+        </svg>
+        <span class="auth-google-btn-text">Continue with Google</span>
       </button>
     </div>
 
-    <!-- Step 2: OTP Verification Form -->
-    <div id="auth-otp-step" style="display:none;">
-      <div class="auth-brand">
-        <div class="auth-brand-logo">
-          <span class="material-symbols-rounded">verified_user</span>
-        </div>
-        <div class="auth-title">Verify Email</div>
-        <div class="auth-sub">Enter the 6-digit OTP code sent to <strong id="auth-target-email" style="color:#fff;word-break:break-all;"></strong></div>
-      </div>
-
-      <div class="auth-error-box" id="auth-otp-error"></div>
-      <div class="auth-success-box" id="auth-otp-success"></div>
-
-      <div class="auth-input-group">
-        <label class="auth-label" style="text-align:center;" for="auth-otp-input">6-Digit OTP Code</label>
-        <input id="auth-otp-input" type="text" maxlength="6" class="text-input auth-otp-input" placeholder="••••••" onkeydown="if(event.key==='Enter')verifyAuthOtp()">
-      </div>
-
-      <button id="auth-verify-btn" class="auth-btn-primary" onclick="verifyAuthOtp()">
-        <span class="material-symbols-rounded">check_circle</span>
-        Verify & Continue
-      </button>
-
-      <div style="display:flex;gap:10px;margin-top:14px;">
-        <button class="auth-btn-secondary" style="flex:1;" onclick="sendAuthOtp()">
-          <span class="material-symbols-rounded" style="font-size:18px;">refresh</span>
-          Resend
-        </button>
-        <button class="auth-btn-secondary" style="flex:1;" onclick="backToEmailStep()">
-          <span class="material-symbols-rounded" style="font-size:18px;">edit</span>
-          Change Email
-        </button>
-      </div>
-    </div>
-
-    <!-- Step 3: Email & Password Flow (Sign In & Sign Up Tabs) -->
-    <div id="auth-pwd-step" style="display:none;">
-      <div class="auth-brand" style="margin-bottom:18px;">
-        <div class="auth-brand-logo">
-          <span class="material-symbols-rounded">lock</span>
-        </div>
-        <div class="auth-title" id="auth-pwd-title">Email & Password</div>
-        <div class="auth-sub">Sign in to your account or create a new creator profile</div>
-      </div>
-
-      <!-- Two Tabs: Sign In / Sign Up -->
-      <div class="auth-tab-bar">
-        <button id="auth-tab-signin" class="auth-tab-btn active" onclick="switchAuthPwdTab('signin')">Sign In</button>
-        <button id="auth-tab-signup" class="auth-tab-btn" onclick="switchAuthPwdTab('signup')">Sign Up</button>
-      </div>
-
-      <div class="auth-error-box" id="auth-pwd-error"></div>
-      <div class="auth-success-box" id="auth-pwd-success"></div>
-
-      <!-- Tab 1: Sign In (Existing User) -->
-      <div id="auth-pwd-signin-form">
-        <div class="auth-input-group">
-          <label class="auth-label" for="pwd-signin-email">Email Address</label>
-          <input id="pwd-signin-email" type="email" class="text-input" placeholder="creator@gmail.com" onkeydown="if(event.key==='Enter')handlePasswordSignIn()">
-        </div>
-
-        <div class="auth-input-group">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            <label class="auth-label" style="margin-bottom:0;" for="pwd-signin-pass">Password</label>
-            <button type="button" class="auth-link-btn" onclick="handleForgotPassword()">Forgot password?</button>
-          </div>
-          <div class="password-input-wrap">
-            <input id="pwd-signin-pass" type="password" class="text-input" placeholder="Enter your password" onkeydown="if(event.key==='Enter')handlePasswordSignIn()">
-            <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('pwd-signin-pass', this)" title="Show/Hide Password">
-              <span class="material-symbols-rounded" style="font-size:20px;">visibility</span>
-            </button>
-          </div>
-        </div>
-
-        <button id="pwd-signin-btn" class="auth-btn-primary" onclick="handlePasswordSignIn()">
-          <span class="material-symbols-rounded">login</span>
-          Sign In
-        </button>
-      </div>
-
-      <!-- Tab 2: Sign Up (New User) -->
-      <div id="auth-pwd-signup-form" style="display:none;">
-        <div class="auth-input-group">
-          <label class="auth-label" for="pwd-signup-email">Email Address</label>
-          <input id="pwd-signup-email" type="email" class="text-input" placeholder="creator@gmail.com">
-        </div>
-
-        <div class="auth-input-group">
-          <label class="auth-label" for="pwd-signup-pass">New Password (min 8 characters)</label>
-          <div class="password-input-wrap">
-            <input id="pwd-signup-pass" type="password" class="text-input" placeholder="Create a password (min 8 chars)">
-            <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('pwd-signup-pass', this)" title="Show/Hide Password">
-              <span class="material-symbols-rounded" style="font-size:20px;">visibility</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="auth-input-group">
-          <label class="auth-label" for="pwd-signup-pass-confirm">Confirm Password</label>
-          <div class="password-input-wrap">
-            <input id="pwd-signup-pass-confirm" type="password" class="text-input" placeholder="Repeat your password" onkeydown="if(event.key==='Enter')handlePasswordSignUp()">
-            <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('pwd-signup-pass-confirm', this)" title="Show/Hide Password">
-              <span class="material-symbols-rounded" style="font-size:20px;">visibility</span>
-            </button>
-          </div>
-        </div>
-
-        <button id="pwd-signup-btn" class="auth-btn-primary" onclick="handlePasswordSignUp()">
-          <span class="material-symbols-rounded">person_add</span>
-          Create Account
-        </button>
-      </div>
-
-      <!-- Return to OTP Flow -->
-      <button class="auth-btn-secondary" style="margin-top:16px;" onclick="openOtpAuthStep()">
-        <span class="material-symbols-rounded" style="font-size:18px;">mail</span>
-        Sign in with Email Verification Code (OTP)
-      </button>
+    <!-- Bottom: Terms of Service / Privacy Policy -->
+    <div class="auth-footer-terms">
+      By continuing, you agree to ReelFlow's Terms of Service and acknowledge our Privacy Policy.
     </div>
   </div>
 </div>
@@ -2647,6 +2588,33 @@ function createLocalSupabaseAdapter() {
         } catch(_) {}
         return { data: { session: null, user: null }, error: null };
       },
+      async signInWithOAuth({ provider, options }) {
+        let uid = localStorage.getItem('reelflow_uid');
+        if (!uid) {
+          uid = 'google_usr_' + (window.crypto && crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).substr(2, 8)));
+          localStorage.setItem('reelflow_uid', uid);
+        }
+        const session = {
+          access_token: 'local_reelflow_google_token_' + Date.now(),
+          user: {
+            id: uid,
+            email: 'creator.google@gmail.com',
+            created_at: new Date().toISOString(),
+            user_metadata: {
+              full_name: 'Google Creator',
+              name: 'Google Creator',
+              avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+            }
+          }
+        };
+        try {
+          localStorage.setItem('reelflow_session', JSON.stringify(session));
+        } catch(_) {}
+        listeners.forEach(cb => {
+          try { cb('SIGNED_IN', session); } catch(_) {}
+        });
+        return { data: { provider: provider || 'google', url: options?.redirectTo || window.location.origin }, error: null };
+      },
       async signInWithOtp({ email }) {
         window._pendingOtpCode = Math.floor(100000 + Math.random() * 900000).toString();
         window._pendingOtpEmail = email;
@@ -2988,59 +2956,147 @@ function handleAuthTopBarClick() {
   }
 }
 
+const googleBtnDefaultHtml = `
+  <svg class="google-logo-svg" width="22" height="22" viewBox="0 0 24 24" style="flex-shrink:0;">
+    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+  </svg>
+  <span class="auth-google-btn-text">Continue with Google</span>
+`;
+
 function openAuthPage() {
-  document.getElementById('auth-email-step').style.display = 'block';
-  document.getElementById('auth-otp-step').style.display = 'none';
-  document.getElementById('auth-pwd-step').style.display = 'none';
-  document.getElementById('auth-error').style.display = 'none';
-  document.getElementById('auth-success').style.display = 'none';
-  document.getElementById('auth-email-input').value = '';
-  document.getElementById('auth-otp-input').value = '';
+  const errBox = document.getElementById('auth-error');
+  const succBox = document.getElementById('auth-success');
+  const googleBtn = document.getElementById('auth-google-btn');
+  if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+  if (succBox) { succBox.style.display = 'none'; succBox.textContent = ''; }
+  if (googleBtn) {
+    googleBtn.disabled = false;
+    googleBtn.innerHTML = googleBtnDefaultHtml;
+  }
   const page = document.getElementById('page-auth');
-  page.style.display = 'flex';
-  setTimeout(() => document.getElementById('auth-email-input').focus(), 150);
+  if (page) page.style.display = 'flex';
 }
 const openAuthModal = openAuthPage;
 
 function closeAuthPage() {
-  document.getElementById('page-auth').style.display = 'none';
+  const page = document.getElementById('page-auth');
+  if (page) page.style.display = 'none';
 }
 
-function backToEmailStep() {
-  document.getElementById('auth-otp-step').style.display = 'none';
-  document.getElementById('auth-pwd-step').style.display = 'none';
-  document.getElementById('auth-email-step').style.display = 'block';
-  document.getElementById('auth-error').style.display = 'none';
-}
+async function handleGoogleSignIn() {
+  const errBox = document.getElementById('auth-error');
+  const googleBtn = document.getElementById('auth-google-btn');
+  if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
 
-function openPasswordAuthStep() {
-  document.getElementById('auth-email-step').style.display = 'none';
-  document.getElementById('auth-otp-step').style.display = 'none';
-  document.getElementById('auth-pwd-step').style.display = 'block';
-  const errBox = document.getElementById('auth-pwd-error');
-  const succBox = document.getElementById('auth-pwd-success');
-  if (errBox) errBox.style.display = 'none';
-  if (succBox) succBox.style.display = 'none';
-
-  // Carry over email typed in the OTP screen if available
-  const existingEmail = (document.getElementById('auth-email-input').value || '').trim();
-  if (existingEmail) {
-    const signinEmail = document.getElementById('pwd-signin-email');
-    const signupEmail = document.getElementById('pwd-signup-email');
-    if (signinEmail) signinEmail.value = existingEmail;
-    if (signupEmail) signupEmail.value = existingEmail;
+  if (!supabaseClient) {
+    if (errBox) {
+      errBox.textContent = 'Authentication service is initializing. Please try again.';
+      errBox.style.display = 'block';
+    }
+    return;
   }
 
-  switchAuthPwdTab('signin');
+  googleBtn.disabled = true;
+  googleBtn.innerHTML = `
+    <span class="loading-ring-sm" style="border-color:#1f1f1f;border-top-color:transparent;width:18px;height:18px;"></span>
+    <span class="auth-google-btn-text">Connecting to Google…</span>
+  `;
+
+  try {
+    const isIframe = window.self !== window.top;
+    const redirectUrl = window.location.origin;
+
+    const { data, error } = await supabaseClient.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectUrl,
+        skipBrowserRedirect: isIframe
+      }
+    });
+
+    if (error) throw error;
+
+    if (isIframe && data?.url) {
+      const popupWidth = 520;
+      const popupHeight = 650;
+      const left = window.screenX + (window.outerWidth - popupWidth) / 2;
+      const top = window.screenY + (window.outerHeight - popupHeight) / 2;
+      const authWindow = window.open(
+        data.url,
+        'supabase_google_oauth',
+        `width=${popupWidth},height=${popupHeight},left=${left},top=${top},status=no,toolbar=no,menubar=no`
+      );
+
+      if (!authWindow || authWindow.closed || typeof authWindow.closed === 'undefined') {
+        window.open(data.url, '_blank');
+      }
+
+      let checks = 0;
+      const timer = setInterval(async () => {
+        checks++;
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        if (sessionData && sessionData.session && sessionData.session.user) {
+          clearInterval(timer);
+          if (authWindow && !authWindow.closed) {
+            try { authWindow.close(); } catch(_) {}
+          }
+          currentAuthUser = sessionData.session.user;
+          closeAuthPage();
+          showToast('Signed in with Google 🎉');
+          await loadUserProfileFromSupabase(currentAuthUser.id);
+          applyProfile();
+          renderProfileGrid();
+        } else if (checks > 120) {
+          clearInterval(timer);
+          googleBtn.disabled = false;
+          googleBtn.innerHTML = googleBtnDefaultHtml;
+        }
+      }, 1000);
+    }
+  } catch(err) {
+    console.error('Google Sign-In Error:', err);
+    if (errBox) {
+      errBox.textContent = err.message || 'Google sign-in could not be completed. Please try again.';
+      errBox.style.display = 'block';
+    }
+    googleBtn.disabled = false;
+    googleBtn.innerHTML = googleBtnDefaultHtml;
+  }
 }
 
-function openOtpAuthStep() {
-  document.getElementById('auth-pwd-step').style.display = 'none';
-  document.getElementById('auth-otp-step').style.display = 'none';
-  document.getElementById('auth-email-step').style.display = 'block';
-  document.getElementById('auth-error').style.display = 'none';
-  document.getElementById('auth-success').style.display = 'none';
+// Listen for OAuth message if completed in popup window
+window.addEventListener('message', async (event) => {
+  if (event.data?.type === 'SUPABASE_AUTH_SUCCESS') {
+    if (supabaseClient) {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      if (sessionData && sessionData.session && sessionData.session.user) {
+        currentAuthUser = sessionData.session.user;
+        closeAuthPage();
+        showToast('Signed in successfully with Google 🎉');
+        await loadUserProfileFromSupabase(currentAuthUser.id);
+        applyProfile();
+        renderProfileGrid();
+      }
+    }
+  }
+});
+
+// Auto-notify opener and close if opened as popup
+if (window.opener && (window.location.hash.includes('access_token') || window.location.search.includes('code='))) {
+  try {
+    window.opener.postMessage({ type: 'SUPABASE_AUTH_SUCCESS' }, '*');
+    setTimeout(() => {
+      try { window.close(); } catch(_) {}
+    }, 600);
+  } catch(_) {}
 }
+
+function backToEmailStep() {}
+function openPasswordAuthStep() {}
+function openOtpAuthStep() {}
 
 function switchAuthPwdTab(tab) {
   const signinBtn = document.getElementById('auth-tab-signin');
@@ -3285,146 +3341,19 @@ async function handleForgotPassword() {
   }
 }
 
-async function sendAuthOtp() {
-  const emailInput = document.getElementById('auth-email-input');
-  const email = (emailInput.value || currentPendingEmail || '').trim();
-  const errBox = document.getElementById('auth-error');
-  const succBox = document.getElementById('auth-success');
-  const sendBtn = document.getElementById('auth-send-btn');
-
-  errBox.style.display = 'none';
-  succBox.style.display = 'none';
-
-  if (!email || !email.includes('@') || !email.includes('.')) {
-    errBox.textContent = 'Please enter a valid Gmail / email address';
-    errBox.style.display = 'block';
-    return;
-  }
-
-  sendBtn.disabled = true;
-  sendBtn.innerHTML = '<span class="loading-ring-sm"></span> Sending Code…';
-
-  try {
-    const { data, error } = await supabaseClient.auth.signInWithOtp({
-      email: email,
-      options: {
-        shouldCreateUser: true
-      }
-    });
-
-    if (error) {
-      errBox.textContent = error.message || 'Failed to send OTP verification code';
-      errBox.style.display = 'block';
-      return;
-    }
-
-    currentPendingEmail = email;
-    document.getElementById('auth-email-step').style.display = 'none';
-    document.getElementById('auth-otp-step').style.display = 'block';
-    document.getElementById('auth-target-email').textContent = email;
-    document.getElementById('auth-otp-input').value = '';
-    document.getElementById('auth-otp-error').style.display = 'none';
-
-    const otpSucc = document.getElementById('auth-otp-success');
-    if (window._pendingOtpCode) {
-      otpSucc.innerHTML = `Verification code ready! For testing, your OTP is: <strong style="letter-spacing:2px;font-size:16px;color:#fff;">${window._pendingOtpCode}</strong>`;
-      otpSucc.style.display = 'block';
-      // Pre-fill input for extreme ease of testing
-      document.getElementById('auth-otp-input').value = window._pendingOtpCode;
-    } else {
-      otpSucc.textContent = '6-digit OTP code sent to your email. Check inbox or spam.';
-      otpSucc.style.display = 'block';
-    }
-
-    setTimeout(() => document.getElementById('auth-otp-input').focus(), 150);
-    showToast('6-digit code sent to ' + email + ' ✉️');
-  } catch(err) {
-    errBox.textContent = err.message || 'Network error sending OTP';
-    errBox.style.display = 'block';
-  } finally {
-    sendBtn.disabled = false;
-    sendBtn.innerHTML = '<span class="material-symbols-rounded">mail</span> Send Verification Code';
-  }
-}
-
-async function verifyAuthOtp() {
-  const otpInput = document.getElementById('auth-otp-input');
-  const token = (otpInput.value || '').trim();
-  const errBox = document.getElementById('auth-otp-error');
-  const verifyBtn = document.getElementById('auth-verify-btn');
-
-  errBox.style.display = 'none';
-
-  if (!token || token.length < 6) {
-    errBox.textContent = 'Please enter the complete 6-digit OTP code';
-    errBox.style.display = 'block';
-    return;
-  }
-
-  verifyBtn.disabled = true;
-  verifyBtn.innerHTML = '<span class="loading-ring-sm"></span> Verifying OTP…';
-
-  try {
-    const { data, error } = await supabaseClient.auth.verifyOtp({
-      email: currentPendingEmail,
-      token: token,
-      type: 'email'
-    });
-
-    if (error) {
-      errBox.textContent = error.message || 'Invalid or expired code. Please try again.';
-      errBox.style.display = 'block';
-      return;
-    }
-
-    // Authenticated user ID (auth.uid())
-    const user = data.user;
-    currentAuthUser = user;
-    console.log('Supabase authenticated user ID:', user.id);
-
-    closeAuthPage();
-    showToast('Email verified successfully! 🎉');
-
-    // Query existing profile in public.profiles
-    let existingProfile = null;
-    try {
-      const { data: pData } = await supabaseClient
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .maybeSingle();
-      if (pData) existingProfile = pData;
-    } catch(err) {
-      console.warn('Profile lookup note:', err);
-    }
-
-    if (existingProfile && (existingProfile.display_name || existingProfile.full_name || existingProfile.name || existingProfile.username)) {
-      profile.id = user.id;
-      profile.name = existingProfile.display_name || existingProfile.full_name || existingProfile.name || profile.name;
-      profile.handle = (existingProfile.username || profile.handle).replace(/^@/, '');
-      profile.bio = existingProfile.bio || '';
-      profile.avatar_url = existingProfile.avatar_url || null;
-      applyProfile();
-      renderProfileGrid();
-      showToast('Welcome back, @' + profile.handle + ' 👋');
-    } else {
-      // New user -> open Full-Screen Profile Setup Page
-      openProfileSetupPage(user.id, currentPendingEmail);
-    }
-  } catch(err) {
-    errBox.textContent = err.message || 'Verification failed';
-    errBox.style.display = 'block';
-  } finally {
-    verifyBtn.disabled = false;
-    verifyBtn.innerHTML = '<span class="material-symbols-rounded">check_circle</span> Verify & Continue';
-  }
-}
+async function sendAuthOtp() {}
+async function verifyAuthOtp() {}
 
 function openProfileSetupPage(userId, email = '') {
   setupAvatarFile = null;
   let suggestedName = '';
   let suggestedHandle = '';
-  if (email && email.includes('@')) {
+  const meta = (currentAuthUser && currentAuthUser.user_metadata) || {};
+
+  if (meta.full_name || meta.name) {
+    suggestedName = meta.full_name || meta.name;
+    suggestedHandle = suggestedName.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+  } else if (email && email.includes('@')) {
     const prefix = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '');
     suggestedHandle = prefix.toLowerCase().slice(0, 20);
     suggestedName = prefix.charAt(0).toUpperCase() + prefix.slice(1);
@@ -3437,9 +3366,16 @@ function openProfileSetupPage(userId, email = '') {
 
   const preview = document.getElementById('setup-avatar-preview');
   const icon = document.getElementById('setup-avatar-icon');
-  preview.style.display = 'none';
-  preview.src = '';
-  icon.style.display = 'flex';
+  
+  if (meta.avatar_url || meta.picture) {
+    preview.src = meta.avatar_url || meta.picture;
+    preview.style.display = 'block';
+    icon.style.display = 'none';
+  } else {
+    preview.style.display = 'none';
+    preview.src = '';
+    icon.style.display = 'flex';
+  }
 
   document.getElementById('page-profile-setup').style.display = 'flex';
 }
@@ -3638,11 +3574,14 @@ async function saveProfileSetup() {
 
   try {
     let avatarUrl = null;
+    const meta = (currentAuthUser && currentAuthUser.user_metadata) || {};
 
     // 1. Upload avatar to Supabase Storage bucket 'avatars'
     if (setupAvatarFile) {
       submitBtn.innerHTML = '<span class="loading-ring-sm"></span> Uploading Picture…';
       avatarUrl = await uploadAvatarToStorage(currentAuthUser.id, setupAvatarFile);
+    } else if (meta.avatar_url || meta.picture) {
+      avatarUrl = meta.avatar_url || meta.picture;
     }
 
     // 2. Insert/Upsert into public.profiles linked to auth.users.id
