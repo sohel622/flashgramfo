@@ -7,11 +7,11 @@
   <meta name="description" content="ReelFlow - Video sharing and social feed web application featuring short-form video streaming, uploads, profile, and discovery.">
   <meta property="og:title" content="ReelFlow">
   <meta property="og:description" content="ReelFlow - Video sharing and social feed web application featuring short-form video streaming, uploads, profile, and discovery.">
-  <!-- Supabase JS Client (Local UMD Bundle with CDN Fallback) -->
-  <script src="/vendor/supabase.js"></script>
+  <!-- Supabase JS Client (CDN with local fallback) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     if (!window.supabase) {
-      document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"><\\/script>');
+      document.write('<script src="/vendor/supabase.js"><\\/script>');
     }
   </script>
   <style>
@@ -2410,9 +2410,9 @@ let currentPendingEmail = '';
 let setupAvatarFile = null;
 let editAvatarFile = null;
 let supabaseConfig = {
-  url: '',
-  anonKey: '',
-  configured: false
+  url: 'https://gxoajbncfpwhisehvbcf.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4b2FqYm5jZnB3aGlzZWh2YmNmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5Mjg2ODAsImV4cCI6MjEwNDUwNDY4MH0.Gbpsd3h-MgodjvugosWLomZL51KWbxMZWFazi6zbzsg',
+  configured: true
 };
 let storageOk = false;
 let blobUrls = {};
@@ -3198,27 +3198,35 @@ async function handleOAuthCallback(rawUrl) {
 
     if (accessToken) {
       console.log('Setting Supabase session from callback access_token...');
-      const { data, error } = await supabaseClient.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken || ''
-      });
-
-      if (error) {
-        console.error('Error setting session:', error.message);
-        showToast('Session error: ' + error.message);
-        return false;
+      try {
+        const { data, error } = await supabaseClient.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken || ''
+        });
+        if (!error && data?.session?.user) {
+          sessionUser = data.session.user;
+        } else if (error) {
+          console.warn('setSession note:', error.message);
+        }
+      } catch(e) {
+        console.warn('setSession error:', e);
       }
-      sessionUser = data?.session?.user;
     } else if (authCode) {
       console.log('Exchanging OAuth code for session...');
-      const { data, error } = await supabaseClient.auth.exchangeCodeForSession(authCode);
-      if (error) {
-        console.error('Error exchanging code:', error.message);
-        showToast('Login code error: ' + error.message);
-        return false;
+      try {
+        const { data, error } = await supabaseClient.auth.exchangeCodeForSession(authCode);
+        if (!error && data?.session?.user) {
+          sessionUser = data.session.user;
+        } else if (error) {
+          console.warn('exchangeCodeForSession note:', error.message);
+        }
+      } catch(e) {
+        console.warn('exchangeCodeForSession error:', e);
       }
-      sessionUser = data?.session?.user;
-    } else {
+    }
+
+    // Capture immediately from getSession() if already established or auto-detected
+    if (!sessionUser) {
       const { data: sessionData } = await supabaseClient.auth.getSession();
       sessionUser = sessionData?.session?.user;
     }
@@ -3227,16 +3235,18 @@ async function handleOAuthCallback(rawUrl) {
       currentAuthUser = sessionUser;
       closeAuthPage();
       showToast('Signed in successfully with Google 🎉');
+
+      // Clear the tokens/code hash immediately with window.history.replaceState()
+      try {
+        if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+          const cleanUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState(null, document.title, cleanUrl);
+        }
+      } catch(_) {}
+
       await loadUserProfileFromSupabase(currentAuthUser.id);
       applyProfile();
       renderProfileGrid();
-
-      // Clean browser hash / search parameters without reload
-      try {
-        if (window.history && window.history.replaceState) {
-          window.history.replaceState(null, '', window.location.pathname);
-        }
-      } catch(_) {}
       return true;
     }
   } catch(err) {
