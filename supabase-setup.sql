@@ -142,19 +142,14 @@ CREATE POLICY "Authenticated users can update avatars"
 -- ========================================================
 -- 6. Supabase Dashboard URL Configuration Guide
 -- ========================================================
--- To enable mobile Google OAuth deep linking, configure:
 -- Go to: Supabase Dashboard -> Authentication -> URL Configuration
 --
 -- 1. Site URL:
---    yourcult://auth-callback
---    (Or your deployed web URL: https://ais-pre-srrwbq2np52usw4em6euev-582735108837.asia-southeast1.run.app)
+--    https://flashgram-five.vercel.app
+--    (Or your current web app URL / custom domain)
 --
--- 2. Redirect URLs (Add each of these entries):
---    yourcult://*
---    yourcult://auth-callback
---    yourcult://login-callback
---    reelflow://*
---    reelflow://auth-callback
+-- 2. Redirect URLs (Add each of these wildcard entries):
+--    https://flashgram-five.vercel.app/**
 --    https://ais-pre-srrwbq2np52usw4em6euev-582735108837.asia-southeast1.run.app/**
 --    https://ais-dev-srrwbq2np52usw4em6euev-582735108837.asia-southeast1.run.app/**
 --    http://localhost:3000/**

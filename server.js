@@ -32,8 +32,7 @@ app.get('/api/config', (req, res) => {
   res.json({
     configured: Boolean((process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL) && (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY)),
     supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
-    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '',
-    deepLinkScheme: process.env.DEEP_LINK_SCHEME || 'yourcult://auth-callback'
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
   });
 });
 
