@@ -150,7 +150,7 @@ CREATE POLICY "Authenticated users can update avatars"
 --
 -- 2. Redirect URLs (Add each of these wildcard entries):
 --    https://flashgram-five.vercel.app/**
+--    https://flashgram-five.vercel.app
 --    https://ais-pre-srrwbq2np52usw4em6euev-582735108837.asia-southeast1.run.app/**
 --    https://ais-dev-srrwbq2np52usw4em6euev-582735108837.asia-southeast1.run.app/**
---    http://localhost:3000/**
 -- ========================================================

@@ -2889,6 +2889,7 @@ async function initSupabase() {
       console.log('Supabase Auth Event:', event, session?.user?.id);
       if (session && session.user) {
         currentAuthUser = session.user;
+        closeAuthPage();
         await loadUserProfileFromSupabase(session.user.id);
       } else {
         currentAuthUser = null;
@@ -3281,6 +3282,19 @@ window.addEventListener('hashchange', () => {
   }
 });
 
+// Dynamic Production Redirect URL:
+// Resolves the current window origin (e.g. Vercel deployment) and strictly prevents
+// redirecting to localhost on mobile devices which triggers ERR_CONNECTION_REFUSED.
+const getRedirectUrl = () => {
+  if (typeof window !== 'undefined' && window.location) {
+    const origin = window.location.origin;
+    if (origin && origin !== 'null' && !origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+      return origin;
+    }
+  }
+  return 'https://flashgram-five.vercel.app'; // Production URL fallback
+};
+
 async function handleGoogleSignIn() {
   const errBox = document.getElementById('auth-error');
   const googleBtn = document.getElementById('auth-google-btn');
@@ -3301,17 +3315,16 @@ async function handleGoogleSignIn() {
   `;
 
   try {
-    // Dynamic Origin Redirect: explicitly uses window.location.origin (e.g. https://flashgram-five.vercel.app or current host)
-    const redirectUrl = window.location.origin;
-    const isIframe = window.self !== window.top;
+    const redirectUrl = getRedirectUrl();
+    const isIframe = typeof window !== 'undefined' && window.self !== window.top;
 
-    console.log('Initiating Google OAuth with dynamic redirect URL:', redirectUrl, { isIframe });
+    console.log('Initiating Google OAuth with redirect URL:', redirectUrl, { isIframe });
 
     const { data, error } = await supabaseClient.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: redirectUrl,
-        skipBrowserRedirect: isIframe
+        skipBrowserRedirect: isIframe ? true : false
       }
     });
 
@@ -3354,7 +3367,7 @@ async function handleGoogleSignIn() {
           googleBtn.innerHTML = googleBtnDefaultHtml;
         }
       }, 1000);
-    } else if (data?.url) {
+    } else if (data?.url && window.location.href !== data.url) {
       // Direct full-window native web flow
       window.location.href = data.url;
     }
@@ -3368,6 +3381,7 @@ async function handleGoogleSignIn() {
     googleBtn.innerHTML = googleBtnDefaultHtml;
   }
 }
+
 
 function backToEmailStep() {}
 function openPasswordAuthStep() {}
