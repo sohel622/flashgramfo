@@ -2169,6 +2169,14 @@
         </svg>
         <span class="auth-google-btn-text">Continue with Google</span>
       </button>
+
+      <!-- Mobile Deep Link Status -->
+      <div style="margin-top:14px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:11.5px;color:rgba(255,255,255,0.45);flex-wrap:wrap;">
+        <span class="material-symbols-rounded" style="font-size:15px;color:#25f4ee;">link</span>
+        <span>Mobile Deep Link:</span>
+        <code id="auth-current-scheme-badge" style="background:rgba(255,255,255,0.08);padding:2px 7px;border-radius:4px;color:#fff;font-family:monospace;font-size:11px;">yourcult://auth-callback</code>
+        <button type="button" onclick="promptCustomDeepLinkScheme()" style="background:none;border:none;color:#fe2c55;font-size:11px;font-weight:600;cursor:pointer;padding:0 4px;text-decoration:underline;">Edit</button>
+      </div>
     </div>
 
     <!-- Bottom: Terms of Service / Privacy Policy -->
@@ -2412,7 +2420,8 @@ let editAvatarFile = null;
 let supabaseConfig = {
   url: '',
   anonKey: '',
-  configured: false
+  configured: false,
+  deepLinkScheme: 'yourcult://auth-callback'
 };
 let storageOk = false;
 let blobUrls = {};
@@ -2832,6 +2841,9 @@ async function initSupabase() {
       supabaseConfig.anonKey = data.supabaseAnonKey;
       supabaseConfig.configured = true;
     }
+    if (data.deepLinkScheme) {
+      supabaseConfig.deepLinkScheme = data.deepLinkScheme;
+    }
   } catch(e) {
     console.warn('Could not read /api/config', e);
   }
@@ -2844,6 +2856,10 @@ async function initSupabase() {
       supabaseConfig.configured = true;
     }
   }
+  const customSchemeStored = localStorage.getItem('reelflow_deep_link_scheme');
+  if (customSchemeStored) {
+    supabaseConfig.deepLinkScheme = customSchemeStored;
+  }
 
   if (supabaseConfig.configured && window.supabase && window.supabase.createClient) {
     try {
@@ -2851,10 +2867,11 @@ async function initSupabase() {
         auth: {
           persistSession: true,
           autoRefreshToken: true,
-          detectSessionInUrl: true
+          detectSessionInUrl: true,
+          flowType: 'implicit'
         }
       });
-      console.log('Real Supabase client connected successfully');
+      console.log('Real Supabase client connected successfully with deep link scheme:', supabaseConfig.deepLinkScheme);
     } catch(err) {
       console.warn('Supabase initialization note:', err);
     }
@@ -2867,11 +2884,21 @@ async function initSupabase() {
   }
 
   try {
-    // Check existing authenticated session
-    const { data: sessionData } = await supabaseClient.auth.getSession();
-    if (sessionData && sessionData.session && sessionData.session.user) {
-      currentAuthUser = sessionData.session.user;
-      await loadUserProfileFromSupabase(currentAuthUser.id);
+    // Check if app was opened directly with deep link / OAuth tokens in URL
+    const hasIncomingTokens = window.location.hash.includes('access_token') || 
+                              window.location.hash.includes('refresh_token') || 
+                              window.location.search.includes('code=');
+
+    if (hasIncomingTokens) {
+      console.log('🔗 Incoming OAuth tokens detected in URL on boot, processing deep link...');
+      await handleDeepLink(window.location.href);
+    } else {
+      // Check existing authenticated session
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      if (sessionData && sessionData.session && sessionData.session.user) {
+        currentAuthUser = sessionData.session.user;
+        await loadUserProfileFromSupabase(currentAuthUser.id);
+      }
     }
 
     // Listen for auth state transitions
@@ -3113,6 +3140,10 @@ function openAuthPage() {
     googleBtn.disabled = false;
     googleBtn.innerHTML = googleBtnDefaultHtml;
   }
+  const badge = document.getElementById('auth-current-scheme-badge');
+  if (badge) {
+    badge.textContent = getAuthRedirectUrl();
+  }
   const page = document.getElementById('page-auth');
   if (page) page.style.display = 'flex';
 }
@@ -3121,6 +3152,255 @@ const openAuthModal = openAuthPage;
 function closeAuthPage() {
   const page = document.getElementById('page-auth');
   if (page) page.style.display = 'none';
+}
+
+function promptCustomDeepLinkScheme() {
+  const current = localStorage.getItem('reelflow_deep_link_scheme') || supabaseConfig.deepLinkScheme || 'yourcult://auth-callback';
+  const val = prompt('Configure Mobile App Custom URL Scheme / Deep Link:\n\nDefault: yourcult://auth-callback\nOther examples: myapp://auth-callback, yourapp://login-callback', current);
+  if (val !== null) {
+    const trimmed = val.trim();
+    if (trimmed) {
+      localStorage.setItem('reelflow_deep_link_scheme', trimmed);
+      supabaseConfig.deepLinkScheme = trimmed;
+      showToast('Deep link set: ' + trimmed);
+    } else {
+      localStorage.removeItem('reelflow_deep_link_scheme');
+      supabaseConfig.deepLinkScheme = 'yourcult://auth-callback';
+      showToast('Reset to default: yourcult://auth-callback');
+    }
+    const badge = document.getElementById('auth-current-scheme-badge');
+    if (badge) badge.textContent = getAuthRedirectUrl();
+  }
+}
+
+// Global test hook for debugging deep links from browser console or mobile webviews
+window.testDeepLinkAuth = function(url) {
+  return handleDeepLink(url);
+};
+
+function isMobileAppOrDevice() {
+  const isCapacitor = Boolean(window.Capacitor || window.CapacitorCustomPlatform);
+  const isCordova = Boolean(window.cordova || window.Cordova);
+  const isReactNative = Boolean(window.ReactNativeWebView);
+  const ua = navigator.userAgent || '';
+  const isMobileUA = /Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  const isLocalHost = Boolean(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '0.0.0.0');
+
+  return {
+    isNativeWrapper: isCapacitor || isCordova || isReactNative,
+    isMobileUA,
+    isLocalHost,
+    isMobile: isMobileUA || isCapacitor || isCordova || isReactNative
+  };
+}
+
+function getAuthRedirectUrl() {
+  // 1. Check if user/app specified a custom scheme in localStorage or global config
+  const customScheme = localStorage.getItem('reelflow_deep_link_scheme') || supabaseConfig.deepLinkScheme || window.CUSTOM_DEEP_LINK_SCHEME;
+  const defaultDeepLink = 'yourcult://auth-callback';
+
+  const { isNativeWrapper, isMobileUA, isLocalHost } = isMobileAppOrDevice();
+
+  // 2. If running inside native wrapper (Capacitor/Cordova/React Native), deep link custom scheme is required
+  if (isNativeWrapper) {
+    return customScheme || defaultDeepLink;
+  }
+
+  // 3. Mobile Device / Localhost checks:
+  // On mobile devices, redirecting to http://localhost:3000/ results in ERR_CONNECTION_REFUSED
+  // because localhost does not host the dev server on a mobile phone.
+  // Therefore, for mobile devices or mobile user agents, redirect to the custom deep link scheme!
+  if (isMobileUA || isLocalHost) {
+    return customScheme || defaultDeepLink;
+  }
+
+  // 4. If running in a public HTTPS deployment (e.g. Cloud Run, custom domain) on desktop browser
+  if (window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1')) {
+    return window.location.origin;
+  }
+
+  return customScheme || defaultDeepLink;
+}
+
+// Global deep link and OAuth callback handler
+async function handleDeepLink(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
+  console.log('🔗 Handling Deep Link callback:', rawUrl);
+
+  try {
+    let hashStr = '';
+    let queryStr = '';
+
+    if (rawUrl.includes('#')) {
+      hashStr = rawUrl.substring(rawUrl.indexOf('#') + 1);
+    }
+    if (rawUrl.includes('?')) {
+      const qStart = rawUrl.indexOf('?');
+      const hStart = rawUrl.indexOf('#');
+      queryStr = (hStart > qStart) 
+        ? rawUrl.substring(qStart + 1, hStart) 
+        : rawUrl.substring(qStart + 1);
+    }
+
+    const parseParams = (str) => {
+      const result = {};
+      if (!str) return result;
+      str.split('&').forEach(pair => {
+        const [k, v] = pair.split('=');
+        if (k) {
+          try {
+            result[decodeURIComponent(k)] = decodeURIComponent(v || '');
+          } catch(_) {
+            result[k] = v || '';
+          }
+        }
+      });
+      return result;
+    };
+
+    const hashParams = parseParams(hashStr);
+    const queryParams = parseParams(queryStr);
+
+    const accessToken = hashParams.access_token || queryParams.access_token;
+    const refreshToken = hashParams.refresh_token || queryParams.refresh_token;
+    const authCode = queryParams.code || hashParams.code;
+    const errorMsg = hashParams.error_description || queryParams.error_description || hashParams.error || queryParams.error;
+
+    if (errorMsg) {
+      console.warn('OAuth Deep Link Error from provider:', errorMsg);
+      showToast('Authentication error: ' + errorMsg);
+      const errBox = document.getElementById('auth-error');
+      if (errBox) {
+        errBox.textContent = errorMsg;
+        errBox.style.display = 'block';
+      }
+      return false;
+    }
+
+    if (!supabaseClient) {
+      console.warn('supabaseClient not initialized yet when deep link arrived');
+      return false;
+    }
+
+    let sessionUser = null;
+
+    // A. Implicit token flow (#access_token=...&refresh_token=...)
+    if (accessToken) {
+      console.log('Setting Supabase session from deep link access_token...');
+      const { data, error } = await supabaseClient.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken || ''
+      });
+
+      if (error) {
+        console.error('Error setting session from deep link:', error.message);
+        showToast('Session error: ' + error.message);
+        return false;
+      }
+      sessionUser = data?.session?.user;
+    }
+    // B. Authorization code flow (?code=...)
+    else if (authCode) {
+      console.log('Exchanging OAuth code for session...');
+      const { data, error } = await supabaseClient.auth.exchangeCodeForSession(authCode);
+      if (error) {
+        console.error('Error exchanging code:', error.message);
+        showToast('Login code error: ' + error.message);
+        return false;
+      }
+      sessionUser = data?.session?.user;
+    }
+    // C. Check current session in case Supabase detectSessionInUrl handled it
+    else {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      sessionUser = sessionData?.session?.user;
+    }
+
+    if (sessionUser) {
+      currentAuthUser = sessionUser;
+      closeAuthPage();
+      showToast('Signed in successfully with Google 🎉');
+      await loadUserProfileFromSupabase(currentAuthUser.id);
+      applyProfile();
+      renderProfileGrid();
+
+      // Clean browser hash / search parameters without reload
+      try {
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      } catch(_) {}
+      return true;
+    }
+  } catch(err) {
+    console.error('Error in handleDeepLink:', err);
+  }
+  return false;
+}
+
+// Listen for deep link events across all mobile environments
+// 1. Capacitor native app deep link event
+if (window.Capacitor?.App?.addListener) {
+  window.Capacitor.App.addListener('appUrlOpen', (event) => {
+    console.log('📱 Capacitor appUrlOpen received deep link:', event?.url);
+    if (event?.url) handleDeepLink(event.url);
+  });
+}
+
+// 2. Cordova / PhoneGap global hook
+window.handleOpenURL = function(url) {
+  console.log('📱 Cordova handleOpenURL received deep link:', url);
+  setTimeout(() => handleDeepLink(url), 50);
+};
+window.addEventListener('handleOpenURL', (event) => {
+  if (event?.detail?.url) handleDeepLink(event.detail.url);
+});
+
+// 3. React Native WebView postMessage
+document.addEventListener('message', (event) => {
+  try {
+    const d = JSON.parse(event.data);
+    if (d && (d.url || d.deepLink)) {
+      handleDeepLink(d.url || d.deepLink);
+    }
+  } catch(_) {}
+});
+
+// 4. Browser Hash Change
+window.addEventListener('hashchange', () => {
+  if (window.location.hash.includes('access_token') || window.location.hash.includes('refresh_token') || window.location.hash.includes('code=')) {
+    handleDeepLink(window.location.href);
+  }
+});
+
+// 5. Window Message (from popups, iframes, or webview bridges)
+window.addEventListener('message', async (event) => {
+  if (event.data?.type === 'SUPABASE_AUTH_SUCCESS' || event.data?.type === 'DEEP_LINK_AUTH') {
+    const deepUrl = event.data?.url;
+    if (deepUrl) {
+      await handleDeepLink(deepUrl);
+    } else if (supabaseClient) {
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      if (sessionData && sessionData.session && sessionData.session.user) {
+        currentAuthUser = sessionData.session.user;
+        closeAuthPage();
+        showToast('Signed in successfully with Google 🎉');
+        await loadUserProfileFromSupabase(currentAuthUser.id);
+        applyProfile();
+        renderProfileGrid();
+      }
+    }
+  }
+});
+
+// Auto-notify opener and close if opened as popup
+if (window.opener && (window.location.hash.includes('access_token') || window.location.search.includes('code='))) {
+  try {
+    window.opener.postMessage({ type: 'SUPABASE_AUTH_SUCCESS', url: window.location.href }, '*');
+    setTimeout(() => {
+      try { window.close(); } catch(_) {}
+    }, 600);
+  } catch(_) {}
 }
 
 async function handleGoogleSignIn() {
@@ -3143,55 +3423,81 @@ async function handleGoogleSignIn() {
   `;
 
   try {
+    const { isNativeWrapper, isMobileUA, isLocalHost } = isMobileAppOrDevice();
     const isIframe = window.self !== window.top;
-    const redirectUrl = window.location.origin;
+    const redirectUrl = getAuthRedirectUrl();
+
+    console.log('Initiating Google OAuth with redirect URL:', redirectUrl, {
+      isNativeWrapper,
+      isMobileUA,
+      isLocalHost,
+      isIframe
+    });
+
+    // In desktop iframe environments, use popup with skipBrowserRedirect
+    const shouldSkipBrowserRedirect = isIframe && !isNativeWrapper && !isMobileUA;
 
     const { data, error } = await supabaseClient.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: redirectUrl,
-        skipBrowserRedirect: isIframe
+        skipBrowserRedirect: shouldSkipBrowserRedirect
       }
     });
 
     if (error) throw error;
 
-    if (isIframe && data?.url) {
-      const popupWidth = 520;
-      const popupHeight = 650;
-      const left = window.screenX + (window.outerWidth - popupWidth) / 2;
-      const top = window.screenY + (window.outerHeight - popupHeight) / 2;
-      const authWindow = window.open(
-        data.url,
-        'supabase_google_oauth',
-        `width=${popupWidth},height=${popupHeight},left=${left},top=${top},status=no,toolbar=no,menubar=no`
-      );
-
-      if (!authWindow || authWindow.closed || typeof authWindow.closed === 'undefined') {
-        window.open(data.url, '_blank');
-      }
-
-      let checks = 0;
-      const timer = setInterval(async () => {
-        checks++;
-        const { data: sessionData } = await supabaseClient.auth.getSession();
-        if (sessionData && sessionData.session && sessionData.session.user) {
-          clearInterval(timer);
-          if (authWindow && !authWindow.closed) {
-            try { authWindow.close(); } catch(_) {}
-          }
-          currentAuthUser = sessionData.session.user;
-          closeAuthPage();
-          showToast('Signed in with Google 🎉');
-          await loadUserProfileFromSupabase(currentAuthUser.id);
-          applyProfile();
-          renderProfileGrid();
-        } else if (checks > 120) {
-          clearInterval(timer);
-          googleBtn.disabled = false;
-          googleBtn.innerHTML = googleBtnDefaultHtml;
+    if (data?.url) {
+      if (isNativeWrapper) {
+        // Native mobile wrapper (Capacitor/Cordova): open via system browser to handle deep link intent
+        if (window.Capacitor?.Plugins?.Browser?.open) {
+          window.Capacitor.Plugins.Browser.open({ url: data.url });
+        } else if (window.cordova?.InAppBrowser?.open) {
+          window.cordova.InAppBrowser.open(data.url, '_system');
+        } else {
+          window.location.href = data.url;
         }
-      }, 1000);
+      } else if (isIframe && !isMobileUA) {
+        // Desktop iframe preview
+        const popupWidth = 520;
+        const popupHeight = 650;
+        const left = window.screenX + (window.outerWidth - popupWidth) / 2;
+        const top = window.screenY + (window.outerHeight - popupHeight) / 2;
+        const authWindow = window.open(
+          data.url,
+          'supabase_google_oauth',
+          `width=${popupWidth},height=${popupHeight},left=${left},top=${top},status=no,toolbar=no,menubar=no`
+        );
+
+        if (!authWindow || authWindow.closed || typeof authWindow.closed === 'undefined') {
+          window.open(data.url, '_blank');
+        }
+
+        let checks = 0;
+        const timer = setInterval(async () => {
+          checks++;
+          const { data: sessionData } = await supabaseClient.auth.getSession();
+          if (sessionData && sessionData.session && sessionData.session.user) {
+            clearInterval(timer);
+            if (authWindow && !authWindow.closed) {
+              try { authWindow.close(); } catch(_) {}
+            }
+            currentAuthUser = sessionData.session.user;
+            closeAuthPage();
+            showToast('Signed in with Google 🎉');
+            await loadUserProfileFromSupabase(currentAuthUser.id);
+            applyProfile();
+            renderProfileGrid();
+          } else if (checks > 120) {
+            clearInterval(timer);
+            googleBtn.disabled = false;
+            googleBtn.innerHTML = googleBtnDefaultHtml;
+          }
+        }, 1000);
+      } else {
+        // Full page redirect for mobile browser or direct navigation
+        window.location.href = data.url;
+      }
     }
   } catch(err) {
     console.error('Google Sign-In Error:', err);
@@ -3202,33 +3508,6 @@ async function handleGoogleSignIn() {
     googleBtn.disabled = false;
     googleBtn.innerHTML = googleBtnDefaultHtml;
   }
-}
-
-// Listen for OAuth message if completed in popup window
-window.addEventListener('message', async (event) => {
-  if (event.data?.type === 'SUPABASE_AUTH_SUCCESS') {
-    if (supabaseClient) {
-      const { data: sessionData } = await supabaseClient.auth.getSession();
-      if (sessionData && sessionData.session && sessionData.session.user) {
-        currentAuthUser = sessionData.session.user;
-        closeAuthPage();
-        showToast('Signed in successfully with Google 🎉');
-        await loadUserProfileFromSupabase(currentAuthUser.id);
-        applyProfile();
-        renderProfileGrid();
-      }
-    }
-  }
-});
-
-// Auto-notify opener and close if opened as popup
-if (window.opener && (window.location.hash.includes('access_token') || window.location.search.includes('code='))) {
-  try {
-    window.opener.postMessage({ type: 'SUPABASE_AUTH_SUCCESS' }, '*');
-    setTimeout(() => {
-      try { window.close(); } catch(_) {}
-    }, 600);
-  } catch(_) {}
 }
 
 function backToEmailStep() {}
