@@ -12,7 +12,7 @@ try {
 } catch (_) {}
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.DEFAULT_APP_PORT || (process.env.PORT && String(process.env.PORT) !== '8080' ? Number(process.env.PORT) : 3000);
 const HOST = '0.0.0.0';
 
 app.use(express.json());

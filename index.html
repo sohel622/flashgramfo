@@ -2892,22 +2892,154 @@ async function initSupabase() {
   updateAuthStatusUI();
 }
 
+function extractGoogleUserMetadata(user) {
+  if (!user) return { fullName: '', avatarUrl: '', email: '', handle: '' };
+  const meta = user.user_metadata || {};
+
+  // Check identities array for Google identity data
+  let idData = {};
+  if (Array.isArray(user.identities)) {
+    const googleIdentity = user.identities.find(i => i.provider === 'google');
+    if (googleIdentity && googleIdentity.identity_data) {
+      idData = googleIdentity.identity_data;
+    }
+  }
+
+  const email = user.email || meta.email || idData.email || '';
+  const fullName = meta.full_name || meta.name || idData.full_name || idData.name || meta.display_name || '';
+  const avatarUrl = meta.avatar_url || meta.picture || idData.avatar_url || idData.picture || '';
+
+  // Clean username handle from email or fullName
+  let handle = '';
+  if (email && email.includes('@')) {
+    handle = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+  } else if (fullName) {
+    handle = fullName.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+  }
+  if (!handle || handle.length < 3) {
+    const uidSuffix = user.id ? user.id.replace(/-/g, '').slice(0, 6) : String(Math.floor(1000 + Math.random() * 9000));
+    handle = 'creator_' + uidSuffix;
+  }
+
+  return { fullName, avatarUrl, email, handle };
+}
+
+// Automatically inserts or merges Google OAuth metadata in public.profiles table
+async function syncUserProfileWithGoogle(user) {
+  if (!supabaseClient || !user || !user.id) return { data: null, isNew: false };
+
+  try {
+    const googleInfo = extractGoogleUserMetadata(user);
+
+    // 1. Check if profile already exists in public.profiles by user_id (UUID)
+    let { data: existing, error: queryErr } = await supabaseClient
+      .from('profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    // Fallback if column user_id is named id in custom setups
+    if (queryErr && (queryErr.code === '42703' || queryErr.message.includes('user_id'))) {
+      const fallback = await supabaseClient
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+      existing = fallback.data;
+    }
+
+    if (!existing) {
+      // User is registering / first login -> insert initial row with Google metadata
+      const initialPayload = {
+        user_id: user.id,
+        display_name: googleInfo.fullName || 'Creator',
+        full_name: googleInfo.fullName || 'Creator',
+        username: googleInfo.handle,
+        email: googleInfo.email || user.email || '',
+        avatar_url: googleInfo.avatarUrl || null,
+        bio: '',
+        role: 'user',
+        updated_at: new Date().toISOString()
+      };
+
+      const { data: inserted, error: insertErr } = await supabaseClient
+        .from('profiles')
+        .insert(initialPayload)
+        .select()
+        .maybeSingle();
+
+      if (insertErr) {
+        console.warn('Initial profile insert note:', insertErr.message);
+      }
+
+      return { data: inserted || initialPayload, isNew: true };
+    } else {
+      // Profile exists! Merge missing Google metadata without overwriting existing custom values
+      const updates = {};
+
+      if (!existing.avatar_url && googleInfo.avatarUrl) {
+        updates.avatar_url = googleInfo.avatarUrl;
+      }
+      if (!existing.display_name && !existing.full_name && googleInfo.fullName) {
+        updates.display_name = googleInfo.fullName;
+        updates.full_name = googleInfo.fullName;
+      }
+      if (!existing.email && (googleInfo.email || user.email)) {
+        updates.email = googleInfo.email || user.email;
+      }
+      if (!existing.username && googleInfo.handle) {
+        updates.username = googleInfo.handle;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        updates.updated_at = new Date().toISOString();
+        const { error: updateErr } = await supabaseClient
+          .from('profiles')
+          .update(updates)
+          .eq('user_id', user.id);
+
+        if (updateErr) {
+          console.warn('Google metadata merge note:', updateErr.message);
+        } else {
+          Object.assign(existing, updates);
+        }
+      }
+
+      // If user has not yet customized their profile, flag as needing setup
+      const isCustomized = Boolean(existing.display_name && existing.username && existing.updated_at);
+      return { data: existing, isNew: !isCustomized };
+    }
+  } catch(err) {
+    console.error('syncUserProfileWithGoogle error:', err);
+    return { data: null, isNew: false };
+  }
+}
+
 async function loadUserProfileFromSupabase(userId) {
   if (!supabaseClient || !userId) return;
   try {
-    const { data, error } = await supabaseClient
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (error) {
-      console.warn('public.profiles query error:', error.message);
-      return;
+    let syncResult = null;
+    if (currentAuthUser && currentAuthUser.id === userId) {
+      syncResult = await syncUserProfileWithGoogle(currentAuthUser);
     }
 
-    if (data && (data.display_name || data.full_name || data.name || data.username)) {
-      profile.id = data.id;
+    let data = syncResult?.data;
+    if (!data) {
+      const { data: qData, error } = await supabaseClient
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('public.profiles query error:', error.message);
+      } else {
+        data = qData;
+      }
+    }
+
+    if (data && (data.display_name || data.full_name || data.username)) {
+      profile.id = data.user_id || currentAuthUser?.id || userId;
       profile.name = data.display_name || data.full_name || data.name || profile.name;
       profile.handle = (data.username || profile.handle).replace(/^@/, '');
       profile.bio = data.bio !== null && data.bio !== undefined ? data.bio : '';
@@ -2923,8 +3055,13 @@ async function loadUserProfileFromSupabase(userId) {
 
       applyProfile();
       renderProfileGrid();
+
+      // For new signups, open the pre-filled Profile Setup screen once so they can review their details
+      if (syncResult && syncResult.isNew && !localStorage.getItem('reelflow_setup_done_' + userId)) {
+        openProfileSetupPage(userId, currentAuthUser?.email || '');
+      }
     } else {
-      // Authenticated but profile record does not exist yet -> trigger Full-Screen Profile Setup
+      // Authenticated but profile record does not exist or incomplete -> trigger Full-Screen Profile Setup
       openProfileSetupPage(userId, currentAuthUser?.email || '');
     }
   } catch(e) {
@@ -3274,11 +3411,20 @@ async function handlePasswordSignIn() {
     // Restore user profile from Supabase database (profiles table)
     let existingProfile = null;
     try {
-      const { data: pData } = await supabaseClient
+      let { data: pData, error: pErr } = await supabaseClient
         .from('profiles')
         .select('*')
-        .eq('id', user.id)
+        .eq('user_id', user.id)
         .maybeSingle();
+
+      if (pErr && (pErr.code === '42703' || pErr.message.includes('user_id'))) {
+        const fallback = await supabaseClient
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
+        pData = fallback.data;
+      }
       if (pData) existingProfile = pData;
     } catch(err) {
       console.warn('Profile fetch error:', err);
@@ -3344,40 +3490,60 @@ async function handleForgotPassword() {
 async function sendAuthOtp() {}
 async function verifyAuthOtp() {}
 
+let setupGoogleAvatarUrl = '';
+
 function openProfileSetupPage(userId, email = '') {
   setupAvatarFile = null;
-  let suggestedName = '';
-  let suggestedHandle = '';
-  const meta = (currentAuthUser && currentAuthUser.user_metadata) || {};
+  const googleInfo = extractGoogleUserMetadata(currentAuthUser);
 
-  if (meta.full_name || meta.name) {
-    suggestedName = meta.full_name || meta.name;
-    suggestedHandle = suggestedName.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
-  } else if (email && email.includes('@')) {
+  let suggestedName = (profile.name && profile.name !== 'Sign In') ? profile.name : googleInfo.fullName;
+  let suggestedHandle = (profile.handle && profile.handle !== 'me' && profile.handle !== 'user') ? profile.handle : googleInfo.handle;
+  let suggestedAvatar = profile.avatar_url || googleInfo.avatarUrl;
+
+  if (!suggestedName && email && email.includes('@')) {
     const prefix = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '');
     suggestedHandle = prefix.toLowerCase().slice(0, 20);
     suggestedName = prefix.charAt(0).toUpperCase() + prefix.slice(1);
   }
 
-  document.getElementById('setup-name').value = suggestedName || '';
-  document.getElementById('setup-handle').value = suggestedHandle || '';
-  document.getElementById('setup-bio').value = '';
-  document.getElementById('setup-error').style.display = 'none';
-
-  const preview = document.getElementById('setup-avatar-preview');
-  const icon = document.getElementById('setup-avatar-icon');
-  
-  if (meta.avatar_url || meta.picture) {
-    preview.src = meta.avatar_url || meta.picture;
-    preview.style.display = 'block';
-    icon.style.display = 'none';
-  } else {
-    preview.style.display = 'none';
-    preview.src = '';
-    icon.style.display = 'flex';
+  if (!suggestedHandle) {
+    const uidSuffix = userId ? userId.replace(/-/g, '').slice(0, 6) : String(Math.floor(1000 + Math.random() * 9000));
+    suggestedHandle = 'creator_' + uidSuffix;
   }
 
-  document.getElementById('page-profile-setup').style.display = 'flex';
+  // Pre-fill inputs
+  const nameInput = document.getElementById('setup-name');
+  const handleInput = document.getElementById('setup-handle');
+  const bioInput = document.getElementById('setup-bio');
+  if (nameInput) nameInput.value = suggestedName || '';
+  if (handleInput) handleInput.value = suggestedHandle || '';
+  if (bioInput) bioInput.value = profile.bio || '';
+  
+  const errBox = document.getElementById('setup-error');
+  if (errBox) errBox.style.display = 'none';
+
+  // Pre-fill avatar preview with Google OAuth picture
+  const preview = document.getElementById('setup-avatar-preview');
+  const icon = document.getElementById('setup-avatar-icon');
+
+  if (suggestedAvatar) {
+    setupGoogleAvatarUrl = suggestedAvatar;
+    if (preview) {
+      preview.src = suggestedAvatar;
+      preview.style.display = 'block';
+    }
+    if (icon) icon.style.display = 'none';
+  } else {
+    setupGoogleAvatarUrl = '';
+    if (preview) {
+      preview.style.display = 'none';
+      preview.src = '';
+    }
+    if (icon) icon.style.display = 'flex';
+  }
+
+  const page = document.getElementById('page-profile-setup');
+  if (page) page.style.display = 'flex';
 }
 const openProfileSetup = openProfileSetupPage;
 
@@ -3419,6 +3585,7 @@ function handleEditAvatarSelected(e) {
 
 function skipAvatarPhoto() {
   setupAvatarFile = null;
+  setupGoogleAvatarUrl = '';
   const preview = document.getElementById('setup-avatar-preview');
   const icon = document.getElementById('setup-avatar-icon');
   if (preview) { preview.src = ''; preview.style.display = 'none'; }
@@ -3473,35 +3640,42 @@ async function uploadAvatarToStorage(userId, file) {
   });
 }
 
-// Resilient database profile save that supports Lovable, custom, and standard Supabase schemas
-// Lovable schema uses: display_name, full_name, username, bio, avatar_url, updated_at
+// Resilient database profile save that matches Supabase public.profiles (user_id UUID reference)
 async function persistProfileToSupabase({ id, name, handle, bio, avatarUrl, email, isNew = false }) {
   if (!supabaseClient || !id) return { data: null, error: null };
 
   const payload = {
+    user_id: id,
     display_name: name,
     full_name: name,
     username: handle,
-    bio: bio,
+    bio: bio !== null && bio !== undefined ? bio : '',
     updated_at: new Date().toISOString()
   };
-  if (isNew) {
-    payload.id = id;
-    if (email) payload.email = email;
-  }
-  if (avatarUrl) {
-    payload.avatar_url = avatarUrl;
-  }
+  if (email) payload.email = email;
+  if (avatarUrl) payload.avatar_url = avatarUrl;
 
-  const runQuery = async (data) => {
-    if (isNew) {
-      return await supabaseClient.from('profiles').upsert(data);
+  const runUpsert = async (data) => {
+    // Check if profile exists by user_id
+    const { data: existing, error: checkErr } = await supabaseClient
+      .from('profiles')
+      .select('user_id')
+      .eq('user_id', id)
+      .maybeSingle();
+
+    if (existing) {
+      return await supabaseClient
+        .from('profiles')
+        .update(data)
+        .eq('user_id', id);
     } else {
-      return await supabaseClient.from('profiles').update(data).eq('id', id);
+      return await supabaseClient
+        .from('profiles')
+        .insert(data);
     }
   };
 
-  let res = await runQuery(payload);
+  let res = await runUpsert(payload);
 
   // If a column is not recognized in the PostgREST schema cache, dynamically strip it and retry
   let retries = 0;
@@ -3519,7 +3693,13 @@ async function persistProfileToSupabase({ id, name, handle, bio, avatarUrl, emai
         payload.name = name;
       }
 
-      res = await runQuery(payload);
+      res = await runUpsert(payload);
+    } else if (res.error && (res.error.code === '42703' || msg.includes('user_id'))) {
+      // Fallback if schema has id as primary key instead of user_id
+      payload.id = id;
+      delete payload.user_id;
+      res = await supabaseClient.from('profiles').upsert(payload);
+      break;
     } else {
       break;
     }
@@ -3554,7 +3734,7 @@ async function saveProfileSetup() {
       handle = currentAuthUser.email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
     }
     if (!handle || handle.length < 3) {
-      handle = 'creator_' + (currentAuthUser?.id ? currentAuthUser.id.slice(-4) : Math.floor(1000 + Math.random() * 9000));
+      handle = 'creator_' + (currentAuthUser?.id ? currentAuthUser.id.replace(/-/g, '').slice(0, 6) : Math.floor(1000 + Math.random() * 9000));
     }
   }
 
@@ -3573,19 +3753,21 @@ async function saveProfileSetup() {
   submitBtn.innerHTML = '<span class="loading-ring-sm"></span> Saving Profile…';
 
   try {
-    let avatarUrl = null;
-    const meta = (currentAuthUser && currentAuthUser.user_metadata) || {};
+    let avatarUrl = profile.avatar_url || null;
+    const googleInfo = extractGoogleUserMetadata(currentAuthUser);
 
-    // 1. Upload avatar to Supabase Storage bucket 'avatars'
+    // 1. Upload avatar to Supabase Storage if user selected custom photo, or use Google photo
     if (setupAvatarFile) {
       submitBtn.innerHTML = '<span class="loading-ring-sm"></span> Uploading Picture…';
       avatarUrl = await uploadAvatarToStorage(currentAuthUser.id, setupAvatarFile);
-    } else if (meta.avatar_url || meta.picture) {
-      avatarUrl = meta.avatar_url || meta.picture;
+    } else if (setupGoogleAvatarUrl) {
+      avatarUrl = setupGoogleAvatarUrl;
+    } else if (googleInfo.avatarUrl) {
+      avatarUrl = googleInfo.avatarUrl;
     }
 
-    // 2. Insert/Upsert into public.profiles linked to auth.users.id
-    submitBtn.innerHTML = '<span class="loading-ring-sm"></span> Creating Profile Record…';
+    // 2. Insert/Upsert into public.profiles linked to user_id
+    submitBtn.innerHTML = '<span class="loading-ring-sm"></span> Saving Profile Record…';
     const { error: saveErr } = await persistProfileToSupabase({
       id: currentAuthUser.id,
       name: name,
@@ -3603,6 +3785,10 @@ async function saveProfileSetup() {
       submitBtn.innerHTML = '<span class="material-symbols-rounded">check</span> Complete Profile';
       return;
     }
+
+    try {
+      localStorage.setItem('reelflow_setup_done_' + currentAuthUser.id, 'true');
+    } catch(_) {}
 
     profile.id = currentAuthUser.id;
     profile.name = name;
