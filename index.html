@@ -1285,22 +1285,37 @@
     .creator-card-name { font-size: 13.5px; font-weight: 700; color: #fff; }
     .creator-card-handle { font-size: 11.5px; color: var(--fg2); margin-top: -2px; }
     .creator-card-followers { font-size: 11px; color: var(--fg3); }
-    .creator-follow-btn {
-      margin-top: 4px;
+    .creator-card-av-img {
       width: 100%;
-      height: 28px;
-      border-radius: 6px;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .creator-message-btn {
+      margin-top: 6px;
+      width: 100%;
+      height: 30px;
+      border-radius: 8px;
       background: var(--accent);
       color: #fff;
       border: none;
       font-size: 12px;
       font-weight: 700;
       cursor: pointer;
-      transition: background .15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      transition: opacity .15s, transform .1s, background .15s;
     }
-    .creator-follow-btn.following {
-      background: rgba(255,255,255,0.15);
-      color: #fff;
+    .creator-message-btn:hover {
+      background: #ff335b;
+    }
+    .creator-message-btn:active {
+      transform: scale(0.97);
+    }
+    .creator-message-btn .material-symbols-rounded {
+      font-size: 15px;
     }
 
     /* ═══════════════════════════════════════════════════════
@@ -1401,23 +1416,39 @@
       transition: background .12s;
     }
     .chat-thread-item:active { background: rgba(255,255,255,0.05); }
-    .chat-thread-av {
-      width: 46px;
-      height: 46px;
+    .chat-thread-av-wrap {
+      width: 48px;
+      height: 48px;
       border-radius: 50%;
       background: var(--bg3);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 700;
-      color: #fff;
       border: 1px solid rgba(255,255,255,0.12);
       flex-shrink: 0;
+      overflow: hidden;
+    }
+    .chat-thread-av {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: #fff;
+      font-size: 16px;
+    }
+    .chat-thread-av-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
     }
     .chat-thread-body { flex: 1; min-width: 0; }
     .chat-thread-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }
     .chat-thread-name { font-size: 14.5px; font-weight: 700; color: #fff; }
-    .chat-thread-time { font-size: 11px; color: var(--fg3); }
+    .chat-thread-time { font-size: 11px; color: var(--fg3); font-weight: 500; }
     .chat-thread-msg { font-size: 13px; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     /* Chat Conversation Sheet */
@@ -1447,7 +1478,7 @@
     }
     #chat-modal.open .chat-sheet { transform: translateY(0); }
     .chat-header {
-      height: 56px;
+      height: 60px;
       padding: 0 16px;
       display: flex;
       align-items: center;
@@ -1455,37 +1486,123 @@
       border-bottom: 1px solid rgba(255,255,255,0.1);
       background: var(--bg2);
     }
-    .chat-header-info { text-align: center; }
-    .chat-header-name { font-size: 15px; font-weight: 700; }
-    .chat-header-handle { font-size: 11.5px; color: var(--fg2); }
-    .chat-back-btn { background: none; border: none; color: #fff; cursor: pointer; padding: 6px; }
+    .chat-header-user {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      cursor: pointer;
+    }
+    .chat-header-av-wrap {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--bg3);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid var(--accent);
+      flex-shrink: 0;
+    }
+    .chat-header-avatar {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .chat-header-initial {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+    }
+    .chat-header-info { text-align: left; min-width: 0; }
+    .chat-header-name { font-size: 14.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chat-header-handle { font-size: 11px; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chat-back-btn { background: none; border: none; color: #fff; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; }
     .chat-messages {
       flex: 1;
       overflow-y: auto;
       padding: 16px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
+    }
+    .chat-msg-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      width: 100%;
+    }
+    .chat-msg-row.me {
+      justify-content: flex-end;
+    }
+    .chat-msg-row.them {
+      justify-content: flex-start;
+    }
+    .chat-bubble-av-wrap {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      overflow: hidden;
+      flex-shrink: 0;
+      background: var(--bg3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255,255,255,0.15);
+      margin-bottom: 2px;
+    }
+    .chat-bubble-av-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .chat-bubble-av-initial {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .chat-bubble-col {
+      max-width: 72%;
+      display: flex;
+      flex-direction: column;
+    }
+    .chat-msg-row.me .chat-bubble-col {
+      align-items: flex-end;
+    }
+    .chat-msg-row.them .chat-bubble-col {
+      align-items: flex-start;
     }
     .chat-bubble {
-      max-width: 78%;
-      padding: 10px 14px;
-      border-radius: 18px;
-      font-size: 14px;
+      padding: 9px 13px;
+      border-radius: 17px;
+      font-size: 13.5px;
       line-height: 1.4;
       word-break: break-word;
     }
     .chat-bubble.me {
-      align-self: flex-end;
       background: var(--accent);
       color: #fff;
       border-bottom-right-radius: 4px;
     }
     .chat-bubble.them {
-      align-self: flex-start;
       background: var(--bg3);
       color: #fff;
       border-bottom-left-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .chat-bubble-timestamp {
+      font-size: 10px;
+      color: var(--fg3);
+      margin-top: 3px;
+      padding: 0 4px;
     }
     .chat-input-row {
       display: flex;
@@ -1556,6 +1673,93 @@
     }
     .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
     .modal-sub { font-size: 12.5px; color: var(--fg2); margin-bottom: 16px; }
+
+    /* 30-Day Profile Update Cooldown Styles */
+    .ep-cooldown-banner {
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.32);
+      border-radius: 12px;
+      padding: 10px 13px;
+      margin-bottom: 14px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #fbbf24;
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+    }
+    .ep-cooldown-banner .material-symbols-rounded {
+      font-size: 17px;
+      flex-shrink: 0;
+      color: #f59e0b;
+      margin-top: 1px;
+    }
+    .ep-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .ep-label-text {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--fg2);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .cooldown-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 10px;
+      letter-spacing: 0.01em;
+    }
+    .cooldown-badge.locked {
+      background: rgba(239, 68, 68, 0.16);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .cooldown-badge.available {
+      background: rgba(16, 185, 129, 0.12);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.22);
+    }
+    .cooldown-badge .material-symbols-rounded {
+      font-size: 13px;
+    }
+    .text-input.input-locked {
+      background: rgba(255, 255, 255, 0.03) !important;
+      border-color: rgba(255, 255, 255, 0.09) !important;
+      color: rgba(255, 255, 255, 0.45) !important;
+      cursor: not-allowed !important;
+    }
+    .avatar-upload-circle.avatar-locked {
+      cursor: not-allowed !important;
+      border-color: rgba(239, 68, 68, 0.45) !important;
+      opacity: 0.85;
+    }
+    .avatar-upload-circle.avatar-locked:hover {
+      transform: none !important;
+      border-color: rgba(239, 68, 68, 0.7) !important;
+    }
+    .avatar-upload-circle.avatar-locked .avatar-upload-badge {
+      background: #ef4444 !important;
+    }
+    .ep-error-box {
+      background: rgba(239, 68, 68, 0.16);
+      border: 1px solid rgba(239, 68, 68, 0.38);
+      color: #ff6b6b;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 12.5px;
+      margin-bottom: 14px;
+      line-height: 1.42;
+      display: none;
+    }
+
 
     /* Upload zone & Thumbnail options */
     .upload-zone {
@@ -2100,28 +2304,42 @@
     <div class="modal-title">Edit Profile</div>
     <div class="modal-sub">Update your public profile information</div>
 
+    <!-- Cooldown Warning Banner & Error Box -->
+    <div id="ep-error" class="ep-error-box"></div>
+    <div id="ep-cooldown-banner" class="ep-cooldown-banner" style="display:none;"></div>
+
     <!-- Avatar Picker in Edit Modal -->
     <div class="avatar-upload-center" style="margin-bottom:14px;">
       <input type="file" id="edit-avatar-file-input" accept="image/*" style="display:none" onchange="handleEditAvatarSelected(event)">
-      <div class="avatar-upload-circle" onclick="document.getElementById('edit-avatar-file-input').click()" title="Change avatar">
+      <div class="avatar-upload-circle" id="ep-avatar-circle" onclick="triggerEditAvatarClick()" title="Change avatar">
         <img id="ep-avatar-preview" class="avatar-upload-img" src="" alt="Avatar" />
         <div id="ep-avatar-icon" style="display:flex;align-items:center;justify-content:center;color:var(--fg2);">
           <span class="material-symbols-rounded" style="font-size:42px;">person</span>
         </div>
-        <div class="avatar-upload-badge">
-          <span class="material-symbols-rounded">photo_camera</span>
+        <div class="avatar-upload-badge" id="ep-avatar-badge-icon">
+          <span class="material-symbols-rounded" id="ep-avatar-badge-icon-symbol">photo_camera</span>
         </div>
       </div>
-      <div class="avatar-upload-tip">Change Profile Picture</div>
+      <div class="avatar-upload-tip" id="ep-avatar-tip">Change Profile Picture</div>
+      <div id="ep-avatar-badge-wrap" style="margin-top:6px;"></div>
     </div>
 
-    <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Display Name</div>
+    <div class="ep-label-row">
+      <span class="ep-label-text">Display Name</span>
+      <span id="ep-name-badge"></span>
+    </div>
     <input id="ep-name" type="text" class="text-input" placeholder="Your Name" style="margin-bottom:14px;">
 
-    <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Username Handle</div>
+    <div class="ep-label-row">
+      <span class="ep-label-text">Username Handle</span>
+      <span id="ep-handle-badge"></span>
+    </div>
     <input id="ep-handle" type="text" class="text-input" placeholder="username" style="margin-bottom:14px;">
 
-    <div style="font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase;">Bio</div>
+    <div class="ep-label-row">
+      <span class="ep-label-text">Bio</span>
+      <span id="ep-bio-badge"></span>
+    </div>
     <textarea id="ep-bio" class="text-input" rows="3" placeholder="Tell the world about yourself…" style="margin-bottom:18px;resize:none;"></textarea>
 
     <button id="ep-save-btn" class="upload-btn" onclick="saveProfile()">
@@ -2242,17 +2460,23 @@
 <div id="chat-modal" onclick="closeOnBackdrop(event,'chat-modal')">
   <div class="chat-sheet" onclick="event.stopPropagation()">
     <div class="chat-header">
-      <button class="chat-back-btn" onclick="closeChat()"><span class="material-symbols-rounded">arrow_back</span></button>
-      <div class="chat-header-info">
-        <div class="chat-header-name" id="chat-user-name">Earth Moments</div>
-        <div class="chat-header-handle" id="chat-user-handle">@earth_moments</div>
+      <button class="chat-back-btn" onclick="closeChat()" aria-label="Back"><span class="material-symbols-rounded">arrow_back</span></button>
+      <div class="chat-header-user">
+        <div class="chat-header-av-wrap" id="chat-header-av-wrap">
+          <img id="chat-user-avatar" class="chat-header-avatar" src="" alt="avatar" onerror="this.style.display='none';document.getElementById('chat-header-initial').style.display='flex';">
+          <div id="chat-header-initial" class="chat-header-initial"></div>
+        </div>
+        <div class="chat-header-info">
+          <div class="chat-header-name" id="chat-user-name">Earth Moments</div>
+          <div class="chat-header-handle" id="chat-user-handle">@earth_moments</div>
+        </div>
       </div>
       <div style="width:36px"></div>
     </div>
     <div class="chat-messages" id="chatMessages"></div>
     <div class="chat-input-row">
       <input type="text" id="chatInput" class="chat-input" placeholder="Send a message…" onkeydown="if(event.key==='Enter')sendChatMessage()">
-      <button class="chat-send-btn" onclick="sendChatMessage()"><span class="material-symbols-rounded">send</span></button>
+      <button class="chat-send-btn" onclick="sendChatMessage()" aria-label="Send message"><span class="material-symbols-rounded">send</span></button>
     </div>
   </div>
 </div>
@@ -2402,7 +2626,12 @@ let profile = {
   avatar_url: null,
   following: 0,
   followers: 0,
-  likes: 0
+  likes: 0,
+  updated_at: null,
+  name_updated_at: null,
+  avatar_updated_at: null,
+  username_updated_at: null,
+  bio_updated_at: null
 };
 let supabaseClient = null;
 let currentAuthUser = null;
@@ -2427,11 +2656,46 @@ let customUploadedThumbBlob = null;
 
 // Initial Creators
 let creators = [
-  { id: 'c1', name: 'Earth Moments', handle: 'earth_moments', followers: '1.4M', followed: false },
-  { id: 'c2', name: 'Animation Daily', handle: 'anim_daily', followers: '840K', followed: true },
-  { id: 'c3', name: 'Ocean Depths', handle: 'ocean_depths', followers: '620K', followed: false },
-  { id: 'c4', name: 'Maya Dance', handle: 'maya_dance', followers: '2.8M', followed: false },
-  { id: 'c5', name: 'Tech Frontier', handle: 'tech_frontier', followers: '950K', followed: false }
+  { 
+    id: 'c1', 
+    name: 'Earth Moments', 
+    handle: 'earth_moments', 
+    followers: '1.4M', 
+    followed: false,
+    avatar_url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=150&auto=format&fit=crop&q=80'
+  },
+  { 
+    id: 'c2', 
+    name: 'Animation Daily', 
+    handle: 'anim_daily', 
+    followers: '840K', 
+    followed: true,
+    avatar_url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80'
+  },
+  { 
+    id: 'c3', 
+    name: 'Ocean Depths', 
+    handle: 'ocean_depths', 
+    followers: '620K', 
+    followed: false,
+    avatar_url: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=150&auto=format&fit=crop&q=80'
+  },
+  { 
+    id: 'c4', 
+    name: 'Maya Dance', 
+    handle: 'maya_dance', 
+    followers: '2.8M', 
+    followed: false,
+    avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+  },
+  { 
+    id: 'c5', 
+    name: 'Tech Frontier', 
+    handle: 'tech_frontier', 
+    followers: '950K', 
+    followed: false,
+    avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
+  }
 ];
 
 // Seed Videos for rich out-of-the-box experience
@@ -2500,28 +2764,34 @@ const defaultSeedVideos = [
 let chatThreads = [
   {
     id: 't1',
+    creatorId: 'c1',
     user: 'Earth Moments',
     handle: 'earth_moments',
+    avatar_url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=150&auto=format&fit=crop&q=80',
     messages: [
-      { sender: 'them', text: 'Hey Alex! Loved your reel on the feed!', time: '2:15 PM' },
-      { sender: 'me', text: 'Thanks so much! Your nature clips are so inspiring.', time: '2:18 PM' },
-      { sender: 'them', text: 'Appreciate it! Let us know if you want to collaborate on the next video 🌸', time: '2:20 PM' }
+      { id: 'm1', sender: 'them', sender_id: 'c1', receiver_id: 'me', text: 'Hey! Loved your reel on the feed!', content: 'Hey! Loved your reel on the feed!', created_at: new Date(Date.now() - 7200000).toISOString(), time: '2h ago' },
+      { id: 'm2', sender: 'me', sender_id: 'me', receiver_id: 'c1', text: 'Thanks so much! Your nature clips are so inspiring.', content: 'Thanks so much! Your nature clips are so inspiring.', created_at: new Date(Date.now() - 3600000).toISOString(), time: '1h ago' },
+      { id: 'm3', sender: 'them', sender_id: 'c1', receiver_id: 'me', text: 'Appreciate it! Let us know if you want to collaborate on the next video 🌸', content: 'Appreciate it! Let us know if you want to collaborate on the next video 🌸', created_at: new Date(Date.now() - 1800000).toISOString(), time: '30m ago' }
     ]
   },
   {
     id: 't2',
+    creatorId: 'c2',
     user: 'Animation Daily',
     handle: 'anim_daily',
+    avatar_url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
     messages: [
-      { sender: 'them', text: 'New 3D render drop coming tomorrow 🔥', time: '11:00 AM' }
+      { id: 'm4', sender: 'them', sender_id: 'c2', receiver_id: 'me', text: 'New 3D render drop coming tomorrow 🔥', content: 'New 3D render drop coming tomorrow 🔥', created_at: new Date(Date.now() - 14400000).toISOString(), time: '4h ago' }
     ]
   },
   {
     id: 't3',
+    creatorId: 'c4',
     user: 'Maya Dance',
     handle: 'maya_dance',
+    avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     messages: [
-      { sender: 'them', text: 'Hey, what music track did you use on your latest upload?', time: 'Yesterday' }
+      { id: 'm5', sender: 'them', sender_id: 'c4', receiver_id: 'me', text: 'Hey, what music track did you use on your latest upload?', content: 'Hey, what music track did you use on your latest upload?', created_at: new Date(Date.now() - 86400000).toISOString(), time: '1d ago' }
     ]
   }
 ];
@@ -2565,6 +2835,8 @@ let chatThreads = [
   renderCreators();
   renderDiscover();
   renderInbox();
+  renderChatThreads();
+  subscribeToRealtimeChat();
   document.getElementById('db-loading').classList.add('hidden');
 })();
 
@@ -2769,6 +3041,19 @@ function createLocalSupabaseAdapter() {
             }
           };
         },
+        async insert(records) {
+          try {
+            const arr = Array.isArray(records) ? records : [records];
+            arr.forEach(r => {
+              if (r && r.id) {
+                localStorage.setItem(`reelflow_table_${tableName}_${r.id}`, JSON.stringify(r));
+              }
+            });
+            return { data: records, error: null };
+          } catch(err) {
+            return { data: null, error: err };
+          }
+        },
         async upsert(row) {
           try {
             if (row && row.id) {
@@ -2796,6 +3081,17 @@ function createLocalSupabaseAdapter() {
         }
       };
     },
+    channel(channelName) {
+      return {
+        on(event, filter, callback) { return this; },
+        subscribe(statusCallback) {
+          if (typeof statusCallback === 'function') statusCallback('SUBSCRIBED');
+          return this;
+        },
+        send(payload) { return Promise.resolve({ error: null }); }
+      };
+    },
+    removeChannel(channel) {},
     storage: {
       from(bucketName) {
         return {
@@ -3055,6 +3351,11 @@ async function loadUserProfileFromSupabase(userId) {
       profile.handle = (data.username || profile.handle).replace(/^@/, '');
       profile.bio = data.bio !== null && data.bio !== undefined ? data.bio : '';
       profile.avatar_url = data.avatar_url || null;
+      profile.updated_at = data.updated_at || null;
+      profile.name_updated_at = data.name_updated_at || data.updated_at || null;
+      profile.avatar_updated_at = data.avatar_updated_at || data.updated_at || null;
+      profile.username_updated_at = data.username_updated_at || data.updated_at || null;
+      profile.bio_updated_at = data.bio_updated_at || data.updated_at || null;
 
       // Cache locally in IndexedDB
       try {
@@ -3062,6 +3363,11 @@ async function loadUserProfileFromSupabase(userId) {
         await dbPut('profile', { key: 'handle', val: profile.handle });
         await dbPut('profile', { key: 'bio', val: profile.bio });
         if (profile.avatar_url) await dbPut('profile', { key: 'avatar_url', val: profile.avatar_url });
+        if (profile.updated_at) await dbPut('profile', { key: 'updated_at', val: profile.updated_at });
+        if (profile.name_updated_at) await dbPut('profile', { key: 'name_updated_at', val: profile.name_updated_at });
+        if (profile.avatar_updated_at) await dbPut('profile', { key: 'avatar_updated_at', val: profile.avatar_updated_at });
+        if (profile.username_updated_at) await dbPut('profile', { key: 'username_updated_at', val: profile.username_updated_at });
+        if (profile.bio_updated_at) await dbPut('profile', { key: 'bio_updated_at', val: profile.bio_updated_at });
       } catch(_) {}
 
       applyProfile();
@@ -3157,13 +3463,24 @@ async function handleOAuthCallback(rawUrl) {
     const parseParams = (str) => {
       const result = {};
       if (!str) return result;
-      str.split('&').forEach(pair => {
-        const [k, v] = pair.split('=');
-        if (k) {
-          try {
-            result[decodeURIComponent(k)] = decodeURIComponent(v || '');
-          } catch(_) {
-            result[k] = v || '';
+      const clean = str.replace(/^[#?]/, '');
+      try {
+        const usp = new URLSearchParams(clean);
+        for (const [k, v] of usp.entries()) {
+          result[k] = v;
+        }
+      } catch(_) {}
+      clean.split('&').forEach(pair => {
+        const idx = pair.indexOf('=');
+        if (idx > -1) {
+          const k = pair.substring(0, idx);
+          const v = pair.substring(idx + 1);
+          if (k && !result[k]) {
+            try {
+              result[decodeURIComponent(k)] = decodeURIComponent(v || '');
+            } catch(_) {
+              result[k] = v || '';
+            }
           }
         }
       });
@@ -3292,17 +3609,13 @@ window.addEventListener('hashchange', () => {
   }
 });
 
-// Dynamic Production Redirect URL:
-// Resolves the current window origin (e.g. Vercel deployment) and strictly prevents
-// redirecting to localhost on mobile devices which triggers ERR_CONNECTION_REFUSED.
+// Strict Live Production Redirect URL:
+// Explicitly overrides Supabase OAuth redirect to strictly use the live production domain
+// https://flashgram-five.vercel.app/ so Supabase NEVER falls back to localhost.
+const LIVE_REDIRECT_URL = 'https://flashgram-five.vercel.app/';
+
 const getRedirectUrl = () => {
-  if (typeof window !== 'undefined' && window.location) {
-    const origin = window.location.origin;
-    if (origin && origin !== 'null' && !origin.includes('localhost') && !origin.includes('127.0.0.1')) {
-      return origin;
-    }
-  }
-  return 'https://flashgram-five.vercel.app'; // Production URL fallback
+  return LIVE_REDIRECT_URL;
 };
 
 async function handleGoogleSignIn() {
@@ -3325,17 +3638,20 @@ async function handleGoogleSignIn() {
   `;
 
   try {
-    const redirectUrl = getRedirectUrl();
     const isIframe = typeof window !== 'undefined' && window.self !== window.top;
 
-    console.log('Initiating Google OAuth with redirect URL:', redirectUrl, { isIframe });
+    console.log('Initiating Google OAuth with strict production redirect URL:', LIVE_REDIRECT_URL, { isIframe });
+
+    const authOptions = {
+      redirectTo: LIVE_REDIRECT_URL
+    };
+    if (isIframe) {
+      authOptions.skipBrowserRedirect = true;
+    }
 
     const { data, error } = await supabaseClient.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: redirectUrl,
-        skipBrowserRedirect: isIframe ? true : false
-      }
+      options: authOptions
     });
 
     if (error) throw error;
@@ -3729,9 +4045,39 @@ function handleSetupAvatarSelected(e) {
   reader.readAsDataURL(file);
 }
 
+function triggerEditAvatarClick() {
+  const cd = getFieldCooldownStatus(profile.avatar_updated_at);
+  if (cd.isLocked) {
+    const msg = `You can only update your profile picture once every 30 days. Next change available in ${cd.remainingDays} days (${cd.formattedDate}).`;
+    showToast(msg);
+    const errBox = document.getElementById('ep-error');
+    if (errBox) {
+      errBox.textContent = msg;
+      errBox.style.display = 'block';
+    }
+    return;
+  }
+  const input = document.getElementById('edit-avatar-file-input');
+  if (input) input.click();
+}
+
 function handleEditAvatarSelected(e) {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
+
+  const cd = getFieldCooldownStatus(profile.avatar_updated_at);
+  if (cd.isLocked) {
+    e.target.value = '';
+    const msg = `You can only update your profile picture once every 30 days. Next change available in ${cd.remainingDays} days (${cd.formattedDate}).`;
+    showToast(msg);
+    const errBox = document.getElementById('ep-error');
+    if (errBox) {
+      errBox.textContent = msg;
+      errBox.style.display = 'block';
+    }
+    return;
+  }
+
   editAvatarFile = file;
 
   const reader = new FileReader();
@@ -3803,19 +4149,32 @@ async function uploadAvatarToStorage(userId, file) {
 }
 
 // Resilient database profile save that matches Supabase public.profiles (user_id UUID reference)
-async function persistProfileToSupabase({ id, name, handle, bio, avatarUrl, email, isNew = false }) {
+async function persistProfileToSupabase({ id, name, handle, bio, avatarUrl, email, isNew = false, changed = {} }) {
   if (!supabaseClient || !id) return { data: null, error: null };
 
+  const nowIso = new Date().toISOString();
   const payload = {
     user_id: id,
     display_name: name,
     full_name: name,
     username: handle,
     bio: bio !== null && bio !== undefined ? bio : '',
-    updated_at: new Date().toISOString()
+    updated_at: nowIso
   };
   if (email) payload.email = email;
   if (avatarUrl) payload.avatar_url = avatarUrl;
+
+  if (isNew) {
+    payload.name_updated_at = nowIso;
+    payload.avatar_updated_at = nowIso;
+    payload.username_updated_at = nowIso;
+    payload.bio_updated_at = nowIso;
+  } else {
+    if (changed.name) payload.name_updated_at = nowIso;
+    if (changed.handle) payload.username_updated_at = nowIso;
+    if (changed.avatar) payload.avatar_updated_at = nowIso;
+    if (changed.bio) payload.bio_updated_at = nowIso;
+  }
 
   const runUpsert = async (data) => {
     // Check if profile exists by user_id
@@ -3957,6 +4316,12 @@ async function saveProfileSetup() {
     profile.handle = handle;
     profile.bio = bio;
     if (avatarUrl) profile.avatar_url = avatarUrl;
+    const nowIso = new Date().toISOString();
+    profile.updated_at = nowIso;
+    profile.name_updated_at = nowIso;
+    profile.avatar_updated_at = nowIso;
+    profile.username_updated_at = nowIso;
+    profile.bio_updated_at = nowIso;
 
     // Cache locally in IndexedDB
     try {
@@ -3964,6 +4329,11 @@ async function saveProfileSetup() {
       await dbPut('profile', { key: 'handle', val: profile.handle });
       await dbPut('profile', { key: 'bio', val: profile.bio });
       if (profile.avatar_url) await dbPut('profile', { key: 'avatar_url', val: profile.avatar_url });
+      await dbPut('profile', { key: 'updated_at', val: profile.updated_at });
+      await dbPut('profile', { key: 'name_updated_at', val: profile.name_updated_at });
+      await dbPut('profile', { key: 'avatar_updated_at', val: profile.avatar_updated_at });
+      await dbPut('profile', { key: 'username_updated_at', val: profile.username_updated_at });
+      await dbPut('profile', { key: 'bio_updated_at', val: profile.bio_updated_at });
     } catch(_) {}
 
     closeProfileSetupPage();
@@ -4009,6 +4379,202 @@ function applyProfile() {
   updateAuthStatusUI();
 }
 
+// ═══════════════════════════════════════════════════════
+//  30-DAY COOLDOWN PROFILE RESTRICTION LOGIC
+// ═══════════════════════════════════════════════════════
+const COOLDOWN_DAYS = 30;
+const COOLDOWN_MS = COOLDOWN_DAYS * 24 * 60 * 60 * 1000; // 30 days in ms (2,592,000,000 ms)
+
+function getFieldCooldownStatus(lastUpdatedTimestamp) {
+  if (!lastUpdatedTimestamp) {
+    return { isLocked: false, remainingDays: 0, remainingHours: 0, nextAvailableDate: null, formattedDate: '' };
+  }
+  const lastTime = new Date(lastUpdatedTimestamp).getTime();
+  if (isNaN(lastTime)) {
+    return { isLocked: false, remainingDays: 0, remainingHours: 0, nextAvailableDate: null, formattedDate: '' };
+  }
+  const now = Date.now();
+  const elapsed = now - lastTime;
+  const remaining = COOLDOWN_MS - elapsed;
+  if (remaining <= 0) {
+    return { isLocked: false, remainingDays: 0, remainingHours: 0, nextAvailableDate: null, formattedDate: '' };
+  }
+  const remainingDays = Math.ceil(remaining / (24 * 60 * 60 * 1000));
+  const remainingHours = Math.ceil(remaining / (60 * 60 * 1000));
+  const nextAvailableDate = new Date(lastTime + COOLDOWN_MS);
+  return {
+    isLocked: true,
+    remainingMs: remaining,
+    remainingDays,
+    remainingHours,
+    nextAvailableDate,
+    formattedDate: nextAvailableDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  };
+}
+
+function renderProfileCooldownUI() {
+  const errBox = document.getElementById('ep-error');
+  if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+
+  const banner = document.getElementById('ep-cooldown-banner');
+  const nameCooldown = getFieldCooldownStatus(profile.name_updated_at);
+  const handleCooldown = getFieldCooldownStatus(profile.username_updated_at);
+  const avatarCooldown = getFieldCooldownStatus(profile.avatar_updated_at);
+  const bioCooldown = getFieldCooldownStatus(profile.bio_updated_at);
+
+  const epNameInput = document.getElementById('ep-name');
+  const epHandleInput = document.getElementById('ep-handle');
+  const epBioInput = document.getElementById('ep-bio');
+  const epAvatarCircle = document.getElementById('ep-avatar-circle');
+  const epAvatarTip = document.getElementById('ep-avatar-tip');
+  const epAvatarBadgeIcon = document.getElementById('ep-avatar-badge-icon-symbol');
+  const epSaveBtn = document.getElementById('ep-save-btn');
+
+  // Display Name
+  const epNameBadge = document.getElementById('ep-name-badge');
+  if (nameCooldown.isLocked) {
+    if (epNameInput) {
+      epNameInput.readOnly = true;
+      epNameInput.classList.add('input-locked');
+      epNameInput.title = `Display Name is locked for ${nameCooldown.remainingDays} more days (available on ${nameCooldown.formattedDate})`;
+    }
+    if (epNameBadge) {
+      epNameBadge.className = 'cooldown-badge locked';
+      epNameBadge.innerHTML = `<span class="material-symbols-rounded">lock</span> Locked (${nameCooldown.remainingDays}d)`;
+    }
+  } else {
+    if (epNameInput) {
+      epNameInput.readOnly = false;
+      epNameInput.classList.remove('input-locked');
+      epNameInput.title = '';
+    }
+    if (epNameBadge) {
+      epNameBadge.className = 'cooldown-badge available';
+      epNameBadge.innerHTML = `<span class="material-symbols-rounded">check_circle</span> Ready to edit`;
+    }
+  }
+
+  // Username Handle
+  const epHandleBadge = document.getElementById('ep-handle-badge');
+  if (handleCooldown.isLocked) {
+    if (epHandleInput) {
+      epHandleInput.readOnly = true;
+      epHandleInput.classList.add('input-locked');
+      epHandleInput.title = `Username handle is locked for ${handleCooldown.remainingDays} more days (available on ${handleCooldown.formattedDate})`;
+    }
+    if (epHandleBadge) {
+      epHandleBadge.className = 'cooldown-badge locked';
+      epHandleBadge.innerHTML = `<span class="material-symbols-rounded">lock</span> Locked (${handleCooldown.remainingDays}d)`;
+    }
+  } else {
+    if (epHandleInput) {
+      epHandleInput.readOnly = false;
+      epHandleInput.classList.remove('input-locked');
+      epHandleInput.title = '';
+    }
+    if (epHandleBadge) {
+      epHandleBadge.className = 'cooldown-badge available';
+      epHandleBadge.innerHTML = `<span class="material-symbols-rounded">check_circle</span> Ready to edit`;
+    }
+  }
+
+  // Bio
+  const epBioBadge = document.getElementById('ep-bio-badge');
+  if (bioCooldown.isLocked) {
+    if (epBioInput) {
+      epBioInput.readOnly = true;
+      epBioInput.classList.add('input-locked');
+      epBioInput.title = `Bio is locked for ${bioCooldown.remainingDays} more days (available on ${bioCooldown.formattedDate})`;
+    }
+    if (epBioBadge) {
+      epBioBadge.className = 'cooldown-badge locked';
+      epBioBadge.innerHTML = `<span class="material-symbols-rounded">lock</span> Locked (${bioCooldown.remainingDays}d)`;
+    }
+  } else {
+    if (epBioInput) {
+      epBioInput.readOnly = false;
+      epBioInput.classList.remove('input-locked');
+      epBioInput.title = '';
+    }
+    if (epBioBadge) {
+      epBioBadge.className = 'cooldown-badge available';
+      epBioBadge.innerHTML = `<span class="material-symbols-rounded">check_circle</span> Ready to edit`;
+    }
+  }
+
+  // Avatar
+  const epAvatarBadgeWrap = document.getElementById('ep-avatar-badge-wrap');
+  if (avatarCooldown.isLocked) {
+    if (epAvatarCircle) {
+      epAvatarCircle.classList.add('avatar-locked');
+      epAvatarCircle.title = `Profile photo is locked for ${avatarCooldown.remainingDays} more days (available on ${avatarCooldown.formattedDate})`;
+    }
+    if (epAvatarTip) {
+      epAvatarTip.textContent = `Photo locked until ${avatarCooldown.formattedDate}`;
+    }
+    if (epAvatarBadgeIcon) {
+      epAvatarBadgeIcon.textContent = 'lock';
+    }
+    if (epAvatarBadgeWrap) {
+      epAvatarBadgeWrap.innerHTML = `<span class="cooldown-badge locked"><span class="material-symbols-rounded">lock</span> Photo locked for ${avatarCooldown.remainingDays}d</span>`;
+    }
+  } else {
+    if (epAvatarCircle) {
+      epAvatarCircle.classList.remove('avatar-locked');
+      epAvatarCircle.title = 'Change avatar';
+    }
+    if (epAvatarTip) {
+      epAvatarTip.textContent = 'Change Profile Picture';
+    }
+    if (epAvatarBadgeIcon) {
+      epAvatarBadgeIcon.textContent = 'photo_camera';
+    }
+    if (epAvatarBadgeWrap) {
+      epAvatarBadgeWrap.innerHTML = `<span class="cooldown-badge available"><span class="material-symbols-rounded">check_circle</span> Ready to change</span>`;
+    }
+  }
+
+  // Cooldown Banner & Save Button
+  const lockedCount = (nameCooldown.isLocked ? 1 : 0) + (handleCooldown.isLocked ? 1 : 0) + (bioCooldown.isLocked ? 1 : 0) + (avatarCooldown.isLocked ? 1 : 0);
+
+  if (banner) {
+    if (lockedCount > 0) {
+      banner.style.display = 'flex';
+      if (lockedCount === 4) {
+        banner.innerHTML = `
+          <span class="material-symbols-rounded">lock_clock</span>
+          <div>
+            <strong>30-Day Cooldown Active:</strong> All profile fields were recently updated. Next updates unlock on <strong>${nameCooldown.formattedDate || avatarCooldown.formattedDate}</strong>.
+          </div>
+        `;
+      } else {
+        banner.innerHTML = `
+          <span class="material-symbols-rounded">info</span>
+          <div>
+            <strong>30-Day Cooldown Policy:</strong> Profile details can only be changed once every 30 days. Locked fields will show the remaining cooldown time.
+          </div>
+        `;
+      }
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+
+  if (epSaveBtn) {
+    if (lockedCount === 4) {
+      epSaveBtn.disabled = true;
+      epSaveBtn.style.opacity = '0.55';
+      epSaveBtn.style.cursor = 'not-allowed';
+      epSaveBtn.innerHTML = `<span class="material-symbols-rounded">lock_clock</span> Changes Locked (30-day cooldown)`;
+    } else {
+      epSaveBtn.disabled = false;
+      epSaveBtn.style.opacity = '1';
+      epSaveBtn.style.cursor = 'pointer';
+      epSaveBtn.innerHTML = `<span class="material-symbols-rounded">check</span> Save Changes`;
+    }
+  }
+}
+
 function openEditProfile() {
   if (!currentAuthUser) {
     openAuthModal();
@@ -4033,14 +4599,74 @@ function openEditProfile() {
   const logoutBtn = document.getElementById('ep-logout-btn');
   if (logoutBtn) logoutBtn.style.display = currentAuthUser ? 'flex' : 'none';
 
+  renderProfileCooldownUI();
   document.getElementById('edit-profile-modal').classList.add('open');
 }
 
 async function saveProfile() {
-  const name = document.getElementById('ep-name').value.trim() || profile.name;
-  const handle = document.getElementById('ep-handle').value.replace(/^@/,'').trim().toLowerCase() || profile.handle;
-  const bio = document.getElementById('ep-bio').value.trim();
+  const errBox = document.getElementById('ep-error');
+  if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+
+  const nameInput = document.getElementById('ep-name').value.trim();
+  const handleInput = document.getElementById('ep-handle').value.replace(/^@/,'').trim().toLowerCase();
+  const bioInput = document.getElementById('ep-bio').value.trim();
   const saveBtn = document.getElementById('ep-save-btn');
+
+  const name = nameInput || profile.name;
+  const handle = handleInput || profile.handle;
+  const bio = bioInput;
+
+  // Detect which fields actually changed
+  const nameChanged = nameInput !== '' && nameInput !== (profile.name || '');
+  const handleChanged = handleInput !== '' && handleInput !== (profile.handle || '');
+  const bioChanged = bioInput !== (profile.bio || '');
+  const avatarChanged = Boolean(editAvatarFile);
+
+  if (!nameChanged && !handleChanged && !bioChanged && !avatarChanged) {
+    document.getElementById('edit-profile-modal').classList.remove('open');
+    return;
+  }
+
+  // 1. Strict 30-Day Cooldown Validation on each changed field
+  if (avatarChanged) {
+    const cd = getFieldCooldownStatus(profile.avatar_updated_at);
+    if (cd.isLocked) {
+      const msg = `You can only update your profile picture once every 30 days. Next change available in ${cd.remainingDays} days (${cd.formattedDate}).`;
+      if (errBox) { errBox.textContent = msg; errBox.style.display = 'block'; }
+      showToast(msg);
+      return;
+    }
+  }
+
+  if (nameChanged) {
+    const cd = getFieldCooldownStatus(profile.name_updated_at);
+    if (cd.isLocked) {
+      const msg = `You can only update your display name once every 30 days. Next change available in ${cd.remainingDays} days (${cd.formattedDate}).`;
+      if (errBox) { errBox.textContent = msg; errBox.style.display = 'block'; }
+      showToast(msg);
+      return;
+    }
+  }
+
+  if (handleChanged) {
+    const cd = getFieldCooldownStatus(profile.username_updated_at);
+    if (cd.isLocked) {
+      const msg = `You can only update your username handle once every 30 days. Next change available in ${cd.remainingDays} days (${cd.formattedDate}).`;
+      if (errBox) { errBox.textContent = msg; errBox.style.display = 'block'; }
+      showToast(msg);
+      return;
+    }
+  }
+
+  if (bioChanged) {
+    const cd = getFieldCooldownStatus(profile.bio_updated_at);
+    if (cd.isLocked) {
+      const msg = `You can only update your bio once every 30 days. Next change available in ${cd.remainingDays} days (${cd.formattedDate}).`;
+      if (errBox) { errBox.textContent = msg; errBox.style.display = 'block'; }
+      showToast(msg);
+      return;
+    }
+  }
 
   saveBtn.disabled = true;
   saveBtn.innerHTML = '<span class="loading-ring-sm"></span> Saving…';
@@ -4048,18 +4674,15 @@ async function saveProfile() {
   try {
     let avatarUrl = profile.avatar_url;
 
-    // 1. Upload new picture if user changed photo
-    if (editAvatarFile && currentAuthUser) {
+    // Upload new picture if user changed photo
+    if (avatarChanged && currentAuthUser) {
       saveBtn.innerHTML = '<span class="loading-ring-sm"></span> Uploading Picture…';
       avatarUrl = await uploadAvatarToStorage(currentAuthUser.id, editAvatarFile);
     }
 
-    profile.name = name;
-    profile.handle = handle;
-    profile.bio = bio;
-    profile.avatar_url = avatarUrl;
+    const nowIso = new Date().toISOString();
 
-    // 2. Update existing public.profiles row
+    // 2. Update existing public.profiles row in Supabase
     if (supabaseClient && currentAuthUser) {
       saveBtn.innerHTML = '<span class="loading-ring-sm"></span> Updating Profile…';
       const { error: updateErr } = await persistProfileToSupabase({
@@ -4068,13 +4691,39 @@ async function saveProfile() {
         handle: handle,
         bio: bio,
         avatarUrl: avatarUrl,
-        isNew: false
+        isNew: false,
+        changed: {
+          name: nameChanged,
+          handle: handleChanged,
+          bio: bioChanged,
+          avatar: avatarChanged
+        }
       });
 
       if (updateErr) {
         console.warn('public.profiles update error:', updateErr.message);
+        // If error contains cooldown rejection from database trigger, show to user
+        if (updateErr.message && (updateErr.message.toLowerCase().includes('cooldown') || updateErr.message.toLowerCase().includes('30 days'))) {
+          if (errBox) {
+            errBox.textContent = updateErr.message;
+            errBox.style.display = 'block';
+          }
+          showToast(updateErr.message);
+          return;
+        }
       }
     }
+
+    // Update local profile state and timestamps
+    profile.name = name;
+    profile.handle = handle;
+    profile.bio = bio;
+    profile.avatar_url = avatarUrl;
+    profile.updated_at = nowIso;
+    if (nameChanged) profile.name_updated_at = nowIso;
+    if (handleChanged) profile.username_updated_at = nowIso;
+    if (avatarChanged) profile.avatar_updated_at = nowIso;
+    if (bioChanged) profile.bio_updated_at = nowIso;
 
     // Also persist in local offline store
     try {
@@ -4082,15 +4731,24 @@ async function saveProfile() {
       await dbPut('profile', { key: 'handle', val: profile.handle });
       await dbPut('profile', { key: 'bio', val: profile.bio });
       if (profile.avatar_url) await dbPut('profile', { key: 'avatar_url', val: profile.avatar_url });
+      await dbPut('profile', { key: 'updated_at', val: profile.updated_at });
+      if (profile.name_updated_at) await dbPut('profile', { key: 'name_updated_at', val: profile.name_updated_at });
+      if (profile.avatar_updated_at) await dbPut('profile', { key: 'avatar_updated_at', val: profile.avatar_updated_at });
+      if (profile.username_updated_at) await dbPut('profile', { key: 'username_updated_at', val: profile.username_updated_at });
+      if (profile.bio_updated_at) await dbPut('profile', { key: 'bio_updated_at', val: profile.bio_updated_at });
     } catch(e) {}
 
     document.getElementById('edit-profile-modal').classList.remove('open');
     applyProfile();
     renderProfileGrid();
-    showToast('Profile updated ✨');
+    showToast('Profile updated ✨ (30-day cooldown active)');
   } catch(err) {
     console.error('saveProfile error:', err);
-    showToast('Error updating profile');
+    if (errBox) {
+      errBox.textContent = err.message || 'Error updating profile';
+      errBox.style.display = 'block';
+    }
+    showToast(err.message || 'Error updating profile');
   } finally {
     saveBtn.disabled = false;
     saveBtn.innerHTML = '<span class="material-symbols-rounded">check</span> Save Changes';
@@ -4706,26 +5364,18 @@ function renderCreators() {
     const card = document.createElement('div');
     card.className = 'creator-card';
     card.innerHTML = `
-      <div class="creator-card-av">${c.name[0]}</div>
+      <div class="creator-card-av">
+        ${c.avatar_url ? `<img class="creator-card-av-img" src="${c.avatar_url}" alt="${c.name}" onerror="this.style.display='none';this.parentElement.textContent='${c.name[0]}';">` : c.name[0]}
+      </div>
       <div class="creator-card-name">${c.name}</div>
       <div class="creator-card-handle">@${c.handle}</div>
       <div class="creator-card-followers">${c.followers} followers</div>
-      <button class="creator-follow-btn${c.followed ? ' following' : ''}" onclick="toggleCreatorFollow('${c.id}')">
-        ${c.followed ? 'Following' : 'Follow'}
+      <button class="creator-message-btn" onclick="openDirectMessageWithCreator('${c.id}')" title="Direct Message with ${c.name}">
+        <span class="material-symbols-rounded">chat_bubble</span> Message
       </button>
     `;
     container.appendChild(card);
   });
-}
-
-function toggleCreatorFollow(cid) {
-  const creator = creators.find(c => c.id === cid);
-  if (!creator) return;
-  creator.followed = !creator.followed;
-  profile.following = Math.max(0, profile.following + (creator.followed ? 1 : -1));
-  applyProfile();
-  renderCreators();
-  showToast(creator.followed ? 'Following @' + creator.handle : 'Unfollowed');
 }
 
 function renderDiscover() {
@@ -4873,22 +5523,75 @@ function followBack(btn, user) {
   showToast(isFollowing ? 'Unfollowed ' + user : 'Following ' + user + ' ✨');
 }
 
+function escapeHtml(str) {
+  if (typeof str !== 'string') return String(str || '');
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function formatRelativeTime(dateInput) {
+  if (!dateInput) return 'Just now';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return String(dateInput);
+  const now = new Date();
+  const diffSec = Math.floor((now - d) / 1000);
+  if (diffSec < 45) return 'Just now';
+  if (diffSec < 3600) return Math.floor(diffSec / 60) + 'm ago';
+  if (diffSec < 86400) return Math.floor(diffSec / 3600) + 'h ago';
+  if (diffSec < 604800) return Math.floor(diffSec / 86400) + 'd ago';
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function formatChatTime(dateInput) {
+  if (!dateInput) return '';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return String(dateInput);
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
 function renderChatThreads() {
   const container = document.getElementById('inbox-chats-list');
+  if (!container) return;
   container.innerHTML = '';
+
+  if (!chatThreads.length) {
+    container.innerHTML = `
+      <div class="profile-empty" style="padding:40px 20px;">
+        <span class="material-symbols-rounded">chat_bubble</span>
+        <div class="profile-empty-title">No direct messages yet</div>
+        <div class="profile-empty-sub">Discover creators and tap "Message" to start a real-time conversation</div>
+      </div>
+    `;
+    return;
+  }
+
   chatThreads.forEach(t => {
-    const lastMsg = t.messages[t.messages.length - 1] || { text: '', time: '' };
+    const lastMsg = t.messages[t.messages.length - 1] || { text: 'No messages yet', content: 'No messages yet', time: '' };
+    const lastText = lastMsg.content || lastMsg.text || 'No messages yet';
+    const displayTime = formatRelativeTime(lastMsg.created_at || lastMsg.time);
+    const initial = (t.user || 'U')[0].toUpperCase();
+
     const row = document.createElement('div');
     row.className = 'chat-thread-item';
     row.onclick = () => openChat(t.id);
     row.innerHTML = `
-      <div class="chat-thread-av">${t.user[0]}</div>
+      <div class="chat-thread-av-wrap">
+        ${t.avatar_url ? `
+          <img class="chat-thread-av-img" src="${t.avatar_url}" alt="${escapeHtml(t.user)}" onerror="this.style.display='none';this.parentElement.innerHTML='<div class=\\'chat-thread-av\\'>${initial}</div>';">
+        ` : `
+          <div class="chat-thread-av">${initial}</div>
+        `}
+      </div>
       <div class="chat-thread-body">
         <div class="chat-thread-top">
-          <span class="chat-thread-name">${t.user}</span>
-          <span class="chat-thread-time">${lastMsg.time}</span>
+          <span class="chat-thread-name">${escapeHtml(t.user)}</span>
+          <span class="chat-thread-time">${escapeHtml(displayTime)}</span>
         </div>
-        <div class="chat-thread-msg">${lastMsg.text}</div>
+        <div class="chat-thread-msg">${escapeHtml(lastText)}</div>
       </div>
     `;
     container.appendChild(row);
@@ -4896,14 +5599,94 @@ function renderChatThreads() {
 }
 
 let activeChatThreadId = null;
+let activeChatRecipient = null;
+let chatRealtimeChannel = null;
+
+// Navigate user directly to real-time chat with a specific creator
+function openDirectMessageWithCreator(creatorId) {
+  const creator = creators.find(c => c.id === creatorId || c.handle === creatorId);
+  if (!creator) return;
+
+  // Find or create chat thread for this creator
+  let thread = chatThreads.find(t => t.creatorId === creator.id || t.handle === creator.handle);
+  if (!thread) {
+    thread = {
+      id: 'thread_' + creator.id,
+      creatorId: creator.id,
+      user: creator.name,
+      handle: creator.handle,
+      avatar_url: creator.avatar_url,
+      messages: []
+    };
+    chatThreads.unshift(thread);
+  }
+
+  activeChatRecipient = creator;
+  activeChatThreadId = thread.id;
+
+  // Populate Chat Header with creator avatar and handle
+  document.getElementById('chat-user-name').textContent = creator.name;
+  document.getElementById('chat-user-handle').textContent = '@' + creator.handle;
+  const avImg = document.getElementById('chat-user-avatar');
+  const avInit = document.getElementById('chat-header-initial');
+  if (creator.avatar_url) {
+    avImg.src = creator.avatar_url;
+    avImg.style.display = 'block';
+    avInit.style.display = 'none';
+  } else {
+    avImg.style.display = 'none';
+    avInit.textContent = (creator.name || 'U')[0].toUpperCase();
+    avInit.style.display = 'flex';
+  }
+
+  // Load message history from Supabase if connected
+  loadSupabaseMessagesForThread(thread);
+
+  // Subscribe to real-time channel if not already active
+  subscribeToRealtimeChat();
+
+  renderChatMessages(thread);
+  document.getElementById('chat-modal').classList.add('open');
+  setTimeout(() => {
+    const input = document.getElementById('chatInput');
+    if (input) input.focus();
+  }, 250);
+}
 
 function openChat(threadId) {
   activeChatThreadId = threadId;
   const thread = chatThreads.find(t => t.id === threadId);
   if (!thread) return;
 
+  // Find recipient creator or object
+  const creator = creators.find(c => c.id === thread.creatorId || c.handle === thread.handle) || {
+    id: thread.creatorId || thread.id,
+    name: thread.user,
+    handle: thread.handle,
+    avatar_url: thread.avatar_url
+  };
+  activeChatRecipient = creator;
+
   document.getElementById('chat-user-name').textContent = thread.user;
   document.getElementById('chat-user-handle').textContent = '@' + thread.handle;
+  const avImg = document.getElementById('chat-user-avatar');
+  const avInit = document.getElementById('chat-header-initial');
+  if (thread.avatar_url || creator.avatar_url) {
+    avImg.src = thread.avatar_url || creator.avatar_url;
+    avImg.style.display = 'block';
+    avInit.style.display = 'none';
+  } else {
+    avImg.style.display = 'none';
+    avInit.textContent = (thread.user || 'U')[0].toUpperCase();
+    avInit.style.display = 'flex';
+  }
+
+  // Load message history from Supabase if available
+  loadSupabaseMessagesForThread(thread);
+
+  // Subscribe to real-time channel
+  subscribeToRealtimeChat();
+
   renderChatMessages(thread);
   document.getElementById('chat-modal').classList.add('open');
 }
@@ -4912,41 +5695,343 @@ function closeChat() {
   document.getElementById('chat-modal').classList.remove('open');
 }
 
+// Render messages showing avatars on BOTH sides of the chat window
 function renderChatMessages(thread) {
   const container = document.getElementById('chatMessages');
+  if (!container) return;
   container.innerHTML = '';
+
+  const myId = (currentAuthUser && currentAuthUser.id) || profile.id || 'my_user';
+  const myName = profile.name || (currentAuthUser ? 'Creator' : 'You');
+  const googleMeta = currentAuthUser ? extractGoogleUserMetadata(currentAuthUser) : null;
+  const myAvatar = profile.avatar_url || (googleMeta && googleMeta.avatarUrl) || '';
+  const myInitial = (myName || 'Y')[0].toUpperCase();
+
+  const recipientName = thread.user || (activeChatRecipient && activeChatRecipient.name) || 'Creator';
+  const recipientAvatar = thread.avatar_url || (activeChatRecipient && activeChatRecipient.avatar_url) || '';
+  const recipInitial = (recipientName || 'U')[0].toUpperCase();
+
+  if (!thread.messages || thread.messages.length === 0) {
+    const emptyRow = document.createElement('div');
+    emptyRow.style.cssText = 'text-align:center;color:var(--fg3);padding:30px 10px;font-size:13px;';
+    emptyRow.innerHTML = `
+      <div style="font-weight:700;margin-bottom:4px;color:#fff;">Say hello to ${escapeHtml(recipientName)}! 👋</div>
+      <div>Send a message below to start your real-time conversation</div>
+    `;
+    container.appendChild(emptyRow);
+  }
+
   thread.messages.forEach(m => {
-    const bubble = document.createElement('div');
-    bubble.className = 'chat-bubble ' + m.sender;
-    bubble.textContent = m.text;
-    container.appendChild(bubble);
+    const isMe = (m.sender === 'me') || (m.sender_id && String(m.sender_id) === String(myId)) || (m.sender_id === 'my_user');
+    const msgText = m.content || m.text || '';
+    const msgTime = formatChatTime(m.created_at || m.time);
+
+    const row = document.createElement('div');
+    row.className = 'chat-msg-row ' + (isMe ? 'me' : 'them');
+
+    if (!isMe) {
+      // Left side: Recipient avatar + bubble + timestamp
+      row.innerHTML = `
+        <div class="chat-bubble-av-wrap" title="${escapeHtml(recipientName)}">
+          ${recipientAvatar ? `
+            <img src="${recipientAvatar}" class="chat-bubble-av-img" alt="${escapeHtml(recipientName)}" onerror="this.style.display='none';this.parentElement.innerHTML='<div class=\\'chat-bubble-av-initial\\'>${recipInitial}</div>';">
+          ` : `
+            <div class="chat-bubble-av-initial">${recipInitial}</div>
+          `}
+        </div>
+        <div class="chat-bubble-col">
+          <div class="chat-bubble them">${escapeHtml(msgText)}</div>
+          <div class="chat-bubble-timestamp">${escapeHtml(msgTime)}</div>
+        </div>
+      `;
+    } else {
+      // Right side: Bubble + timestamp + Current user's avatar
+      row.innerHTML = `
+        <div class="chat-bubble-col">
+          <div class="chat-bubble me">${escapeHtml(msgText)}</div>
+          <div class="chat-bubble-timestamp">${escapeHtml(msgTime)}</div>
+        </div>
+        <div class="chat-bubble-av-wrap" title="${escapeHtml(myName)}">
+          ${myAvatar ? `
+            <img src="${myAvatar}" class="chat-bubble-av-img" alt="${escapeHtml(myName)}" onerror="this.style.display='none';this.parentElement.innerHTML='<div class=\\'chat-bubble-av-initial\\'>${myInitial}</div>';">
+          ` : `
+            <div class="chat-bubble-av-initial">${myInitial}</div>
+          `}
+        </div>
+      `;
+    }
+
+    container.appendChild(row);
   });
+
   container.scrollTop = container.scrollHeight;
 }
 
-function sendChatMessage() {
+// Send chat message with Supabase persistence and Realtime broadcast
+async function sendChatMessage() {
   const inp = document.getElementById('chatInput');
-  const text = inp.value.trim();
+  const text = (inp.value || '').trim();
   if (!text) return;
+
   const thread = chatThreads.find(t => t.id === activeChatThreadId);
   if (!thread) return;
 
-  thread.messages.push({ sender: 'me', text, time: 'Just now' });
+  const myId = (currentAuthUser && currentAuthUser.id) || profile.id || 'my_user';
+  const myName = profile.name || (currentAuthUser ? 'Creator' : 'You');
+  const googleMeta = currentAuthUser ? extractGoogleUserMetadata(currentAuthUser) : null;
+  const myAvatar = profile.avatar_url || (googleMeta && googleMeta.avatarUrl) || '';
+  const recipientId = (activeChatRecipient && activeChatRecipient.id) || thread.creatorId || thread.id;
+
+  const nowIso = new Date().toISOString();
+  const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+
+  const newMsg = {
+    id: msgId,
+    sender_id: String(myId),
+    receiver_id: String(recipientId),
+    sender: 'me',
+    content: text,
+    text: text,
+    sender_name: myName,
+    sender_avatar: myAvatar,
+    created_at: nowIso,
+    time: 'Just now'
+  };
+
+  // 1. Instantly display in conversation (Optimistic UI)
+  thread.messages.push(newMsg);
   inp.value = '';
   renderChatMessages(thread);
+  renderChatThreads();
 
-  // Simulated auto response
-  setTimeout(() => {
-    const replies = [
-      'Awesome! Totally agree 🙌',
-      'That looks super clean! Let’s keep building 🔥',
-      'Got it! Watching your latest clip now ✨',
-      'Love the energy on ReelFlow 🌸'
-    ];
-    const reply = replies[Math.floor(Math.random() * replies.length)];
-    thread.messages.push({ sender: 'them', text: reply, time: 'Just now' });
+  // 2. Persist to Supabase messages table
+  if (supabaseClient) {
+    try {
+      const { error: insErr } = await supabaseClient.from('messages').insert({
+        id: window.crypto && crypto.randomUUID ? crypto.randomUUID() : undefined,
+        sender_id: String(myId),
+        receiver_id: String(recipientId),
+        content: text,
+        sender_name: myName,
+        sender_avatar: myAvatar,
+        created_at: nowIso
+      });
+      if (insErr) {
+        console.warn('Supabase message insert note:', insErr);
+      }
+    } catch(err) {
+      console.warn('Supabase message save error:', err);
+    }
+
+    // 3. Broadcast to realtime channel for instant peer synchronization
+    try {
+      if (chatRealtimeChannel) {
+        chatRealtimeChannel.send({
+          type: 'broadcast',
+          event: 'new_message',
+          payload: newMsg
+        });
+      }
+    } catch(_) {}
+  }
+
+  // 4. Interactive simulated reply from featured creators for lively real-time feel
+  if (['c1', 'c2', 'c3', 'c4', 'c5'].includes(recipientId)) {
+    setTimeout(async () => {
+      const creatorReplies = {
+        c1: ['Nature blooms in wonderful ways! Glad you enjoyed the reel 🌸', 'Thanks for reaching out! Looking forward to collaborating on our next shoot 🍃', 'Awesome question! Shot with 4K macro lens in the morning mist ✨'],
+        c2: ['Thanks for watching! New 3D Blender animation drop coming tomorrow 🔥', 'Appreciate the feedback! What animation software do you use?', 'Keep creating! Great to connect with fellow artists 🙌'],
+        c3: ['The ocean depths always have something new to discover 🌊', 'Thanks for connecting! Marine protection is our passion 🐋', 'Underwater filming takes patience, but totally worth it! ✨'],
+        c4: ['Hey! So happy you stopped by! What style of dance do you enjoy? 💃', 'Music track credit is in the bio link! Let me know if you make a routine 🎶', 'Thanks for the love! More choreography coming soon ✨'],
+        c5: ['Tech innovation never stops! Thanks for reaching out 🚀', 'Always love connecting with fellow creators and developers 💻', 'Let us know what tech breakdown you want to see next! 🔥']
+      };
+      const pool = creatorReplies[recipientId] || ['Awesome! Thanks for reaching out 🙌', 'Great to connect on ReelFlow ✨'];
+      const replyText = pool[Math.floor(Math.random() * pool.length)];
+      const replyIso = new Date().toISOString();
+      const replyMsg = {
+        id: 'reply_' + Date.now(),
+        sender_id: String(recipientId),
+        receiver_id: String(myId),
+        sender: 'them',
+        content: replyText,
+        text: replyText,
+        sender_name: thread.user,
+        sender_avatar: thread.avatar_url,
+        created_at: replyIso,
+        time: 'Just now'
+      };
+
+      thread.messages.push(replyMsg);
+      if (activeChatThreadId === thread.id) {
+        renderChatMessages(thread);
+      }
+      renderChatThreads();
+
+      // Store creator reply in Supabase messages table
+      if (supabaseClient) {
+        try {
+          await supabaseClient.from('messages').insert({
+            id: window.crypto && crypto.randomUUID ? crypto.randomUUID() : undefined,
+            sender_id: String(recipientId),
+            receiver_id: String(myId),
+            content: replyText,
+            sender_name: thread.user,
+            sender_avatar: thread.avatar_url,
+            created_at: replyIso
+          });
+        } catch(_) {}
+      }
+    }, 1100);
+  }
+}
+
+// Supabase Realtime Chat integration via Postgres Changes & Broadcast
+function subscribeToRealtimeChat() {
+  if (!supabaseClient) return;
+  if (chatRealtimeChannel) return; // Already subscribed
+
+  try {
+    chatRealtimeChannel = supabaseClient.channel('realtime_chat_messages')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages'
+      }, payload => {
+        if (payload && payload.new) {
+          handleIncomingRealtimeMessage(payload.new);
+        }
+      })
+      .on('broadcast', { event: 'new_message' }, payload => {
+        if (payload && payload.payload) {
+          handleIncomingRealtimeMessage(payload.payload);
+        }
+      })
+      .subscribe((status, err) => {
+        console.log('⚡ Supabase Realtime Chat subscription status:', status, err || '');
+      });
+  } catch(err) {
+    console.warn('Realtime chat channel setup warning:', err);
+  }
+}
+
+// Handle incoming messages from Postgres Changes or Broadcast
+function handleIncomingRealtimeMessage(rawMsg) {
+  if (!rawMsg || !rawMsg.content) return;
+
+  const myId = (currentAuthUser && currentAuthUser.id) || profile.id || 'my_user';
+
+  // Check if we already have this message to prevent duplicate rendering
+  const alreadyExists = chatThreads.some(t => 
+    t.messages.some(m => 
+      (rawMsg.id && m.id === rawMsg.id) || 
+      (m.content === rawMsg.content && Math.abs(new Date(m.created_at || 0) - new Date(rawMsg.created_at || 0)) < 3000)
+    )
+  );
+  if (alreadyExists) return;
+
+  // Determine thread match
+  const senderId = String(rawMsg.sender_id || '');
+  const receiverId = String(rawMsg.receiver_id || '');
+  const otherParticipantId = (senderId === String(myId)) ? receiverId : senderId;
+
+  let thread = chatThreads.find(t => 
+    t.creatorId === otherParticipantId || 
+    t.id === otherParticipantId || 
+    t.handle === otherParticipantId
+  );
+
+  if (!thread) {
+    // Create new thread for new incoming conversation
+    const knownCreator = creators.find(c => c.id === otherParticipantId || c.handle === otherParticipantId);
+    thread = {
+      id: 'thread_' + otherParticipantId,
+      creatorId: otherParticipantId,
+      user: knownCreator ? knownCreator.name : (rawMsg.sender_name || 'Creator'),
+      handle: knownCreator ? knownCreator.handle : otherParticipantId,
+      avatar_url: knownCreator ? knownCreator.avatar_url : (rawMsg.sender_avatar || null),
+      messages: []
+    };
+    chatThreads.unshift(thread);
+  }
+
+  const isMe = (senderId === String(myId));
+  const newMsg = {
+    id: rawMsg.id || ('rt_' + Date.now()),
+    sender_id: senderId,
+    receiver_id: receiverId,
+    sender: isMe ? 'me' : 'them',
+    content: rawMsg.content,
+    text: rawMsg.content,
+    sender_name: rawMsg.sender_name,
+    sender_avatar: rawMsg.sender_avatar,
+    created_at: rawMsg.created_at || new Date().toISOString(),
+    time: formatRelativeTime(rawMsg.created_at)
+  };
+
+  thread.messages.push(newMsg);
+
+  // If this thread is currently open, re-render messages instantly
+  if (activeChatThreadId === thread.id) {
     renderChatMessages(thread);
-  }, 1000);
+  }
+
+  // Update Inbox thread list previews and timestamps
+  renderChatThreads();
+}
+
+// Fetch message history between current user and thread participant from Supabase
+async function loadSupabaseMessagesForThread(thread) {
+  if (!supabaseClient || !thread) return;
+  const myId = (currentAuthUser && currentAuthUser.id) || profile.id || 'my_user';
+  const otherId = thread.creatorId || thread.id;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('messages')
+      .select('*')
+      .or(`and(sender_id.eq.${myId},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${myId})`)
+      .order('created_at', { ascending: true })
+      .limit(50);
+
+    if (error) {
+      console.warn('Supabase load messages note:', error);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      data.forEach(row => {
+        const exists = thread.messages.some(m => 
+          m.id === row.id || 
+          (m.content === row.content && Math.abs(new Date(m.created_at) - new Date(row.created_at)) < 3000)
+        );
+        if (!exists) {
+          const isMe = String(row.sender_id) === String(myId);
+          thread.messages.push({
+            id: row.id,
+            sender_id: row.sender_id,
+            receiver_id: row.receiver_id,
+            sender: isMe ? 'me' : 'them',
+            content: row.content,
+            text: row.content,
+            sender_name: row.sender_name,
+            sender_avatar: row.sender_avatar,
+            created_at: row.created_at,
+            time: formatChatTime(row.created_at)
+          });
+        }
+      });
+
+      // Sort thread messages chronologically
+      thread.messages.sort((a,b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+
+      if (activeChatThreadId === thread.id) {
+        renderChatMessages(thread);
+      }
+      renderChatThreads();
+    }
+  } catch(err) {
+    console.warn('Error fetching messages from Supabase:', err);
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -4979,6 +6064,7 @@ function goPage(page, navEl) {
       renderDiscover();
     } else if (page === 'inbox') {
       renderInbox();
+      renderChatThreads();
     }
   }
 }

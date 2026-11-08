@@ -48,7 +48,7 @@ app.post('/api/config', (req, res) => {
 
   try {
     const envPath = path.join(__dirname, '.env');
-    const content = `PORT=${PORT}\nSUPABASE_URL=${supabaseUrl.trim()}\nSUPABASE_ANON_KEY=${supabaseAnonKey.trim()}\n`;
+    const content = `SUPABASE_URL=${supabaseUrl.trim()}\nSUPABASE_ANON_KEY=${supabaseAnonKey.trim()}\nAPP_URL=https://flashgram-five.vercel.app/\nSITE_URL=https://flashgram-five.vercel.app/\n`;
     fs.writeFileSync(envPath, content, 'utf8');
   } catch (err) {
     console.warn('Could not write .env:', err);

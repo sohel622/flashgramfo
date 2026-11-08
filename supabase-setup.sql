@@ -19,11 +19,15 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   role TEXT DEFAULT 'user',
   website TEXT,
   pronouns TEXT,
+  name_updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
+  avatar_updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
+  username_updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
+  bio_updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
   created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
   updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now())
 );
 
--- Ensure user_id column exists if table was already created
+-- Ensure user_id and 30-day cooldown timestamp columns exist if table was already created
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -31,6 +35,22 @@ BEGIN
     WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'user_id'
   ) THEN
     ALTER TABLE public.profiles ADD COLUMN user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'name_updated_at') THEN
+    ALTER TABLE public.profiles ADD COLUMN name_updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now());
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'avatar_updated_at') THEN
+    ALTER TABLE public.profiles ADD COLUMN avatar_updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now());
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'username_updated_at') THEN
+    ALTER TABLE public.profiles ADD COLUMN username_updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now());
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'bio_updated_at') THEN
+    ALTER TABLE public.profiles ADD COLUMN bio_updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now());
   END IF;
 END $$;
 
@@ -140,7 +160,115 @@ CREATE POLICY "Authenticated users can update avatars"
   );
 
 -- ========================================================
--- 6. Supabase Dashboard URL Configuration Guide
+-- 6. Strict 30-Day Cooldown Trigger on Profile Updates
+-- Enforces 30-day cooldown on name, username, avatar, and bio
+-- ========================================================
+CREATE OR REPLACE FUNCTION public.check_profile_update_cooldown()
+RETURNS trigger AS $$
+DECLARE
+  v_cooldown_interval INTERVAL := INTERVAL '30 days';
+  v_now TIMESTAMPTZ := timezone('utc'::text, now());
+BEGIN
+  -- Only validate on UPDATE (allow INSERT/creation)
+  IF TG_OP = 'UPDATE' THEN
+    -- Check Display Name / Full Name change
+    IF (OLD.display_name IS DISTINCT FROM NEW.display_name OR OLD.full_name IS DISTINCT FROM NEW.full_name) THEN
+      IF OLD.name_updated_at IS NOT NULL AND (v_now - OLD.name_updated_at) < v_cooldown_interval THEN
+        RAISE EXCEPTION 'You can only update your profile name once every 30 days. Next change available in % days.',
+          CEIL(EXTRACT(EPOCH FROM (OLD.name_updated_at + v_cooldown_interval - v_now)) / 86400);
+      END IF;
+      NEW.name_updated_at := v_now;
+    END IF;
+
+    -- Check Username handle change
+    IF (OLD.username IS DISTINCT FROM NEW.username) THEN
+      IF OLD.username_updated_at IS NOT NULL AND (v_now - OLD.username_updated_at) < v_cooldown_interval THEN
+        RAISE EXCEPTION 'You can only update your username handle once every 30 days. Next change available in % days.',
+          CEIL(EXTRACT(EPOCH FROM (OLD.username_updated_at + v_cooldown_interval - v_now)) / 86400);
+      END IF;
+      NEW.username_updated_at := v_now;
+    END IF;
+
+    -- Check Avatar / Profile picture change
+    IF (OLD.avatar_url IS DISTINCT FROM NEW.avatar_url) THEN
+      IF OLD.avatar_url IS NOT NULL AND OLD.avatar_updated_at IS NOT NULL AND (v_now - OLD.avatar_updated_at) < v_cooldown_interval THEN
+        RAISE EXCEPTION 'You can only update your profile picture once every 30 days. Next change available in % days.',
+          CEIL(EXTRACT(EPOCH FROM (OLD.avatar_updated_at + v_cooldown_interval - v_now)) / 86400);
+      END IF;
+      NEW.avatar_updated_at := v_now;
+    END IF;
+
+    -- Check Bio change
+    IF (OLD.bio IS DISTINCT FROM NEW.bio) THEN
+      IF OLD.bio_updated_at IS NOT NULL AND (v_now - OLD.bio_updated_at) < v_cooldown_interval THEN
+        RAISE EXCEPTION 'You can only update your bio once every 30 days. Next change available in % days.',
+          CEIL(EXTRACT(EPOCH FROM (OLD.bio_updated_at + v_cooldown_interval - v_now)) / 86400);
+      END IF;
+      NEW.bio_updated_at := v_now;
+    END IF;
+
+    NEW.updated_at := v_now;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_check_profile_cooldown ON public.profiles;
+CREATE TRIGGER trg_check_profile_cooldown
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.check_profile_update_cooldown();
+
+-- ========================================================
+-- 7. Realtime Chat Messages Table & Realtime Publication
+-- ========================================================
+CREATE TABLE IF NOT EXISTS public.messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sender_id TEXT NOT NULL,
+  receiver_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  sender_name TEXT,
+  sender_avatar TEXT,
+  created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now())
+);
+
+-- Indexes for lightning-fast conversation queries
+CREATE INDEX IF NOT EXISTS idx_messages_participants 
+  ON public.messages (sender_id, receiver_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_receiver_participants 
+  ON public.messages (receiver_id, sender_id, created_at DESC);
+
+-- Enable RLS
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+
+-- Allow reading messages for conversation participants (or public chat viewing)
+DROP POLICY IF EXISTS "Users can read their conversation messages" ON public.messages;
+CREATE POLICY "Users can read their conversation messages"
+  ON public.messages FOR SELECT
+  USING (true);
+
+-- Allow inserting messages
+DROP POLICY IF EXISTS "Users can send messages" ON public.messages;
+CREATE POLICY "Users can send messages"
+  ON public.messages FOR INSERT
+  WITH CHECK (true);
+
+-- Add public.messages to the Supabase Realtime publication
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+-- ========================================================
+-- 8. Supabase Dashboard URL Configuration Guide
 -- ========================================================
 -- Go to: Supabase Dashboard -> Authentication -> URL Configuration
 --
@@ -154,3 +282,4 @@ CREATE POLICY "Authenticated users can update avatars"
 --    https://ais-pre-srrwbq2np52usw4em6euev-582735108837.asia-southeast1.run.app/**
 --    https://ais-dev-srrwbq2np52usw4em6euev-582735108837.asia-southeast1.run.app/**
 -- ========================================================
+
