@@ -2654,49 +2654,9 @@ let currentFeedTab = 'foryou';
 window._muted = false; // Enabled sound automatically by default (unmuted)
 let customUploadedThumbBlob = null;
 
-// Initial Creators
-let creators = [
-  { 
-    id: 'c1', 
-    name: 'Earth Moments', 
-    handle: 'earth_moments', 
-    followers: '1.4M', 
-    followed: false,
-    avatar_url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=150&auto=format&fit=crop&q=80'
-  },
-  { 
-    id: 'c2', 
-    name: 'Animation Daily', 
-    handle: 'anim_daily', 
-    followers: '840K', 
-    followed: true,
-    avatar_url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80'
-  },
-  { 
-    id: 'c3', 
-    name: 'Ocean Depths', 
-    handle: 'ocean_depths', 
-    followers: '620K', 
-    followed: false,
-    avatar_url: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=150&auto=format&fit=crop&q=80'
-  },
-  { 
-    id: 'c4', 
-    name: 'Maya Dance', 
-    handle: 'maya_dance', 
-    followers: '2.8M', 
-    followed: false,
-    avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
-  },
-  { 
-    id: 'c5', 
-    name: 'Tech Frontier', 
-    handle: 'tech_frontier', 
-    followers: '950K', 
-    followed: false,
-    avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
-  }
-];
+// Dynamic creators list fetched from Supabase profiles table
+let creators = [];
+let isLoadingCreators = false;
 
 // Seed Videos for rich out-of-the-box experience
 const defaultSeedVideos = [
@@ -2761,40 +2721,22 @@ const defaultSeedVideos = [
 ];
 
 // Direct messages conversations
-let chatThreads = [
-  {
-    id: 't1',
-    creatorId: 'c1',
-    user: 'Earth Moments',
-    handle: 'earth_moments',
-    avatar_url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=150&auto=format&fit=crop&q=80',
-    messages: [
-      { id: 'm1', sender: 'them', sender_id: 'c1', receiver_id: 'me', text: 'Hey! Loved your reel on the feed!', content: 'Hey! Loved your reel on the feed!', created_at: new Date(Date.now() - 7200000).toISOString(), time: '2h ago' },
-      { id: 'm2', sender: 'me', sender_id: 'me', receiver_id: 'c1', text: 'Thanks so much! Your nature clips are so inspiring.', content: 'Thanks so much! Your nature clips are so inspiring.', created_at: new Date(Date.now() - 3600000).toISOString(), time: '1h ago' },
-      { id: 'm3', sender: 'them', sender_id: 'c1', receiver_id: 'me', text: 'Appreciate it! Let us know if you want to collaborate on the next video 🌸', content: 'Appreciate it! Let us know if you want to collaborate on the next video 🌸', created_at: new Date(Date.now() - 1800000).toISOString(), time: '30m ago' }
-    ]
-  },
-  {
-    id: 't2',
-    creatorId: 'c2',
-    user: 'Animation Daily',
-    handle: 'anim_daily',
-    avatar_url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
-    messages: [
-      { id: 'm4', sender: 'them', sender_id: 'c2', receiver_id: 'me', text: 'New 3D render drop coming tomorrow 🔥', content: 'New 3D render drop coming tomorrow 🔥', created_at: new Date(Date.now() - 14400000).toISOString(), time: '4h ago' }
-    ]
-  },
-  {
-    id: 't3',
-    creatorId: 'c4',
-    user: 'Maya Dance',
-    handle: 'maya_dance',
-    avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    messages: [
-      { id: 'm5', sender: 'them', sender_id: 'c4', receiver_id: 'me', text: 'Hey, what music track did you use on your latest upload?', content: 'Hey, what music track did you use on your latest upload?', created_at: new Date(Date.now() - 86400000).toISOString(), time: '1d ago' }
-    ]
-  }
-];
+let chatThreads = [];
+function loadStoredChatThreads() {
+  try {
+    const raw = localStorage.getItem('reelflow_chat_threads');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) chatThreads = parsed;
+    }
+  } catch(_) {}
+}
+function saveChatThreadsToStorage() {
+  try {
+    localStorage.setItem('reelflow_chat_threads', JSON.stringify(chatThreads));
+  } catch(_) {}
+}
+loadStoredChatThreads();
 
 // ═══════════════════════════════════════════════════════
 //  INIT
@@ -2832,10 +2774,12 @@ let chatThreads = [
   await initSupabase();
   applyProfile();
   buildFeed();
+  await loadCreatorsFromSupabase();
   renderCreators();
   renderDiscover();
   renderInbox();
   renderChatThreads();
+  loadUserChatThreadsFromSupabase();
   subscribeToRealtimeChat();
   document.getElementById('db-loading').classList.add('hidden');
 })();
@@ -3177,6 +3121,8 @@ async function initSupabase() {
       if (sessionData && sessionData.session && sessionData.session.user) {
         currentAuthUser = sessionData.session.user;
         await loadUserProfileFromSupabase(currentAuthUser.id);
+        await loadCreatorsFromSupabase();
+        loadUserChatThreadsFromSupabase();
       }
     }
 
@@ -3187,9 +3133,12 @@ async function initSupabase() {
         currentAuthUser = session.user;
         closeAuthPage();
         await loadUserProfileFromSupabase(session.user.id);
+        await loadCreatorsFromSupabase();
+        loadUserChatThreadsFromSupabase();
       } else {
         currentAuthUser = null;
         updateAuthStatusUI();
+        await loadCreatorsFromSupabase();
       }
     });
   } catch(err) {
@@ -5355,22 +5304,113 @@ function copyLink() {
 }
 
 // ═══════════════════════════════════════════════════════
-//  DISCOVER & CREATORS
+//  DISCOVER & REAL CREATORS FROM DATABASE
 // ═══════════════════════════════════════════════════════
+async function loadCreatorsFromSupabase() {
+  if (!supabaseClient) return;
+  isLoadingCreators = true;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .select('user_id, id, display_name, full_name, username, avatar_url, bio, email, updated_at')
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      console.warn('loadCreatorsFromSupabase note:', error.message);
+      return;
+    }
+
+    if (data && Array.isArray(data)) {
+      const myId = (currentAuthUser && currentAuthUser.id) || profile.id;
+      const myEmail = (currentAuthUser && currentAuthUser.email) || profile.email;
+      const myHandle = (profile.handle || '').replace(/^@/, '').trim().toLowerCase();
+
+      const seen = new Set();
+      const realCreators = [];
+
+      data.forEach(p => {
+        const uid = p.user_id ? String(p.user_id) : (p.id ? String(p.id) : null);
+        const handle = (p.username || '').replace(/^@/, '').trim().toLowerCase();
+        const pEmail = (p.email || '').trim().toLowerCase();
+
+        // 1. Filter out currently logged-in user so they don't see themselves
+        if (myId && uid && String(uid).toLowerCase() === String(myId).toLowerCase()) return;
+        if (myHandle && handle && handle === myHandle) return;
+        if (myEmail && pEmail && pEmail === myEmail.toLowerCase()) return;
+
+        // Skip records without any recognizable identity
+        if (!p.display_name && !p.full_name && !p.username) return;
+
+        // Deduplicate profiles by user_id or handle
+        const dedupeKey = uid ? `uid_${uid}` : `h_${handle}`;
+        if (seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+
+        const name = p.display_name || p.full_name || p.username || 'Creator';
+        const displayHandle = p.username ? p.username.replace(/^@/, '') : (p.display_name ? p.display_name.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) : 'creator');
+
+        realCreators.push({
+          id: uid || displayHandle,
+          user_id: uid,
+          name: name,
+          handle: displayHandle,
+          avatar_url: p.avatar_url || '',
+          bio: p.bio || '',
+          followers: 'Creator'
+        });
+      });
+
+      creators = realCreators;
+    }
+  } catch(err) {
+    console.error('loadCreatorsFromSupabase exception:', err);
+  } finally {
+    isLoadingCreators = false;
+    renderCreators();
+  }
+}
+
 function renderCreators() {
   const container = document.getElementById('creatorsContainer');
+  if (!container) return;
   container.innerHTML = '';
+
+  if (isLoadingCreators && (!creators || creators.length === 0)) {
+    container.innerHTML = `
+      <div style="padding:18px 20px;color:var(--fg3);font-size:13px;display:flex;align-items:center;gap:8px;">
+        <span class="loading-ring-sm"></span> Loading creators…
+      </div>
+    `;
+    return;
+  }
+
+  if (!creators || creators.length === 0) {
+    container.innerHTML = `
+      <div style="padding:18px 20px;color:var(--fg3);font-size:13px;display:flex;align-items:center;gap:8px;">
+        <span class="material-symbols-rounded" style="font-size:18px;">group_off</span>
+        No other creators found in community yet
+      </div>
+    `;
+    return;
+  }
+
   creators.forEach(c => {
     const card = document.createElement('div');
     card.className = 'creator-card';
+    const initial = (c.name || c.handle || 'C')[0].toUpperCase();
+    const handleClean = (c.handle || '').replace(/^@/, '');
+
     card.innerHTML = `
       <div class="creator-card-av">
-        ${c.avatar_url ? `<img class="creator-card-av-img" src="${c.avatar_url}" alt="${c.name}" onerror="this.style.display='none';this.parentElement.textContent='${c.name[0]}';">` : c.name[0]}
+        ${c.avatar_url ? `
+          <img class="creator-card-av-img" src="${c.avatar_url}" alt="${escapeHtml(c.name)}" onerror="this.style.display='none';this.parentElement.innerHTML='<span style=\\'font-weight:700;font-size:18px;color:#fff;\\'>${initial}</span>';">
+        ` : `<span style="font-weight:700;font-size:18px;color:#fff;">${initial}</span>`}
       </div>
-      <div class="creator-card-name">${c.name}</div>
-      <div class="creator-card-handle">@${c.handle}</div>
-      <div class="creator-card-followers">${c.followers} followers</div>
-      <button class="creator-message-btn" onclick="openDirectMessageWithCreator('${c.id}')" title="Direct Message with ${c.name}">
+      <div class="creator-card-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</div>
+      <div class="creator-card-handle" title="@${escapeHtml(handleClean)}">@${escapeHtml(handleClean)}</div>
+      <div class="creator-card-followers">${escapeHtml(c.followers || 'Creator')}</div>
+      <button class="creator-message-btn" onclick="openDirectMessageWithCreator('${escapeHtml(c.id)}')" title="Direct Message with ${escapeHtml(c.name)}">
         <span class="material-symbols-rounded">chat_bubble</span> Message
       </button>
     `;
@@ -5604,29 +5644,47 @@ let chatRealtimeChannel = null;
 
 // Navigate user directly to real-time chat with a specific creator
 function openDirectMessageWithCreator(creatorId) {
-  const creator = creators.find(c => c.id === creatorId || c.handle === creatorId);
+  const creator = creators.find(c => c.id === creatorId || c.user_id === creatorId || c.handle === creatorId);
   if (!creator) return;
 
+  const targetUserId = creator.user_id || creator.id;
+
   // Find or create chat thread for this creator
-  let thread = chatThreads.find(t => t.creatorId === creator.id || t.handle === creator.handle);
+  let thread = chatThreads.find(t => 
+    t.creatorId === targetUserId || 
+    t.user_id === targetUserId || 
+    t.id === 'thread_' + targetUserId || 
+    t.handle === creator.handle
+  );
   if (!thread) {
     thread = {
-      id: 'thread_' + creator.id,
-      creatorId: creator.id,
+      id: 'thread_' + targetUserId,
+      creatorId: targetUserId,
+      user_id: targetUserId,
       user: creator.name,
       handle: creator.handle,
       avatar_url: creator.avatar_url,
       messages: []
     };
     chatThreads.unshift(thread);
+  } else {
+    // Keep thread avatar and name updated with creator profile
+    if (creator.avatar_url) thread.avatar_url = creator.avatar_url;
+    if (creator.name) thread.user = creator.name;
+    if (creator.handle) thread.handle = creator.handle;
+    if (targetUserId) {
+      thread.creatorId = targetUserId;
+      thread.user_id = targetUserId;
+    }
   }
+  saveChatThreadsToStorage();
 
   activeChatRecipient = creator;
   activeChatThreadId = thread.id;
 
   // Populate Chat Header with creator avatar and handle
   document.getElementById('chat-user-name').textContent = creator.name;
-  document.getElementById('chat-user-handle').textContent = '@' + creator.handle;
+  document.getElementById('chat-user-handle').textContent = '@' + (creator.handle || '').replace(/^@/, '');
   const avImg = document.getElementById('chat-user-avatar');
   const avInit = document.getElementById('chat-header-initial');
   if (creator.avatar_url) {
@@ -5658,9 +5716,12 @@ function openChat(threadId) {
   const thread = chatThreads.find(t => t.id === threadId);
   if (!thread) return;
 
-  // Find recipient creator or object
-  const creator = creators.find(c => c.id === thread.creatorId || c.handle === thread.handle) || {
-    id: thread.creatorId || thread.id,
+  const targetId = thread.creatorId || thread.user_id || thread.id.replace(/^thread_/, '');
+
+  // Find recipient creator or fallback object
+  const creator = creators.find(c => c.id === targetId || c.user_id === targetId || c.handle === thread.handle) || {
+    id: targetId,
+    user_id: targetId,
     name: thread.user,
     handle: thread.handle,
     avatar_url: thread.avatar_url
@@ -5668,7 +5729,7 @@ function openChat(threadId) {
   activeChatRecipient = creator;
 
   document.getElementById('chat-user-name').textContent = thread.user;
-  document.getElementById('chat-user-handle').textContent = '@' + thread.handle;
+  document.getElementById('chat-user-handle').textContent = '@' + (thread.handle || '').replace(/^@/, '');
   const avImg = document.getElementById('chat-user-avatar');
   const avInit = document.getElementById('chat-header-initial');
   if (thread.avatar_url || creator.avatar_url) {
@@ -5780,7 +5841,10 @@ async function sendChatMessage() {
   const myName = profile.name || (currentAuthUser ? 'Creator' : 'You');
   const googleMeta = currentAuthUser ? extractGoogleUserMetadata(currentAuthUser) : null;
   const myAvatar = profile.avatar_url || (googleMeta && googleMeta.avatarUrl) || '';
-  const recipientId = (activeChatRecipient && activeChatRecipient.id) || thread.creatorId || thread.id;
+  const recipientId = (activeChatRecipient && (activeChatRecipient.user_id || activeChatRecipient.id)) || 
+                      thread.user_id || 
+                      thread.creatorId || 
+                      thread.id.replace(/^thread_/, '');
 
   const nowIso = new Date().toISOString();
   const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
@@ -5803,6 +5867,7 @@ async function sendChatMessage() {
   inp.value = '';
   renderChatMessages(thread);
   renderChatThreads();
+  saveChatThreadsToStorage();
 
   // 2. Persist to Supabase messages table
   if (supabaseClient) {
@@ -5817,7 +5882,7 @@ async function sendChatMessage() {
         created_at: nowIso
       });
       if (insErr) {
-        console.warn('Supabase message insert note:', insErr);
+        console.warn('Supabase message insert note:', insErr.message || insErr);
       }
     } catch(err) {
       console.warn('Supabase message save error:', err);
@@ -5833,55 +5898,6 @@ async function sendChatMessage() {
         });
       }
     } catch(_) {}
-  }
-
-  // 4. Interactive simulated reply from featured creators for lively real-time feel
-  if (['c1', 'c2', 'c3', 'c4', 'c5'].includes(recipientId)) {
-    setTimeout(async () => {
-      const creatorReplies = {
-        c1: ['Nature blooms in wonderful ways! Glad you enjoyed the reel 🌸', 'Thanks for reaching out! Looking forward to collaborating on our next shoot 🍃', 'Awesome question! Shot with 4K macro lens in the morning mist ✨'],
-        c2: ['Thanks for watching! New 3D Blender animation drop coming tomorrow 🔥', 'Appreciate the feedback! What animation software do you use?', 'Keep creating! Great to connect with fellow artists 🙌'],
-        c3: ['The ocean depths always have something new to discover 🌊', 'Thanks for connecting! Marine protection is our passion 🐋', 'Underwater filming takes patience, but totally worth it! ✨'],
-        c4: ['Hey! So happy you stopped by! What style of dance do you enjoy? 💃', 'Music track credit is in the bio link! Let me know if you make a routine 🎶', 'Thanks for the love! More choreography coming soon ✨'],
-        c5: ['Tech innovation never stops! Thanks for reaching out 🚀', 'Always love connecting with fellow creators and developers 💻', 'Let us know what tech breakdown you want to see next! 🔥']
-      };
-      const pool = creatorReplies[recipientId] || ['Awesome! Thanks for reaching out 🙌', 'Great to connect on ReelFlow ✨'];
-      const replyText = pool[Math.floor(Math.random() * pool.length)];
-      const replyIso = new Date().toISOString();
-      const replyMsg = {
-        id: 'reply_' + Date.now(),
-        sender_id: String(recipientId),
-        receiver_id: String(myId),
-        sender: 'them',
-        content: replyText,
-        text: replyText,
-        sender_name: thread.user,
-        sender_avatar: thread.avatar_url,
-        created_at: replyIso,
-        time: 'Just now'
-      };
-
-      thread.messages.push(replyMsg);
-      if (activeChatThreadId === thread.id) {
-        renderChatMessages(thread);
-      }
-      renderChatThreads();
-
-      // Store creator reply in Supabase messages table
-      if (supabaseClient) {
-        try {
-          await supabaseClient.from('messages').insert({
-            id: window.crypto && crypto.randomUUID ? crypto.randomUUID() : undefined,
-            sender_id: String(recipientId),
-            receiver_id: String(myId),
-            content: replyText,
-            sender_name: thread.user,
-            sender_avatar: thread.avatar_url,
-            created_at: replyIso
-          });
-        } catch(_) {}
-      }
-    }, 1100);
   }
 }
 
@@ -5936,16 +5952,19 @@ function handleIncomingRealtimeMessage(rawMsg) {
 
   let thread = chatThreads.find(t => 
     t.creatorId === otherParticipantId || 
+    t.user_id === otherParticipantId || 
     t.id === otherParticipantId || 
+    t.id === 'thread_' + otherParticipantId || 
     t.handle === otherParticipantId
   );
 
   if (!thread) {
     // Create new thread for new incoming conversation
-    const knownCreator = creators.find(c => c.id === otherParticipantId || c.handle === otherParticipantId);
+    const knownCreator = creators.find(c => c.id === otherParticipantId || c.user_id === otherParticipantId || c.handle === otherParticipantId);
     thread = {
       id: 'thread_' + otherParticipantId,
       creatorId: otherParticipantId,
+      user_id: otherParticipantId,
       user: knownCreator ? knownCreator.name : (rawMsg.sender_name || 'Creator'),
       handle: knownCreator ? knownCreator.handle : otherParticipantId,
       avatar_url: knownCreator ? knownCreator.avatar_url : (rawMsg.sender_avatar || null),
@@ -5969,6 +5988,7 @@ function handleIncomingRealtimeMessage(rawMsg) {
   };
 
   thread.messages.push(newMsg);
+  saveChatThreadsToStorage();
 
   // If this thread is currently open, re-render messages instantly
   if (activeChatThreadId === thread.id) {
@@ -5983,7 +6003,10 @@ function handleIncomingRealtimeMessage(rawMsg) {
 async function loadSupabaseMessagesForThread(thread) {
   if (!supabaseClient || !thread) return;
   const myId = (currentAuthUser && currentAuthUser.id) || profile.id || 'my_user';
-  const otherId = thread.creatorId || thread.id;
+  const otherId = (activeChatRecipient && (activeChatRecipient.user_id || activeChatRecipient.id)) || 
+                  thread.user_id || 
+                  thread.creatorId || 
+                  thread.id.replace(/^thread_/, '');
 
   try {
     const { data, error } = await supabaseClient
@@ -5994,7 +6017,7 @@ async function loadSupabaseMessagesForThread(thread) {
       .limit(50);
 
     if (error) {
-      console.warn('Supabase load messages note:', error);
+      console.warn('Supabase load messages note:', error.message || error);
       return;
     }
 
@@ -6023,6 +6046,7 @@ async function loadSupabaseMessagesForThread(thread) {
 
       // Sort thread messages chronologically
       thread.messages.sort((a,b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+      saveChatThreadsToStorage();
 
       if (activeChatThreadId === thread.id) {
         renderChatMessages(thread);
@@ -6031,6 +6055,104 @@ async function loadSupabaseMessagesForThread(thread) {
     }
   } catch(err) {
     console.warn('Error fetching messages from Supabase:', err);
+  }
+}
+
+// Fetch all conversation threads for logged-in user from Supabase messages table
+async function loadUserChatThreadsFromSupabase() {
+  if (!supabaseClient) return;
+  const myId = (currentAuthUser && currentAuthUser.id) || profile.id;
+  if (!myId || myId === 'my_user') return;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('messages')
+      .select('*')
+      .or(`sender_id.eq.${myId},receiver_id.eq.${myId}`)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.warn('loadUserChatThreadsFromSupabase note:', error.message || error);
+      return;
+    }
+
+    if (data && Array.isArray(data) && data.length > 0) {
+      const grouped = {};
+      data.forEach(row => {
+        const isMe = String(row.sender_id) === String(myId);
+        const partnerId = isMe ? String(row.receiver_id) : String(row.sender_id);
+        if (!grouped[partnerId]) {
+          grouped[partnerId] = [];
+        }
+        grouped[partnerId].push({
+          id: row.id,
+          sender_id: row.sender_id,
+          receiver_id: row.receiver_id,
+          sender: isMe ? 'me' : 'them',
+          content: row.content,
+          text: row.content,
+          sender_name: row.sender_name,
+          sender_avatar: row.sender_avatar,
+          created_at: row.created_at,
+          time: formatChatTime(row.created_at)
+        });
+      });
+
+      for (const partnerId of Object.keys(grouped)) {
+        let thread = chatThreads.find(t => 
+          t.creatorId === partnerId || 
+          t.user_id === partnerId || 
+          t.id === 'thread_' + partnerId || 
+          t.id === partnerId
+        );
+        const knownCreator = creators.find(c => c.id === partnerId || c.user_id === partnerId || c.handle === partnerId);
+
+        let userName = knownCreator ? knownCreator.name : null;
+        let userHandle = knownCreator ? knownCreator.handle : null;
+        let userAvatar = knownCreator ? knownCreator.avatar_url : null;
+
+        if (!userName) {
+          const partnerMsg = grouped[partnerId].find(m => String(m.sender_id) === String(partnerId));
+          if (partnerMsg) {
+            userName = partnerMsg.sender_name;
+            userAvatar = partnerMsg.sender_avatar;
+          }
+        }
+
+        if (!thread) {
+          thread = {
+            id: 'thread_' + partnerId,
+            creatorId: partnerId,
+            user_id: partnerId,
+            user: userName || 'Creator',
+            handle: userHandle || partnerId.slice(0, 8),
+            avatar_url: userAvatar || '',
+            messages: []
+          };
+          chatThreads.unshift(thread);
+        } else {
+          if (userName && (!thread.user || thread.user === 'Creator')) thread.user = userName;
+          if (userAvatar && !thread.avatar_url) thread.avatar_url = userAvatar;
+          if (userHandle && (!thread.handle || thread.handle === partnerId)) thread.handle = userHandle;
+        }
+
+        grouped[partnerId].forEach(newM => {
+          const exists = thread.messages.some(m => 
+            m.id === newM.id || 
+            (m.content === newM.content && Math.abs(new Date(m.created_at || 0) - new Date(newM.created_at || 0)) < 3000)
+          );
+          if (!exists) {
+            thread.messages.push(newM);
+          }
+        });
+        thread.messages.sort((a,b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+      }
+
+      saveChatThreadsToStorage();
+      renderChatThreads();
+    }
+  } catch(err) {
+    console.warn('loadUserChatThreadsFromSupabase error:', err);
   }
 }
 
@@ -6062,9 +6184,11 @@ function goPage(page, navEl) {
       renderProfileGrid();
     } else if (page === 'discover') {
       renderDiscover();
+      loadCreatorsFromSupabase();
     } else if (page === 'inbox') {
       renderInbox();
       renderChatThreads();
+      loadUserChatThreadsFromSupabase();
     }
   }
 }
