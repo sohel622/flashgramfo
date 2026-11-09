@@ -2967,6 +2967,7 @@ pruneAllExpiredChatMessages();
 
   await initSupabase();
   applyProfile();
+  applyForYouRanking();
   buildFeed();
   await loadCreatorsFromSupabase();
   renderCreators();
@@ -5029,6 +5030,194 @@ function renderProfileGrid() {
 const feedEl = document.getElementById('feed');
 const emptyEl = document.getElementById('empty-state');
 
+// ═══════════════════════════════════════════════════════════════
+//  FOR YOU FEED RANKING — JS mirror of recommendation.py
+//  Same weights, same signals: what you watch, like, follow and skip
+//  decides what you see next. Events are stored in localStorage
+//  (reelflow_feed_events, last 300) in the same JSON shape the Python
+//  file reads, so the two implementations always agree.
+// ═══════════════════════════════════════════════════════════════════════
+const FEED_RANK_WEIGHTS = {
+  watchTags: 30, explicitTags: 20, creator: 25, creatorLiked: 15,
+  engagement: 10, recency: 5, recencyHalfLifeDays: 7,
+  diversityCreator: -8, diversityHashtag: -4, explorationEveryN: 10
+};
+const FEED_EVENTS_KEY = 'reelflow_feed_events';
+
+function normFeedTag(t) { return String(t || '').replace(/^#/, '').toLowerCase(); }
+function loadFeedEvents() {
+  try {
+    const raw = localStorage.getItem(FEED_EVENTS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) { return []; }
+}
+function saveFeedEvents(evs) {
+  try { localStorage.setItem(FEED_EVENTS_KEY, JSON.stringify(evs.slice(-300))); } catch (_) {}
+}
+function recordFeedEvent(type, video, extra) {
+  if (!video) return;
+  const evs = loadFeedEvents();
+  evs.push(Object.assign({
+    type: type,
+    video_id: video.id,
+    username: video.username || '',
+    hashtags: (video.hashtags || []).map(normFeedTag),
+    ts: Date.now() / 1000
+  }, extra || {}));
+  saveFeedEvents(evs);
+}
+function clampAffinity(x) { return Math.max(-1, Math.min(1, x)); }
+function bumpAffinity(map, key, delta) {
+  if (!key) return;
+  map[key] = clampAffinity((map[key] || 0) + delta);
+}
+function buildFeedTaste(events) {
+  const taste = { tagsWatch: {}, tagsExplicit: {}, creators: {}, followed: new Set(), likedCreators: new Set(), watchedIds: new Set() };
+  (events || []).slice(-300).forEach(ev => {
+    const type = String(ev.type || '').toLowerCase();
+    const username = String(ev.username || '').toLowerCase();
+    const tags = (ev.hashtags || []).map(normFeedTag);
+    if (ev.video_id) taste.watchedIds.add(String(ev.video_id));
+    if (type === 'like') {
+      tags.forEach(t => bumpAffinity(taste.tagsExplicit, t, 1.0));
+      bumpAffinity(taste.creators, username, 1.0);
+      if (username) taste.likedCreators.add(username);
+    } else if (type === 'unlike') {
+      tags.forEach(t => bumpAffinity(taste.tagsExplicit, t, -1.0));
+      bumpAffinity(taste.creators, username, -1.0);
+      taste.likedCreators.delete(username);
+    } else if (type === 'follow') {
+      if (username) taste.followed.add(username);
+      if (username) taste.creators[username] = 1.0;
+    } else if (type === 'unfollow') {
+      taste.followed.delete(username);
+    } else if (type === 'save' || type === 'share') {
+      tags.forEach(t => bumpAffinity(taste.tagsExplicit, t, 0.7));
+      bumpAffinity(taste.creators, username, 0.5);
+    } else if (type === 'watch') {
+      const completion = Number(ev.completion) || 0;
+      if (completion >= 0.7) {
+        tags.forEach(t => bumpAffinity(taste.tagsWatch, t, 0.5));
+        bumpAffinity(taste.creators, username, 0.3);
+      } else if (completion >= 0.3) {
+        tags.forEach(t => bumpAffinity(taste.tagsWatch, t, 0.2));
+      }
+    } else if (type === 'skip') {
+      tags.forEach(t => bumpAffinity(taste.tagsWatch, t, -0.4));
+      bumpAffinity(taste.creators, username, -0.2);
+    }
+  });
+  return taste;
+}
+function feedVideoAgeDays(v) {
+  let created = 0;
+  if (v.ts) created = Number(v.ts) / 1000;
+  else if (v.created_at) created = Date.parse(v.created_at) / 1000;
+  if (!created) return 0;
+  return Math.max(0, (Date.now() / 1000 - created) / 86400);
+}
+function feedMeanTagScore(tags, map, points) {
+  if (!tags.length) return points * 0.5;
+  const total = tags.reduce((s, t) => s + (((map[normFeedTag(t)] || 0) + 1) / 2), 0);
+  return points * (total / tags.length);
+}
+function feedBaseScore(v, taste) {
+  const W = FEED_RANK_WEIGHTS;
+  const tags = (v.hashtags || []).map(normFeedTag);
+  const username = String(v.username || '').toLowerCase();
+  const watch = feedMeanTagScore(tags, taste.tagsWatch, W.watchTags);
+  const explicit = feedMeanTagScore(tags, taste.tagsExplicit, W.explicitTags);
+  let creator;
+  if (taste.followed.has(username)) creator = W.creator;
+  else if (taste.likedCreators.has(username)) creator = W.creatorLiked;
+  else creator = W.creatorLiked * Math.max(0, taste.creators[username] || 0);
+  const engagementRaw = Math.log10(1 + (Number(v.likes) || 0) + 2 * (Number(v.comments) || 0) + 3 * (Number(v.shares) || 0) + (Number(v.views) || 0) / 100);
+  const engagement = W.engagement * Math.min(engagementRaw / 6, 1);
+  const recency = W.recency * Math.pow(0.5, feedVideoAgeDays(v) / W.recencyHalfLifeDays);
+  const breakdown = {
+    watch_tags: Math.round(watch * 100) / 100,
+    explicit_tags: Math.round(explicit * 100) / 100,
+    creator: Math.round(creator * 100) / 100,
+    engagement: Math.round(engagement * 100) / 100,
+    recency: Math.round(recency * 100) / 100,
+    diversity: 0
+  };
+  return { score: watch + explicit + creator + engagement + recency, breakdown: breakdown };
+}
+function feedDiversityPenalty(video, picked) {
+  if (!picked.length) return 0;
+  const W = FEED_RANK_WEIGHTS;
+  let penalty = 0;
+  const username = String(video.username || '').toLowerCase();
+  if (picked.slice(-2).some(p => String(p.username || '').toLowerCase() === username)) penalty += W.diversityCreator;
+  const tags = new Set((video.hashtags || []).map(normFeedTag));
+  const lastTags = new Set((picked[picked.length - 1].hashtags || []).map(normFeedTag));
+  if (tags.size && lastTags.size) {
+    const inter = [...tags].filter(t => lastTags.has(t)).length;
+    const union = new Set([...tags, ...lastTags]).size;
+    if (union && inter / union > 0.5) penalty += W.diversityHashtag;
+  }
+  return penalty;
+}
+function feedIsUnseen(video, taste) {
+  const username = String(video.username || '').toLowerCase();
+  if (taste.followed.has(username) || taste.likedCreators.has(username)) return false;
+  if ((taste.creators[username] || 0) !== 0) return false;
+  const tags = (video.hashtags || []).map(normFeedTag);
+  return tags.every(t => (taste.tagsWatch[t] || 0) === 0 && (taste.tagsExplicit[t] || 0) === 0);
+}
+function rankFeedVideos(list, taste) {
+  const W = FEED_RANK_WEIGHTS;
+  const scored = list.map(v => {
+    const r = feedBaseScore(v, taste);
+    return { v: v, score: r.score, breakdown: r.breakdown };
+  });
+  scored.sort((a, b) => (b.score - a.score) || (String(a.v.id) < String(b.v.id) ? -1 : String(a.v.id) > String(b.v.id) ? 1 : 0));
+  const picked = [];
+  const remaining = scored.slice();
+  while (remaining.length) {
+    const slot = picked.length;
+    let choice = null;
+    if (slot % W.explorationEveryN === W.explorationEveryN - 1) {
+      const unseen = remaining.filter(it => feedIsUnseen(it.v, taste));
+      if (unseen.length) choice = unseen[0];
+    }
+    if (!choice) {
+      let best = null, bestEff = null;
+      const pickedVideos = picked.map(p => p.v);
+      for (const it of remaining) {
+        const eff = it.score + feedDiversityPenalty(it.v, pickedVideos);
+        if (bestEff === null || eff > bestEff) { best = it; bestEff = eff; }
+      }
+      choice = best;
+    }
+    const penalty = feedDiversityPenalty(choice.v, picked.map(p => p.v));
+    const bd = Object.assign({}, choice.breakdown, { diversity: Math.round(penalty * 100) / 100 });
+    picked.push({ v: choice.v, score: Math.round((choice.score + penalty) * 100) / 100, breakdown: bd });
+    remaining.splice(remaining.indexOf(choice), 1);
+  }
+  return picked.map(p => p.v);
+}
+// Re-rank the feed for the For You tab. Videos already watched stay in
+// place; the videos still ahead are re-ordered by the algorithm.
+function applyForYouRanking() {
+  const taste = buildFeedTaste(loadFeedEvents());
+  if (activeIdx >= 0 && videos[activeIdx]) {
+    const current = videos[activeIdx];
+    const prefix = videos.slice(0, activeIdx + 1);
+    const rest = rankFeedVideos(videos.slice(activeIdx + 1), taste);
+    videos = prefix.concat(rest);
+    const idx = videos.indexOf(current);
+    buildFeed();
+    const slide = feedEl.children[idx];
+    if (slide) slide.scrollIntoView({ behavior: 'auto' });
+    setActive(idx);
+  } else {
+    videos = rankFeedVideos(videos, taste);
+  }
+}
+
 function buildFeed() {
   feedEl.innerHTML = '';
   if (feedObserver) feedObserver.disconnect();
@@ -5065,6 +5254,10 @@ function makeSlide(v, i) {
   vid.className = 'slide-video';
   vid.loop = true;
   vid.playsInline = true;
+  // Android multitasking: let Chrome pop this video into picture-in-picture
+  // automatically when the user switches apps (tab hidden).
+  vid.setAttribute('autopictureinpicture', '');
+  vid.disablePictureInPicture = false;
   vid.preload = 'metadata';
   vid.muted = false;
 
@@ -5175,6 +5368,9 @@ function makeActions(v, i) {
     <div class="action-btn" onclick="openShare('${v.id}')" title="Share">
       <div class="action-icon-wrap"><span class="material-symbols-rounded" style="transform:scaleX(-1)">reply</span></div>
     </div>
+    <div class="action-btn" onclick="togglePiP(${i})" title="Picture in picture">
+      <div class="action-icon-wrap"><span class="material-symbols-rounded">picture_in_picture_alt</span></div>
+    </div>
   `;
   return wrap;
 }
@@ -5206,6 +5402,7 @@ async function toggleLike(btn, id, idx) {
   if (!v) return;
   const isLiked = btn.classList.toggle('liked');
   v.liked = isLiked;
+  recordFeedEvent(isLiked ? 'like' : 'unlike', v);
   const countEl = document.getElementById('lc-' + id);
 
   if (isLiked) {
@@ -5234,6 +5431,8 @@ function toggleFollow(e, id) {
   const dot = document.getElementById('fd-' + id);
   if (!dot) return;
   const isF = dot.classList.toggle('followed');
+  const followedCreator = (typeof creators !== 'undefined' ? creators.find(c => c.id === id || c.user_id === id) : null);
+  recordFeedEvent(isF ? 'follow' : 'unfollow', { id: 'creator_' + id, username: (followedCreator && (followedCreator.handle || followedCreator.name)) || String(id), hashtags: [] });
   dot.querySelector('.material-symbols-rounded').textContent = isF ? 'check' : 'add';
   profile.following = Math.max(0, profile.following + (isF ? 1 : -1));
   applyProfile();
@@ -5244,6 +5443,7 @@ async function toggleSave(id) {
   if (!profile.saved) profile.saved = [];
   const idx = profile.saved.indexOf(id);
   const on = idx < 0;
+  if (on) { const sv = videos.find(x => x.id === id); if (sv) recordFeedEvent('save', sv); }
   if (on) profile.saved.push(id);
   else profile.saved.splice(idx, 1);
 
@@ -5477,6 +5677,7 @@ function shareAct(type) {
   document.getElementById('share-modal').classList.remove('open');
   const v = videos.find(x => x.id === window._shareId);
   if (v) {
+    recordFeedEvent('share', v);
     v.shares = (v.shares || 0) + 1;
     const shc = document.getElementById('shc-' + v.id);
     if (shc) shc.textContent = fmtC(v.shares);
@@ -6646,6 +6847,7 @@ function switchFeedTab(tab) {
   if (tab === 'following') {
     showToast('Following feed curated for you ✨');
   } else {
+    applyForYouRanking();
     showToast('Showing For You recommendations 🔥');
   }
 }
@@ -6714,6 +6916,23 @@ function ensureSrc(s) {
 function setActive(idx) {
   const slides = feedEl.querySelectorAll('.video-slide');
   if (!slides.length || idx < 0 || idx >= slides.length || idx === activeIdx) return;
+  // For You signal: record how much of the previous video was watched.
+  // (Recorded BEFORE the loop below pauses it and resets currentTime.)
+  const prevIdx = activeIdx;
+  if (prevIdx >= 0 && prevIdx !== idx) {
+    const prevSlide = slides[prevIdx];
+    const prevVid = prevSlide && prevSlide.querySelector('video');
+    const prevVideo = videos[prevIdx];
+    if (prevVid && prevVideo && prevVid.currentTime > 0.5) {
+      const dur = prevVid.duration || 0;
+      const completion = dur ? Math.min(prevVid.currentTime / dur, 1) : 0;
+      if (dur > 5 && prevVid.currentTime < 2) {
+        recordFeedEvent('skip', prevVideo, { watched_seconds: prevVid.currentTime, duration_seconds: dur, completion: completion });
+      } else {
+        recordFeedEvent('watch', prevVideo, { watched_seconds: prevVid.currentTime, duration_seconds: dur, completion: completion });
+      }
+    }
+  }
   activeIdx = idx;
 
   slides.forEach((s, i) => {
@@ -6749,7 +6968,68 @@ function setActive(idx) {
       if (pb) pb.style.width = '0%';
       if (dist <= 1) ensureSrc(s);
     }
+    if (dist === 0) updateMediaSession(videos[i]);
   });
+}
+
+// Picture-in-picture + lock-screen controls (Android multitasking).
+// togglePiP() is the manual button; the visibilitychange listener below
+// enters PiP automatically when the user switches apps, and leaves it
+// when they come back.
+async function togglePiP(idx) {
+  const slide = feedEl.children[idx];
+  const vid = slide && slide.querySelector('video');
+  if (!vid) return;
+  try {
+    if (document.pictureInPictureElement) {
+      await document.exitPictureInPicture();
+    } else if (document.pictureInPictureEnabled) {
+      await vid.requestPictureInPicture();
+      showToast('Picture-in-picture on — switch apps, the video keeps playing 📺');
+    } else {
+      showToast('Picture-in-picture is not supported on this device');
+    }
+  } catch (_) {
+    showToast('Could not start picture-in-picture');
+  }
+}
+let autoPiPActive = false;
+document.addEventListener('visibilitychange', async () => {
+  const slides = feedEl ? feedEl.querySelectorAll('.video-slide') : [];
+  const slide = slides[activeIdx];
+  const vid = slide && slide.querySelector('video');
+  if (!vid) return;
+  if (document.hidden) {
+    // User switched apps / locked the screen: keep the video alive in PiP.
+    if (!vid.paused && !document.pictureInPictureElement && document.pictureInPictureEnabled) {
+      try { await vid.requestPictureInPicture(); autoPiPActive = true; } catch (_) { autoPiPActive = false; }
+    }
+  } else if (autoPiPActive && document.pictureInPictureElement === vid) {
+    try { await document.exitPictureInPicture(); } catch (_) {}
+    autoPiPActive = false;
+  }
+});
+function updateMediaSession(v) {
+  if (!('mediaSession' in navigator) || !v || typeof MediaMetadata === 'undefined') return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: String(v.caption || '@' + (v.username || 'Flashgram')).slice(0, 80),
+      artist: '@' + (v.username || 'creator'),
+      album: 'Flashgram'
+    });
+    navigator.mediaSession.setActionHandler('play', () => {
+      const s = feedEl.querySelectorAll('.video-slide')[activeIdx];
+      const vid = s && s.querySelector('video');
+      if (vid) vid.play().catch(() => {});
+    });
+    navigator.mediaSession.setActionHandler('pause', () => {
+      const s = feedEl.querySelectorAll('.video-slide')[activeIdx];
+      const vid = s && s.querySelector('video');
+      if (vid) vid.pause();
+    });
+    navigator.mediaSession.setActionHandler('previoustrack', () => scrollPrevVideo());
+    navigator.mediaSession.setActionHandler('nexttrack', () => scrollNextVideo());
+  } catch (_) {}
 }
 
 // ═══════════════════════════════════════════════════════
