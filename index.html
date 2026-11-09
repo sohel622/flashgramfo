@@ -1634,6 +1634,124 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
+      flex-shrink: 0;
+    }
+    .chat-sticker-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      border: none;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .chat-sticker-btn:active { background: rgba(255,255,255,0.16); }
+    .chat-bubble-av-hidden { visibility: hidden; }
+    .chat-bubble.sticker-bubble {
+      background: transparent;
+      border: none;
+      padding: 0;
+    }
+    .chat-sticker-img {
+      width: 120px;
+      height: 120px;
+      object-fit: contain;
+      border-radius: 12px;
+      display: block;
+      animation: sticker-bob 1.8s ease-in-out infinite;
+    }
+    .chat-sticker-emoji {
+      font-size: 56px;
+      line-height: 1;
+      display: block;
+      animation: sticker-bob 1.8s ease-in-out infinite;
+    }
+    @keyframes sticker-bob {
+      0%, 100% { transform: translateY(0) rotate(-2deg); }
+      50% { transform: translateY(-6px) rotate(2deg); }
+    }
+    /* Sticker picker bottom sheet (above the chat sheet, z-index 250) */
+    #sticker-picker-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      display: flex;
+      align-items: flex-end;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .22s;
+    }
+    #sticker-picker-modal.open { opacity: 1; pointer-events: auto; }
+    .sticker-sheet {
+      width: 100%;
+      max-height: 55vh;
+      background: var(--bg);
+      border-radius: 20px 20px 0 0;
+      display: flex;
+      flex-direction: column;
+      transform: translateY(100%);
+      transition: transform .28s cubic-bezier(.4,0,.2,1);
+      overflow: hidden;
+    }
+    #sticker-picker-modal.open .sticker-sheet { transform: translateY(0); }
+    .sticker-sheet-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 18px 4px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .sticker-sheet-header button {
+      background: none;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      padding: 6px;
+    }
+    .sticker-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      padding: 10px 16px 18px;
+      overflow-y: auto;
+    }
+    .sticker-item {
+      background: rgba(255,255,255,0.06);
+      border: none;
+      border-radius: 14px;
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 6px;
+    }
+    .sticker-item:active { background: rgba(255,255,255,0.14); transform: scale(.94); }
+    .sticker-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      animation: sticker-bob 1.8s ease-in-out infinite;
+    }
+    .sticker-emoji-fallback {
+      font-size: 32px;
+      line-height: 1;
+      animation: sticker-bob 1.8s ease-in-out infinite;
+    }
+    .sticker-sheet-note {
+      text-align: center;
+      font-size: 12px;
+      color: var(--fg2);
+      padding: 0 16px 16px;
     }
 
     /* ── MODALS (Upload, Share, Comments, Edit Profile) ── */
@@ -2475,9 +2593,23 @@
     </div>
     <div class="chat-messages" id="chatMessages"></div>
     <div class="chat-input-row">
+      <button class="chat-sticker-btn" onclick="toggleStickerPicker(event)" aria-label="Stickers" title="Stickers"><span class="material-symbols-rounded">sticker</span></button>
       <input type="text" id="chatInput" class="chat-input" placeholder="Send a message…" onkeydown="if(event.key==='Enter')sendChatMessage()">
       <button class="chat-send-btn" onclick="sendChatMessage()" aria-label="Send message"><span class="material-symbols-rounded">send</span></button>
     </div>
+  </div>
+</div>
+
+<!-- STICKER PICKER BOTTOM SHEET -->
+<div id="sticker-picker-modal" onclick="closeOnBackdrop(event,'sticker-picker-modal')">
+  <div class="sticker-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="sticker-sheet-header">
+      <span>Stickers</span>
+      <button onclick="closeStickerPicker()" aria-label="Close stickers"><span class="material-symbols-rounded">close</span></button>
+    </div>
+    <div class="sticker-grid" id="stickerGrid"></div>
+    <div class="sticker-sheet-note">Tap a sticker to send it instantly</div>
   </div>
 </div>
 
@@ -2721,6 +2853,67 @@ const defaultSeedVideos = [
 ];
 
 // Direct messages conversations
+// ── Chat rules (fix #3): messages live 48 hours, then they are gone ──
+const CHAT_MESSAGE_TTL_MS = 48 * 60 * 60 * 1000; // 48 hours
+function chatCutoffIso(nowMs) {
+  return new Date((typeof nowMs === 'number' ? nowMs : Date.now()) - CHAT_MESSAGE_TTL_MS).toISOString();
+}
+function isChatMessageExpired(m) {
+  if (!m) return false;
+  const t = m.created_at || m.time;
+  if (!t) return false;
+  const ts = new Date(t).getTime();
+  return !isNaN(ts) && ts < Date.now() - CHAT_MESSAGE_TTL_MS;
+}
+function pruneExpiredChatMessages(thread) {
+  if (!thread || !Array.isArray(thread.messages)) return false;
+  const before = thread.messages.length;
+  thread.messages = thread.messages.filter(m => !isChatMessageExpired(m));
+  return thread.messages.length !== before;
+}
+function pruneAllExpiredChatMessages() {
+  let changed = false;
+  chatThreads.forEach(t => { if (pruneExpiredChatMessages(t)) changed = true; });
+  if (changed) saveChatThreadsToStorage();
+  return changed;
+}
+// Dedupe (fix #2): one message = one id, or one sender+content fingerprint
+// inside a 15s window. The old 3s window let the same message render twice
+// when Realtime was slow, because the optimistic copy and the DB copy
+// arrived with different ids more than 3s apart.
+const seenChatMessageIds = new Set();
+const seenChatFingerprints = new Map();
+function chatMessageFingerprint(m) {
+  return [String(m.sender_id || ''), String(m.content || ''), String(m.sticker_url || ''), String(m.message_type || '')].join('|');
+}
+function isDuplicateChatMessage(m) {
+  if (!m) return true;
+  if (m.id && seenChatMessageIds.has(String(m.id))) return true;
+  const fp = chatMessageFingerprint(m);
+  const prev = seenChatFingerprints.get(fp);
+  if (prev && Math.abs(Date.now() - prev) < 15000) return true;
+  return false;
+}
+function markChatMessageSeen(m) {
+  if (!m) return;
+  if (m.id) seenChatMessageIds.add(String(m.id));
+  seenChatFingerprints.set(chatMessageFingerprint(m), Date.now());
+  if (seenChatMessageIds.size > 2000) {
+    const first = seenChatMessageIds.values().next().value;
+    seenChatMessageIds.delete(first);
+  }
+  if (seenChatFingerprints.size > 2000) {
+    const firstKey = seenChatFingerprints.keys().next().value;
+    seenChatFingerprints.delete(firstKey);
+  }
+}
+function chatMessagesAreSame(a, b) {
+  if (!a || !b) return false;
+  if (a.id && b.id && String(a.id) === String(b.id)) return true;
+  return chatMessageFingerprint(a) === chatMessageFingerprint(b) &&
+    Math.abs(new Date(a.created_at || 0) - new Date(b.created_at || 0)) < 15000;
+}
+
 let chatThreads = [];
 function loadStoredChatThreads() {
   try {
@@ -2737,6 +2930,7 @@ function saveChatThreadsToStorage() {
   } catch(_) {}
 }
 loadStoredChatThreads();
+pruneAllExpiredChatMessages();
 
 // ═══════════════════════════════════════════════════════
 //  INIT
@@ -5593,6 +5787,118 @@ function formatChatTime(dateInput) {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+// ── Stickers (fix #4): 54 animated GIF stickers ──
+// Animated GIF stickers hosted on Tenor's CDN — every URL below was
+// downloaded and verified as a real, distinct GIF before shipping.
+// Each entry also has an emoji fallback, so the picker still shows all 54
+// stickers (and a sent sticker still renders) even if a GIF fails to load.
+const STICKERS = [
+  { id: 's01', url: 'https://media.tenor.com/7hYU8DX2oM8AAAAM/happy-tears-tears-of-joy.gif', emoji: '😂', label: 'Laughing tears' },
+  { id: 's02', url: 'https://media.tenor.com/NyLgP8Y0Ne4AAAAM/yay-excited.gif', emoji: '🥳', label: 'Yay' },
+  { id: 's03', url: 'https://media.tenor.com/z4oh7ntHqE4AAAAM/happy.gif', emoji: '😊', label: 'Happy' },
+  { id: 's04', url: 'https://media.tenor.com/WVA2yWDzZnkAAAAM/happy.gif', emoji: '😄', label: 'Happy' },
+  { id: 's05', url: 'https://media.tenor.com/6kBv4ASf-4UAAAAM/happy-dance.gif', emoji: '💃', label: 'Happy dance' },
+  { id: 's06', url: 'https://media.tenor.com/0BE3mYzHl6AAAAAM/dance-happy-dance.gif', emoji: '💃', label: 'Dance' },
+  { id: 's07', url: 'https://media.tenor.com/yzBV3-2bMyUAAAAM/dancing-happy-dance.gif', emoji: '💃', label: 'Dancing' },
+  { id: 's08', url: 'https://media.tenor.com/yWHv9EE2mpcAAAAM/dance.gif', emoji: '🕺', label: 'Dance' },
+  { id: 's09', url: 'https://media.tenor.com/-4hucvbn9bIAAAAM/i-love-you-love-you-more.gif', emoji: '❤️', label: 'I love you' },
+  { id: 's10', url: 'https://media.tenor.com/1vG34iFTMscAAAAM/i-love-you-so-much-i-love-you.gif', emoji: '❤️', label: 'Love you so much' },
+  { id: 's11', url: 'https://media.tenor.com/UItEGHv2fhEAAAAM/heart.gif', emoji: '❤️', label: 'Heart' },
+  { id: 's12', url: 'https://media.tenor.com/sHlij0-KkzQAAAAM/love-love-you.gif', emoji: '❤️', label: 'Love' },
+  { id: 's13', url: 'https://media.tenor.com/KYZOnJyVGbQAAAAM/kiss.gif', emoji: '😘', label: 'Kiss' },
+  { id: 's14', url: 'https://media.tenor.com/rKUSiVu2bB0AAAAM/kiss-blow-kiss.gif', emoji: '😘', label: 'Blow a kiss' },
+  { id: 's15', url: 'https://media.tenor.com/tbD6WGPKi40AAAAM/hugs-kiss.gif', emoji: '🤗', label: 'Hugs' },
+  { id: 's16', url: 'https://media.tenor.com/HRKpvLQ0HdkAAAAM/lol.gif', emoji: '😂', label: 'LOL' },
+  { id: 's17', url: 'https://media.tenor.com/xx3hvRJ4GqAAAAAM/laugh-laughing.gif', emoji: '😂', label: 'Laughing' },
+  { id: 's18', url: 'https://media.tenor.com/K15sk3AFCL0AAAAM/laughing-laughing-hysterically.gif', emoji: '🤣', label: 'Laughing hard' },
+  { id: 's19', url: 'https://media.tenor.com/fmNyqECGKIwAAAAM/spongebob-laughing.gif', emoji: '😂', label: 'SpongeBob laugh' },
+  { id: 's20', url: 'https://media.tenor.com/3YX1vx3m6OwAAAAM/laugh-spit.gif', emoji: '😂', label: 'Laugh spit' },
+  { id: 's21', url: 'https://media.tenor.com/24VF9WVfAoYAAAAM/sad-mario.gif', emoji: '😢', label: 'Sad' },
+  { id: 's22', url: 'https://media.tenor.com/6wsvVQHb_gQAAAAM/sad-sad-face.gif', emoji: '😞', label: 'Sad face' },
+  { id: 's23', url: 'https://media.tenor.com/E65C6YhgigcAAAAM/sad-spongebob-sad.gif', emoji: '😢', label: 'Sad SpongeBob' },
+  { id: 's24', url: 'https://media.tenor.com/WFVIGNx9dxIAAAAM/crying.gif', emoji: '😭', label: 'Crying' },
+  { id: 's25', url: 'https://media.tenor.com/yWXIDrDMVDUAAAAM/cry.gif', emoji: '😭', label: 'Cry' },
+  { id: 's26', url: 'https://media.tenor.com/x1dYnqeehLAAAAAM/stitch-sad-sad-stitch.gif', emoji: '😢', label: 'Sad Stitch' },
+  { id: 's27', url: 'https://media.tenor.com/d8dIq8iarHcAAAAM/wow.gif', emoji: '😮', label: 'Wow' },
+  { id: 's28', url: 'https://media.tenor.com/s5GrCxWhkpMAAAAM/wow-oh-wow.gif', emoji: '😮', label: 'Oh wow' },
+  { id: 's29', url: 'https://media.tenor.com/TgyTGnZic8AAAAAM/oh-wow.gif', emoji: '😮', label: 'Oh wow' },
+  { id: 's30', url: 'https://media.tenor.com/RHMdLPmUFOUAAAAM/wow-reaction.gif', emoji: '😮', label: 'Wow reaction' },
+  { id: 's31', url: 'https://media.tenor.com/sZzpf4K3hDYAAAAM/surprised-pikachu.gif', emoji: '😲', label: 'Surprised Pikachu' },
+  { id: 's32', url: 'https://media.tenor.com/4c0OVEQmmeYAAAAM/party-rager.gif', emoji: '🎉', label: 'Party' },
+  { id: 's33', url: 'https://media.tenor.com/UyJfa7oEA2gAAAAM/party-time.gif', emoji: '🎉', label: 'Party time' },
+  { id: 's34', url: 'https://media.tenor.com/qOZcp5mVqmMAAAAM/party-time.gif', emoji: '🎉', label: 'Party time' },
+  { id: 's35', url: 'https://media.tenor.com/f0mPaNI1dd8AAAAM/fireworks.gif', emoji: '🎆', label: 'Fireworks' },
+  { id: 's36', url: 'https://media.tenor.com/5dhfw7W12VUAAAAM/funny-cat.gif', emoji: '🐱', label: 'Funny cat' },
+  { id: 's37', url: 'https://media.tenor.com/lfDATg4Bhc0AAAAM/happy-cat.gif', emoji: '🐱', label: 'Happy cat' },
+  { id: 's38', url: 'https://media.tenor.com/6n0lkxsBEQkAAAAM/cat.gif', emoji: '🐱', label: 'Cat' },
+  { id: 's39', url: 'https://media.tenor.com/JfrX5uK-_qIAAAAM/banana-cat.gif', emoji: '🍌', label: 'Banana cat' },
+  { id: 's40', url: 'https://media.tenor.com/cfLmJVoxuw0AAAAM/dog-dance.gif', emoji: '🐶', label: 'Dog dance' },
+  { id: 's41', url: 'https://media.tenor.com/4UxTlKSBnUgAAAAM/thank-you-thanks.gif', emoji: '🙏', label: 'Thank you' },
+  { id: 's42', url: 'https://media.tenor.com/ClOeD1_NozEAAAAM/thank-you.gif', emoji: '🙏', label: 'Thank you' },
+  { id: 's43', url: 'https://media.tenor.com/S6mrWlgP7ZQAAAAM/thanks-thank-you.gif', emoji: '🙏', label: 'Thanks' },
+  { id: 's44', url: 'https://media.tenor.com/QkptQzEK30IAAAAM/good-morning.gif', emoji: '☀️', label: 'Good morning' },
+  { id: 's45', url: 'https://media.tenor.com/oBIWEcdk5gQAAAAM/yess.gif', emoji: '✅', label: 'Yes' },
+  { id: 's46', url: 'https://media.tenor.com/R3YCXciHYXkAAAAM/ok-mhm.gif', emoji: '👌', label: 'OK' },
+  { id: 's47', url: 'https://media.tenor.com/EchjwzxeTxIAAAAM/party-cat.gif', emoji: '🎉', label: 'Party cat' },
+  { id: 's48', url: 'https://media.tenor.com/DVRCwGB3Z7IAAAAM/snoopy-party.gif', emoji: '🎉', label: 'Snoopy party' },
+  { id: 's49', url: 'https://media.tenor.com/Zm52i9B5PY4AAAAM/party-lit.gif', emoji: '🔥', label: 'Party lit' },
+  { id: 's50', url: 'https://media.tenor.com/0eLcXZRPxCAAAAAM/happy-dance-cats.gif', emoji: '🐱', label: 'Happy dance cats' },
+  { id: 's51', url: 'https://media.tenor.com/-DPyKY2wa6IAAAAM/pikachu-jump.gif', emoji: '⚡', label: 'Pikachu jump' },
+  { id: 's52', url: 'https://media.tenor.com/5j1bgot0tY4AAAAM/penguin.gif', emoji: '🐧', label: 'Penguin' },
+  { id: 's53', url: 'https://media.tenor.com/6xwjsmMIAIoAAAAM/happy-happy-dog.gif', emoji: '🐶', label: 'Happy dog' },
+  { id: 's54', url: 'https://media.tenor.com/gotOLnyvy4YAAAAM/bubu-dancing-dance.gif', emoji: '💃', label: 'Bubu dancing' },
+];
+const STICKER_URL_SET = new Set(STICKERS.map(s => s.url));
+function isStickerMessage(m) {
+  if (!m) return false;
+  return m.message_type === 'sticker' || Boolean(m.sticker_url) || STICKER_URL_SET.has(m.content);
+}
+function stickerUrlForMessage(m) {
+  if (!m) return '';
+  return m.sticker_url || (STICKER_URL_SET.has(m.content) ? m.content : '');
+}
+function stickerLabelForMessage(m) {
+  const url = stickerUrlForMessage(m);
+  const s = STICKERS.find(x => x.url === url);
+  return s ? s.label : 'Sticker';
+}
+function renderStickerPicker() {
+  const grid = document.getElementById('stickerGrid');
+  if (!grid) return;
+  grid.innerHTML = STICKERS.map((s, i) => `
+    <button type="button" class="sticker-item" onclick="sendSticker('${s.id}')" title="${escapeHtml(s.label)}" aria-label="${escapeHtml(s.label)} sticker">
+      <img src="${s.url}" alt="${escapeHtml(s.label)}" loading="lazy" referrerpolicy="no-referrer" style="animation-delay:${(i % 6) * 0.12}s" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+      <span class="sticker-emoji-fallback" style="display:none">${s.emoji}</span>
+    </button>
+  `).join('');
+}
+function toggleStickerPicker(e) {
+  if (e) e.stopPropagation();
+  const modal = document.getElementById('sticker-picker-modal');
+  if (!modal) return;
+  if (modal.classList.contains('open')) {
+    modal.classList.remove('open');
+  } else {
+    renderStickerPicker();
+    modal.classList.add('open');
+  }
+}
+function closeStickerPicker() {
+  const modal = document.getElementById('sticker-picker-modal');
+  if (modal) modal.classList.remove('open');
+}
+async function sendSticker(stickerId) {
+  const sticker = STICKERS.find(s => s.id === stickerId);
+  if (!sticker) return;
+  closeStickerPicker();
+  await sendChatMessageWithContent({
+    content: sticker.url,
+    message_type: 'sticker',
+    sticker_url: sticker.url,
+    sticker_id: sticker.id
+  });
+}
+
 function renderChatThreads() {
   const container = document.getElementById('inbox-chats-list');
   if (!container) return;
@@ -5610,8 +5916,9 @@ function renderChatThreads() {
   }
 
   chatThreads.forEach(t => {
+    pruneExpiredChatMessages(t);
     const lastMsg = t.messages[t.messages.length - 1] || { text: 'No messages yet', content: 'No messages yet', time: '' };
-    const lastText = lastMsg.content || lastMsg.text || 'No messages yet';
+    const lastText = isStickerMessage(lastMsg) ? '\u{1F3A8} ' + stickerLabelForMessage(lastMsg) : (lastMsg.content || lastMsg.text || 'No messages yet');
     const displayTime = formatRelativeTime(lastMsg.created_at || lastMsg.time);
     const initial = (t.user || 'U')[0].toUpperCase();
 
@@ -5753,13 +6060,17 @@ function openChat(threadId) {
 }
 
 function closeChat() {
+  closeStickerPicker();
   document.getElementById('chat-modal').classList.remove('open');
 }
 
-// Render messages showing avatars on BOTH sides of the chat window
+// Render messages: the avatar on a bubble is the sender's avatar stored
+// ON THAT MESSAGE, and it is shown once per run of messages from the
+// same sender — never duplicated on every bubble, never the wrong side's.
 function renderChatMessages(thread) {
   const container = document.getElementById('chatMessages');
   if (!container) return;
+  pruneExpiredChatMessages(thread);
   container.innerHTML = '';
 
   const myId = (currentAuthUser && currentAuthUser.id) || profile.id || 'my_user';
@@ -5782,44 +6093,52 @@ function renderChatMessages(thread) {
     container.appendChild(emptyRow);
   }
 
-  thread.messages.forEach(m => {
-    const isMe = (m.sender === 'me') || (m.sender_id && String(m.sender_id) === String(myId)) || (m.sender_id === 'my_user');
-    const msgText = m.content || m.text || '';
+  thread.messages.forEach((m, idx) => {
+    // Fix #1: who sent this is decided ONLY by sender_id (falling back to
+    // the local 'me'/'them' flag for old offline messages). The old code
+    // also treated any sender_id of 'my_user' as me, so legacy messages
+    // could land on the wrong side with the wrong avatar.
+    const isMe = m.sender_id ? String(m.sender_id) === String(myId) : m.sender === 'me';
+    // Fix #1: the avatar shown is the one stored ON THIS MESSAGE
+    // (sender_avatar saved at send time). The old code used one avatar for
+    // every message on a side, so a changed avatar rewrote history and a
+    // stale thread avatar could show on the wrong side.
+    const senderName = m.sender_name || (isMe ? myName : recipientName);
+    const senderAvatar = m.sender_avatar || (isMe ? myAvatar : recipientAvatar);
+    const senderInitial = (senderName || 'U')[0].toUpperCase();
     const msgTime = formatChatTime(m.created_at || m.time);
+    const sticker = isStickerMessage(m);
+    const stickerUrl = stickerUrlForMessage(m);
+    const stickerEmoji = sticker ? ((STICKERS.find(s => s.url === stickerUrl) || {}).emoji || '🎨') : '';
 
     const row = document.createElement('div');
     row.className = 'chat-msg-row ' + (isMe ? 'me' : 'them');
 
+    // Fix #1: show the avatar once per run of messages from the same
+    // sender (on the last bubble of the run), not on every bubble.
+    const next = thread.messages[idx + 1];
+    const nextIsMe = next ? (next.sender_id ? String(next.sender_id) === String(myId) : next.sender === 'me') : null;
+    const showAvatar = idx === thread.messages.length - 1 || nextIsMe !== isMe;
+    const avatarHtml = showAvatar
+      ? '<div class="chat-bubble-av-wrap" title="' + escapeHtml(senderName) + '">' +
+          (senderAvatar
+            ? '<img src="' + senderAvatar + '" class="chat-bubble-av-img" alt="' + escapeHtml(senderName) + '" onerror="this.style.display=\'none\';this.parentElement.innerHTML=\'<div class=&quot;chat-bubble-av-initial&quot;>' + senderInitial + '</div>\';">'
+            : '<div class="chat-bubble-av-initial">' + senderInitial + '</div>') +
+        '</div>'
+      : '<div class="chat-bubble-av-wrap chat-bubble-av-hidden" aria-hidden="true"></div>';
+    const bubbleHtml = sticker
+      ? '<div class="chat-bubble sticker-bubble">' +
+          (stickerUrl
+            ? '<img src="' + stickerUrl + '" class="chat-sticker-img" alt="' + escapeHtml(stickerLabelForMessage(m)) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';">' +
+              '<span class="chat-sticker-emoji" style="display:none">' + stickerEmoji + '</span>'
+            : '<span class="chat-sticker-emoji">' + stickerEmoji + '</span>') +
+        '</div>'
+      : '<div class="chat-bubble ' + (isMe ? 'me' : 'them') + '">' + escapeHtml(m.content || m.text || '') + '</div>';
+
     if (!isMe) {
-      // Left side: Recipient avatar + bubble + timestamp
-      row.innerHTML = `
-        <div class="chat-bubble-av-wrap" title="${escapeHtml(recipientName)}">
-          ${recipientAvatar ? `
-            <img src="${recipientAvatar}" class="chat-bubble-av-img" alt="${escapeHtml(recipientName)}" onerror="this.style.display='none';this.parentElement.innerHTML='<div class=\\'chat-bubble-av-initial\\'>${recipInitial}</div>';">
-          ` : `
-            <div class="chat-bubble-av-initial">${recipInitial}</div>
-          `}
-        </div>
-        <div class="chat-bubble-col">
-          <div class="chat-bubble them">${escapeHtml(msgText)}</div>
-          <div class="chat-bubble-timestamp">${escapeHtml(msgTime)}</div>
-        </div>
-      `;
+      row.innerHTML = avatarHtml + '<div class="chat-bubble-col">' + bubbleHtml + '<div class="chat-bubble-timestamp">' + escapeHtml(msgTime) + '</div></div>';
     } else {
-      // Right side: Bubble + timestamp + Current user's avatar
-      row.innerHTML = `
-        <div class="chat-bubble-col">
-          <div class="chat-bubble me">${escapeHtml(msgText)}</div>
-          <div class="chat-bubble-timestamp">${escapeHtml(msgTime)}</div>
-        </div>
-        <div class="chat-bubble-av-wrap" title="${escapeHtml(myName)}">
-          ${myAvatar ? `
-            <img src="${myAvatar}" class="chat-bubble-av-img" alt="${escapeHtml(myName)}" onerror="this.style.display='none';this.parentElement.innerHTML='<div class=\\'chat-bubble-av-initial\\'>${myInitial}</div>';">
-          ` : `
-            <div class="chat-bubble-av-initial">${myInitial}</div>
-          `}
-        </div>
-      `;
+      row.innerHTML = '<div class="chat-bubble-col">' + bubbleHtml + '<div class="chat-bubble-timestamp">' + escapeHtml(msgTime) + '</div></div>' + avatarHtml;
     }
 
     container.appendChild(row);
@@ -5828,11 +6147,21 @@ function renderChatMessages(thread) {
   container.scrollTop = container.scrollHeight;
 }
 
-// Send chat message with Supabase persistence and Realtime broadcast
+
+// Send chat message with Supabase persistence and Realtime delivery
 async function sendChatMessage() {
   const inp = document.getElementById('chatInput');
   const text = (inp.value || '').trim();
   if (!text) return;
+  inp.value = '';
+  await sendChatMessageWithContent({ content: text, message_type: 'text' });
+}
+
+// Shared send path for text and stickers. A sticker tap calls sendSticker()
+// -> this, so a sticker is sent instantly, exactly like a text message.
+async function sendChatMessageWithContent(opts) {
+  const content = (opts && opts.content) || '';
+  if (!content) return;
 
   const thread = chatThreads.find(t => t.id === activeChatThreadId);
   if (!thread) return;
@@ -5841,21 +6170,25 @@ async function sendChatMessage() {
   const myName = profile.name || (currentAuthUser ? 'Creator' : 'You');
   const googleMeta = currentAuthUser ? extractGoogleUserMetadata(currentAuthUser) : null;
   const myAvatar = profile.avatar_url || (googleMeta && googleMeta.avatarUrl) || '';
-  const recipientId = (activeChatRecipient && (activeChatRecipient.user_id || activeChatRecipient.id)) || 
-                      thread.user_id || 
-                      thread.creatorId || 
+  const recipientId = (activeChatRecipient && (activeChatRecipient.user_id || activeChatRecipient.id)) ||
+                      thread.user_id ||
+                      thread.creatorId ||
                       thread.id.replace(/^thread_/, '');
 
+  const isSticker = (opts && opts.message_type === 'sticker') || Boolean(opts && opts.sticker_url);
   const nowIso = new Date().toISOString();
-  const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  const clientMsgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
 
   const newMsg = {
-    id: msgId,
+    id: clientMsgId,
     sender_id: String(myId),
     receiver_id: String(recipientId),
     sender: 'me',
-    content: text,
-    text: text,
+    content: content,
+    text: isSticker ? '' : content,
+    message_type: isSticker ? 'sticker' : 'text',
+    sticker_url: (opts && opts.sticker_url) || null,
+    sticker_id: (opts && opts.sticker_id) || null,
     sender_name: myName,
     sender_avatar: myAvatar,
     created_at: nowIso,
@@ -5864,47 +6197,98 @@ async function sendChatMessage() {
 
   // 1. Instantly display in conversation (Optimistic UI)
   thread.messages.push(newMsg);
-  inp.value = '';
+  markChatMessageSeen(newMsg);
   renderChatMessages(thread);
   renderChatThreads();
   saveChatThreadsToStorage();
 
-  // 2. Persist to Supabase messages table
+  // 2. Persist to Supabase, then swap the local id for the real DB id.
+  // Fix #2 (duplicates): the old code inserted with a fresh random UUID
+  // while the optimistic copy kept its own id, so the Realtime INSERT
+  // arrived as a second, different message. Now the DB row's id replaces
+  // the optimistic id, and the dedupe set knows both.
   if (supabaseClient) {
+    let dbId = null;
     try {
-      const { error: insErr } = await supabaseClient.from('messages').insert({
-        id: window.crypto && crypto.randomUUID ? crypto.randomUUID() : undefined,
+      const payload = {
         sender_id: String(myId),
         receiver_id: String(recipientId),
-        content: text,
+        content: content,
         sender_name: myName,
         sender_avatar: myAvatar,
         created_at: nowIso
-      });
-      if (insErr) {
-        console.warn('Supabase message insert note:', insErr.message || insErr);
+      };
+      // Sticker columns only exist after the updated supabase-setup.sql
+      // has been run; insertChatMessageRow retries without them on a
+      // column error, so stickers still work before the SQL is run.
+      if (isSticker) {
+        payload.message_type = 'sticker';
+        payload.sticker_url = (opts && opts.sticker_url) || content;
+        payload.sticker_id = (opts && opts.sticker_id) || null;
       }
-    } catch(err) {
+      const inserted = await insertChatMessageRow(payload);
+      if (inserted && inserted.id) dbId = inserted.id;
+    } catch (err) {
       console.warn('Supabase message save error:', err);
     }
-
-    // 3. Broadcast to realtime channel for instant peer synchronization
-    try {
-      if (chatRealtimeChannel) {
-        chatRealtimeChannel.send({
-          type: 'broadcast',
-          event: 'new_message',
-          payload: newMsg
-        });
-      }
-    } catch(_) {}
+    if (dbId) {
+      seenChatMessageIds.delete(String(clientMsgId));
+      newMsg.id = dbId;
+      markChatMessageSeen(newMsg);
+      saveChatThreadsToStorage();
+    }
+    // 3. No separate broadcast: the postgres_changes INSERT below is the
+    // single delivery path. The old code ALSO broadcast the same message,
+    // so a slow Realtime connection could render it twice.
   }
 }
 
-// Supabase Realtime Chat integration via Postgres Changes & Broadcast
+// Insert a chat row, working with both the real Supabase client (which
+// supports .select().single()) and the local offline adapter (plain insert).
+async function insertChatMessageRow(payload) {
+  const query = supabaseClient.from('messages').insert(payload);
+  if (query && typeof query.select === 'function') {
+    const { data, error } = await query.select('id,created_at').single();
+    if (error) {
+      if (/column|message_type|sticker/i.test(error.message || '')) {
+        const fallback = {
+          sender_id: payload.sender_id,
+          receiver_id: payload.receiver_id,
+          content: payload.content,
+          sender_name: payload.sender_name,
+          sender_avatar: payload.sender_avatar,
+          created_at: payload.created_at
+        };
+        const retry = await supabaseClient.from('messages').insert(fallback).select('id,created_at').single();
+        if (retry.error) throw retry.error;
+        return retry.data;
+      }
+      throw error;
+    }
+    return data;
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
+}
+
+
+// Supabase Realtime Chat integration via Postgres Changes only.
+// Fix #2: one channel, created once, with auto-reconnect. The old code
+// returned early whenever a channel object existed — even if its
+// subscription had died (TIMED_OUT / CHANNEL_ERROR) — so messages silently
+// stopped arriving until the page was reloaded. It also broadcast every
+// message on top of the postgres_changes INSERT, which could double-send.
+let chatRealtimeRetry = 0;
+let chatRealtimeRetryTimer = null;
 function subscribeToRealtimeChat() {
   if (!supabaseClient) return;
-  if (chatRealtimeChannel) return; // Already subscribed
+  if (chatRealtimeChannel) {
+    const st = chatRealtimeChannel.state || '';
+    if (st === 'joined' || st === 'joining') return; // Already subscribed
+    try { supabaseClient.removeChannel(chatRealtimeChannel); } catch (_) {}
+    chatRealtimeChannel = null;
+  }
 
   try {
     chatRealtimeChannel = supabaseClient.channel('realtime_chat_messages')
@@ -5917,44 +6301,67 @@ function subscribeToRealtimeChat() {
           handleIncomingRealtimeMessage(payload.new);
         }
       })
-      .on('broadcast', { event: 'new_message' }, payload => {
-        if (payload && payload.payload) {
-          handleIncomingRealtimeMessage(payload.payload);
-        }
-      })
       .subscribe((status, err) => {
-        console.log('⚡ Supabase Realtime Chat subscription status:', status, err || '');
+        if (status === 'SUBSCRIBED') {
+          chatRealtimeRetry = 0;
+          if (chatRealtimeRetryTimer) { clearTimeout(chatRealtimeRetryTimer); chatRealtimeRetryTimer = null; }
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn('Supabase Realtime Chat subscription lost:', status, err || '');
+          chatRealtimeChannel = null;
+          const delay = Math.min(1000 * Math.pow(2, chatRealtimeRetry), 10000);
+          chatRealtimeRetry += 1;
+          if (chatRealtimeRetryTimer) clearTimeout(chatRealtimeRetryTimer);
+          chatRealtimeRetryTimer = setTimeout(() => { chatRealtimeRetryTimer = null; subscribeToRealtimeChat(); }, delay);
+        }
       });
-  } catch(err) {
+  } catch (err) {
     console.warn('Realtime chat channel setup warning:', err);
   }
 }
 
-// Handle incoming messages from Postgres Changes or Broadcast
+// Best-effort client-side cleanup of messages older than 48 hours
+// (fix #3). The SQL function + pg_cron job in supabase-setup.sql is the
+// primary deleter; this runs on every history load so old rows disappear
+// from the app even before the next scheduled run.
+let chatCleanupRunning = false;
+async function cleanupExpiredChatMessages() {
+  if (!supabaseClient || chatCleanupRunning) return;
+  const q = supabaseClient.from('messages');
+  if (!q || typeof q.delete !== 'function') return; // local adapter: no delete
+  chatCleanupRunning = true;
+  try {
+    await supabaseClient.from('messages').delete().lt('created_at', chatCutoffIso());
+  } catch (_) {
+    // Ignore: SQL cleanup is the primary path.
+  } finally {
+    chatCleanupRunning = false;
+  }
+}
+
+
+// Handle incoming messages from Postgres Changes
 function handleIncomingRealtimeMessage(rawMsg) {
   if (!rawMsg || !rawMsg.content) return;
+  if (isChatMessageExpired(rawMsg)) return; // fix #3: never show 48h+ old rows
 
   const myId = (currentAuthUser && currentAuthUser.id) || profile.id || 'my_user';
 
-  // Check if we already have this message to prevent duplicate rendering
-  const alreadyExists = chatThreads.some(t => 
-    t.messages.some(m => 
-      (rawMsg.id && m.id === rawMsg.id) || 
-      (m.content === rawMsg.content && Math.abs(new Date(m.created_at || 0) - new Date(rawMsg.created_at || 0)) < 3000)
-    )
-  );
-  if (alreadyExists) return;
+  // Fix #2: dedupe by id AND by sender+content fingerprint (15s window).
+  // The old 3s window let the same message render twice when Realtime
+  // was slow, because the optimistic copy and the DB copy have different
+  // ids and can arrive more than 3s apart.
+  if (isDuplicateChatMessage(rawMsg)) return;
 
   // Determine thread match
   const senderId = String(rawMsg.sender_id || '');
   const receiverId = String(rawMsg.receiver_id || '');
   const otherParticipantId = (senderId === String(myId)) ? receiverId : senderId;
 
-  let thread = chatThreads.find(t => 
-    t.creatorId === otherParticipantId || 
-    t.user_id === otherParticipantId || 
-    t.id === otherParticipantId || 
-    t.id === 'thread_' + otherParticipantId || 
+  let thread = chatThreads.find(t =>
+    t.creatorId === otherParticipantId ||
+    t.user_id === otherParticipantId ||
+    t.id === otherParticipantId ||
+    t.id === 'thread_' + otherParticipantId ||
     t.handle === otherParticipantId
   );
 
@@ -5974,6 +6381,12 @@ function handleIncomingRealtimeMessage(rawMsg) {
   }
 
   const isMe = (senderId === String(myId));
+  // Fix #1: a partner's latest message carries their current avatar —
+  // keep the thread avatar in sync with it, so the header and thread list
+  // never show a stale logo for this person.
+  if (!isMe && rawMsg.sender_avatar) thread.avatar_url = rawMsg.sender_avatar;
+  if (!isMe && rawMsg.sender_name && (!thread.user || thread.user === 'Creator')) thread.user = rawMsg.sender_name;
+
   const newMsg = {
     id: rawMsg.id || ('rt_' + Date.now()),
     sender_id: senderId,
@@ -5981,13 +6394,18 @@ function handleIncomingRealtimeMessage(rawMsg) {
     sender: isMe ? 'me' : 'them',
     content: rawMsg.content,
     text: rawMsg.content,
+    message_type: rawMsg.message_type || (rawMsg.sticker_url ? 'sticker' : 'text'),
+    sticker_url: rawMsg.sticker_url || null,
+    sticker_id: rawMsg.sticker_id || null,
     sender_name: rawMsg.sender_name,
     sender_avatar: rawMsg.sender_avatar,
     created_at: rawMsg.created_at || new Date().toISOString(),
     time: formatRelativeTime(rawMsg.created_at)
   };
 
+  pruneExpiredChatMessages(thread);
   thread.messages.push(newMsg);
+  markChatMessageSeen(newMsg);
   saveChatThreadsToStorage();
 
   // If this thread is currently open, re-render messages instantly
@@ -5999,13 +6417,16 @@ function handleIncomingRealtimeMessage(rawMsg) {
   renderChatThreads();
 }
 
+
 // Fetch message history between current user and thread participant from Supabase
 async function loadSupabaseMessagesForThread(thread) {
   if (!supabaseClient || !thread) return;
+  pruneExpiredChatMessages(thread);
+  cleanupExpiredChatMessages(); // fix #3: delete 48h+ rows in the background
   const myId = (currentAuthUser && currentAuthUser.id) || profile.id || 'my_user';
-  const otherId = (activeChatRecipient && (activeChatRecipient.user_id || activeChatRecipient.id)) || 
-                  thread.user_id || 
-                  thread.creatorId || 
+  const otherId = (activeChatRecipient && (activeChatRecipient.user_id || activeChatRecipient.id)) ||
+                  thread.user_id ||
+                  thread.creatorId ||
                   thread.id.replace(/^thread_/, '');
 
   try {
@@ -6013,8 +6434,9 @@ async function loadSupabaseMessagesForThread(thread) {
       .from('messages')
       .select('*')
       .or(`and(sender_id.eq.${myId},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${myId})`)
+      .gte('created_at', chatCutoffIso()) // fix #3: never fetch 48h+ old messages
       .order('created_at', { ascending: true })
-      .limit(50);
+      .limit(100);
 
     if (error) {
       console.warn('Supabase load messages note:', error.message || error);
@@ -6023,29 +6445,33 @@ async function loadSupabaseMessagesForThread(thread) {
 
     if (data && data.length > 0) {
       data.forEach(row => {
-        const exists = thread.messages.some(m => 
-          m.id === row.id || 
-          (m.content === row.content && Math.abs(new Date(m.created_at) - new Date(row.created_at)) < 3000)
-        );
+        if (isChatMessageExpired(row)) return;
+        const exists = thread.messages.some(m => chatMessagesAreSame(m, row));
         if (!exists) {
           const isMe = String(row.sender_id) === String(myId);
-          thread.messages.push({
+          const msg = {
             id: row.id,
             sender_id: row.sender_id,
             receiver_id: row.receiver_id,
             sender: isMe ? 'me' : 'them',
             content: row.content,
             text: row.content,
+            message_type: row.message_type || (row.sticker_url ? 'sticker' : 'text'),
+            sticker_url: row.sticker_url || null,
+            sticker_id: row.sticker_id || null,
             sender_name: row.sender_name,
             sender_avatar: row.sender_avatar,
             created_at: row.created_at,
             time: formatChatTime(row.created_at)
-          });
+          };
+          thread.messages.push(msg);
+          markChatMessageSeen(msg);
         }
       });
 
       // Sort thread messages chronologically
       thread.messages.sort((a,b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+      pruneExpiredChatMessages(thread);
       saveChatThreadsToStorage();
 
       if (activeChatThreadId === thread.id) {
@@ -6058,9 +6484,12 @@ async function loadSupabaseMessagesForThread(thread) {
   }
 }
 
+
 // Fetch all conversation threads for logged-in user from Supabase messages table
 async function loadUserChatThreadsFromSupabase() {
   if (!supabaseClient) return;
+  pruneAllExpiredChatMessages();
+  cleanupExpiredChatMessages(); // fix #3: delete 48h+ rows in the background
   const myId = (currentAuthUser && currentAuthUser.id) || profile.id;
   if (!myId || myId === 'my_user') return;
 
@@ -6069,7 +6498,9 @@ async function loadUserChatThreadsFromSupabase() {
       .from('messages')
       .select('*')
       .or(`sender_id.eq.${myId},receiver_id.eq.${myId}`)
-      .order('created_at', { ascending: true });
+      .gte('created_at', chatCutoffIso()) // fix #3: never fetch 48h+ old messages
+      .order('created_at', { ascending: true })
+      .limit(200);
 
     if (error) {
       console.warn('loadUserChatThreadsFromSupabase note:', error.message || error);
@@ -6084,6 +6515,7 @@ async function loadUserChatThreadsFromSupabase() {
         if (!grouped[partnerId]) {
           grouped[partnerId] = [];
         }
+        if (isChatMessageExpired(row)) return;
         grouped[partnerId].push({
           id: row.id,
           sender_id: row.sender_id,
@@ -6091,6 +6523,9 @@ async function loadUserChatThreadsFromSupabase() {
           sender: isMe ? 'me' : 'them',
           content: row.content,
           text: row.content,
+          message_type: row.message_type || (row.sticker_url ? 'sticker' : 'text'),
+          sticker_url: row.sticker_url || null,
+          sticker_id: row.sticker_id || null,
           sender_name: row.sender_name,
           sender_avatar: row.sender_avatar,
           created_at: row.created_at,
@@ -6137,15 +6572,18 @@ async function loadUserChatThreadsFromSupabase() {
         }
 
         grouped[partnerId].forEach(newM => {
-          const exists = thread.messages.some(m => 
-            m.id === newM.id || 
-            (m.content === newM.content && Math.abs(new Date(m.created_at || 0) - new Date(newM.created_at || 0)) < 3000)
-          );
+          const exists = thread.messages.some(m => chatMessagesAreSame(m, newM));
           if (!exists) {
             thread.messages.push(newM);
+            markChatMessageSeen(newM);
           }
         });
         thread.messages.sort((a,b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+        pruneExpiredChatMessages(thread);
+        // Fix #1: the partner's latest message carries their current
+        // avatar — use it, so the thread list never shows a stale logo.
+        const lastPartnerMsg = grouped[partnerId].filter(m => String(m.sender_id) === String(partnerId)).pop();
+        if (lastPartnerMsg && lastPartnerMsg.sender_avatar) thread.avatar_url = lastPartnerMsg.sender_avatar;
       }
 
       saveChatThreadsToStorage();

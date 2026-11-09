@@ -230,6 +230,9 @@ CREATE TABLE IF NOT EXISTS public.messages (
   content TEXT NOT NULL,
   sender_name TEXT,
   sender_avatar TEXT,
+  message_type TEXT NOT NULL DEFAULT 'text',
+  sticker_url TEXT,
+  sticker_id TEXT,
   created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now())
 );
 
@@ -238,6 +241,15 @@ CREATE INDEX IF NOT EXISTS idx_messages_participants
   ON public.messages (sender_id, receiver_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_receiver_participants 
   ON public.messages (receiver_id, sender_id, created_at DESC);
+
+-- Sticker columns for existing tables (safe to re-run: IF NOT EXISTS)
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS message_type TEXT NOT NULL DEFAULT 'text';
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS sticker_url TEXT;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS sticker_id TEXT;
+
+-- Fast 48-hour expiry lookups
+CREATE INDEX IF NOT EXISTS idx_messages_created_at
+  ON public.messages (created_at DESC);
 
 -- Enable RLS
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
@@ -254,6 +266,13 @@ CREATE POLICY "Users can send messages"
   ON public.messages FOR INSERT
   WITH CHECK (true);
 
+-- Allow deleting messages (the app only ever deletes rows older than
+-- 48 hours, via delete_expired_chat_messages() / the client cleanup call)
+DROP POLICY IF EXISTS "Users can delete expired messages" ON public.messages;
+CREATE POLICY "Users can delete expired messages"
+  ON public.messages FOR DELETE
+  USING (true);
+
 -- Add public.messages to the Supabase Realtime publication
 DO $$
 BEGIN
@@ -262,6 +281,52 @@ BEGIN
     WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'messages'
   ) THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+-- ========================================================
+-- 9. 48-Hour Message Auto-Deletion (Chat)
+-- Run this file in the SQL Editor once. It is safe to re-run.
+-- How it works, in three layers:
+--   1) The app never shows or fetches messages older than 48 hours
+--      (client-side filter in index.html).
+--   2) The app also deletes 48h+ rows with a client-side delete call
+--      whenever a chat history is loaded (best-effort cleanup).
+--   3) This section deletes the rows in the database itself, hourly,
+--      via pg_cron when that extension is enabled in the project.
+--      If pg_cron is NOT enabled, run this by hand whenever you like:
+--        SELECT public.delete_expired_chat_messages();
+-- ========================================================
+CREATE OR REPLACE FUNCTION public.delete_expired_chat_messages()
+RETURNS integer AS $$
+DECLARE
+  deleted_count integer;
+BEGIN
+  DELETE FROM public.messages
+  WHERE created_at < timezone('utc'::text, now()) - INTERVAL '48 hours';
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Hourly cleanup job (only created when pg_cron is available; otherwise
+-- this block does nothing and the function above can be called manually
+-- or from a Supabase Edge Function / scheduled task).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    BEGIN
+      PERFORM cron.schedule(
+        'delete-expired-chat-messages',
+        '0 * * * *',
+        'SELECT public.delete_expired_chat_messages();'
+      );
+    EXCEPTION WHEN OTHERS THEN
+      -- Job already exists or scheduling is not permitted; ignore.
+      NULL;
+    END;
   END IF;
 EXCEPTION WHEN OTHERS THEN
   NULL;
