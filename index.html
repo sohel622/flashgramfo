@@ -2914,10 +2914,155 @@ function chatMessagesAreSame(a, b) {
     Math.abs(new Date(a.created_at || 0) - new Date(b.created_at || 0)) < 15000;
 }
 
+// ── Inbox isolation + dedupe (critical fix) ──────────────────────────
+// Root causes found:
+//  (a) The same person could be keyed two ways: a creator whose profile
+//      row has no user_id gets the numeric profiles.id, while messages
+//      always use the auth UUID — so one person got two threads.
+//  (b) Nothing ever deduped chatThreads: localStorage, Realtime and the
+//      Supabase loader each created threads when their lookup missed.
+//  (c) Threads lived in ONE shared localStorage key for every account,
+//      and Realtime had no participation check, so another account's
+//      threads leaked into your inbox. RLS on messages was USING (true).
+// The fix: one canonical partner key, merge on every save/load, one
+// storage key per account, and participation checks at every entry point.
+const CHAT_THREADS_LEGACY_KEY = 'reelflow_chat_threads';
+let chatThreadsKey = CHAT_THREADS_LEGACY_KEY;
+
+function getChatOwnerId() {
+  if (currentAuthUser && currentAuthUser.id) return String(currentAuthUser.id);
+  return 'anon';
+}
+// Canonical partner identity: ids, handles and 'thread_<id>' all compare
+// equal when they mean the same person.
+function chatPartnerKey(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).trim().toLowerCase().replace(/^@/, '').replace(/^thread_/, '');
+}
+function chatThreadPartnerKey(t) {
+  if (!t) return '';
+  return chatPartnerKey(t.creatorId || t.user_id || t.id || '');
+}
+// Find the ONE thread for a partner, by id OR by handle. The handle
+// fallback is what heals the numeric-id vs auth-UUID split: both threads
+// for the same person share the same handle.
+function findChatThreadByPartner(partnerId, handle, extraKey) {
+  const key = chatPartnerKey(partnerId);
+  const hkey = chatPartnerKey(handle);
+  const ekey = chatPartnerKey(extraKey);
+  return chatThreads.find(t => {
+    const tk = chatThreadPartnerKey(t);
+    if (key && tk === key) return true;
+    if (key && t.handle && chatPartnerKey(t.handle) === key) return true;
+    if (hkey && t.handle && chatPartnerKey(t.handle) === hkey) return true;
+    if (hkey && tk === hkey) return true;
+    if (ekey && tk === ekey) return true;
+    return false;
+  });
+}
+// Does this thread belong to the currently logged-in account? A thread
+// belongs to you if it was created under your id, or if any message in
+// it has you as sender or receiver. Empty legacy threads with no owner
+// and no messages are unverifiable, so they are dropped (reopening the
+// chat recreates them).
+function chatThreadBelongsToCurrentUser(t) {
+  if (!t || typeof t !== 'object') return false;
+  const owner = getChatOwnerId();
+  if (t.owner_id) return String(t.owner_id) === owner;
+  const msgs = Array.isArray(t.messages) ? t.messages : [];
+  if (msgs.length) {
+    if (owner === 'anon') {
+      return msgs.some(m => !m.sender_id || !m.receiver_id ||
+        String(m.sender_id) === 'my_user' || String(m.receiver_id) === 'my_user');
+    }
+    return msgs.some(m => String(m.sender_id) === owner || String(m.receiver_id) === owner);
+  }
+  return false;
+}
+// Merge duplicate threads for the same partner into one: union their
+// messages (deduped), keep the freshest name/avatar, prefer a UUID-like
+// partner key over a numeric one. Never changes a surviving thread's id,
+// so an open chat is never orphaned by the merge.
+function dedupeChatThreads() {
+  const byKey = new Map();
+  const byHandle = new Map();
+  const order = [];
+  chatThreads.forEach(t => {
+    if (!t || typeof t !== 'object') return;
+    if (!Array.isArray(t.messages)) t.messages = [];
+    const key = chatThreadPartnerKey(t);
+    let hkey = t.handle ? chatPartnerKey(t.handle) : '';
+    // A "handle" that is itself a UUID is just another id form, not a name.
+    if (hkey && (hkey === key || hkey.includes('-'))) hkey = '';
+    let existing = key ? byKey.get(key) : null;
+    if (!existing && hkey) existing = byHandle.get(hkey);
+    if (!existing) {
+      if (key) byKey.set(key, t);
+      if (hkey) byHandle.set(hkey, t);
+      order.push(t);
+      return;
+    }
+    if (key) byKey.set(key, existing);
+    if (hkey) byHandle.set(hkey, existing);
+    t.messages.forEach(m => {
+      if (!existing.messages.some(x => chatMessagesAreSame(x, m))) existing.messages.push(m);
+    });
+    existing.messages.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+    if (t.creatorId && (!existing.creatorId || (String(t.creatorId).includes('-') && !String(existing.creatorId).includes('-')))) existing.creatorId = t.creatorId;
+    if (t.user_id && (!existing.user_id || (String(t.user_id).includes('-') && !String(existing.user_id).includes('-')))) existing.user_id = t.user_id;
+    if (!existing.avatar_url && t.avatar_url) existing.avatar_url = t.avatar_url;
+    if (t.user && (!existing.user || existing.user === 'Creator')) existing.user = t.user;
+    if (t.handle && (!existing.handle || existing.handle === existing.id)) existing.handle = t.handle;
+    if (!existing.owner_id && t.owner_id) existing.owner_id = t.owner_id;
+  });
+  chatThreads = order;
+}
+// Keep only this account's threads, merged and saved.
+function isolateChatThreadsForCurrentUser() {
+  dedupeChatThreads();
+  chatThreads = chatThreads.filter(chatThreadBelongsToCurrentUser);
+  saveChatThreadsToStorage();
+}
+// Switch the on-disk thread list to the current account's key. The first
+// time an account logs in here, threads from the old shared key that
+// involve this account are moved over; other accounts' threads stay
+// behind in the shared key and are never shown to this account.
+function switchChatThreadsForCurrentUser() {
+  const ownerId = getChatOwnerId();
+  if (ownerId === 'anon') return; // anonymous/demo mode keeps the shared key
+  const nextKey = chatThreadsKeyFor(ownerId);
+  if (nextKey === chatThreadsKey) return;
+  try {
+    if (chatThreads.length) localStorage.setItem(chatThreadsKey, JSON.stringify(chatThreads));
+  } catch (_) {}
+  chatThreadsKey = nextKey;
+  chatThreads = [];
+  loadStoredChatThreads();
+  try {
+    const legacyRaw = localStorage.getItem(CHAT_THREADS_LEGACY_KEY);
+    if (legacyRaw) {
+      const legacy = JSON.parse(legacyRaw);
+      if (Array.isArray(legacy)) {
+        const remaining = [];
+        legacy.forEach(t => {
+          if (chatThreadBelongsToCurrentUser(t)) chatThreads.push(t);
+          else remaining.push(t);
+        });
+        if (remaining.length) localStorage.setItem(CHAT_THREADS_LEGACY_KEY, JSON.stringify(remaining));
+        else localStorage.removeItem(CHAT_THREADS_LEGACY_KEY);
+      }
+    }
+  } catch (_) {}
+  isolateChatThreadsForCurrentUser();
+}
+function chatThreadsKeyFor(ownerId) {
+  return 'reelflow_chat_threads_' + (ownerId ? String(ownerId) : 'anon');
+}
+
 let chatThreads = [];
 function loadStoredChatThreads() {
   try {
-    const raw = localStorage.getItem('reelflow_chat_threads');
+    const raw = localStorage.getItem(chatThreadsKey);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) chatThreads = parsed;
@@ -2926,7 +3071,8 @@ function loadStoredChatThreads() {
 }
 function saveChatThreadsToStorage() {
   try {
-    localStorage.setItem('reelflow_chat_threads', JSON.stringify(chatThreads));
+    dedupeChatThreads();
+    localStorage.setItem(chatThreadsKey, JSON.stringify(chatThreads));
   } catch(_) {}
 }
 loadStoredChatThreads();
@@ -2966,6 +3112,7 @@ pruneAllExpiredChatMessages();
   }
 
   await initSupabase();
+  switchChatThreadsForCurrentUser();
   applyProfile();
   applyForYouRanking();
   buildFeed();
@@ -3317,7 +3464,11 @@ async function initSupabase() {
         currentAuthUser = sessionData.session.user;
         await loadUserProfileFromSupabase(currentAuthUser.id);
         await loadCreatorsFromSupabase();
-        loadUserChatThreadsFromSupabase();
+        // NOTE: threads are NOT loaded here on purpose. The app boot
+        // sequence loads them after switchChatThreadsForCurrentUser(),
+        // so the per-account switch can migrate the old shared key first.
+        // Loading here would filter + save over the shared key before
+        // the other accounts' threads could be moved aside.
       }
     }
 
@@ -3326,12 +3477,24 @@ async function initSupabase() {
       console.log('Supabase Auth Event:', event, session?.user?.id);
       if (session && session.user) {
         currentAuthUser = session.user;
+        switchChatThreadsForCurrentUser();
         closeAuthPage();
         await loadUserProfileFromSupabase(session.user.id);
         await loadCreatorsFromSupabase();
         loadUserChatThreadsFromSupabase();
       } else {
+        // Only clear the inbox if a real account was active. Anonymous /
+        // demo mode keeps the shared key untouched.
+        const wasLoggedIn = chatThreadsKey !== CHAT_THREADS_LEGACY_KEY;
         currentAuthUser = null;
+        if (wasLoggedIn) {
+          chatThreads = [];
+          activeChatThreadId = null;
+          activeChatRecipient = null;
+          chatThreadsKey = CHAT_THREADS_LEGACY_KEY;
+          closeChat();
+          renderChatThreads();
+        }
         updateAuthStatusUI();
         await loadCreatorsFromSupabase();
       }
@@ -5748,6 +5911,7 @@ async function loadCreatorsFromSupabase() {
         realCreators.push({
           id: uid || displayHandle,
           user_id: uid,
+          profile_id: p.id ? String(p.id) : null,
           name: name,
           handle: displayHandle,
           avatar_url: p.avatar_url || '',
@@ -6105,7 +6269,10 @@ function renderChatThreads() {
   if (!container) return;
   container.innerHTML = '';
 
-  if (!chatThreads.length) {
+  // One row per partner, only this account's conversations.
+  dedupeChatThreads();
+  const visibleThreads = chatThreads.filter(chatThreadBelongsToCurrentUser);
+  if (!visibleThreads.length) {
     container.innerHTML = `
       <div class="profile-empty" style="padding:40px 20px;">
         <span class="material-symbols-rounded">chat_bubble</span>
@@ -6116,7 +6283,7 @@ function renderChatThreads() {
     return;
   }
 
-  chatThreads.forEach(t => {
+  visibleThreads.forEach(t => {
     pruneExpiredChatMessages(t);
     const lastMsg = t.messages[t.messages.length - 1] || { text: 'No messages yet', content: 'No messages yet', time: '' };
     const lastText = isStickerMessage(lastMsg) ? '\u{1F3A8} ' + stickerLabelForMessage(lastMsg) : (lastMsg.content || lastMsg.text || 'No messages yet');
@@ -6157,18 +6324,16 @@ function openDirectMessageWithCreator(creatorId) {
 
   const targetUserId = creator.user_id || creator.id;
 
-  // Find or create chat thread for this creator
-  let thread = chatThreads.find(t => 
-    t.creatorId === targetUserId || 
-    t.user_id === targetUserId || 
-    t.id === 'thread_' + targetUserId || 
-    t.handle === creator.handle
-  );
+  // Find or create chat thread for this creator — one thread per partner,
+  // matched by id OR handle, so a numeric profile id and an auth UUID
+  // for the same person never become two rows.
+  let thread = findChatThreadByPartner(targetUserId, creator.handle, creator.profile_id);
   if (!thread) {
     thread = {
       id: 'thread_' + targetUserId,
       creatorId: targetUserId,
       user_id: targetUserId,
+      owner_id: getChatOwnerId(),
       user: creator.name,
       handle: creator.handle,
       avatar_url: creator.avatar_url,
@@ -6184,6 +6349,7 @@ function openDirectMessageWithCreator(creatorId) {
       thread.creatorId = targetUserId;
       thread.user_id = targetUserId;
     }
+    if (!thread.owner_id) thread.owner_id = getChatOwnerId();
   }
   saveChatThreadsToStorage();
 
@@ -6220,9 +6386,9 @@ function openDirectMessageWithCreator(creatorId) {
 }
 
 function openChat(threadId) {
-  activeChatThreadId = threadId;
   const thread = chatThreads.find(t => t.id === threadId);
-  if (!thread) return;
+  if (!thread || !chatThreadBelongsToCurrentUser(thread)) return;
+  activeChatThreadId = threadId;
 
   const targetId = thread.creatorId || thread.user_id || thread.id.replace(/^thread_/, '');
 
@@ -6545,7 +6711,9 @@ function handleIncomingRealtimeMessage(rawMsg) {
   if (!rawMsg || !rawMsg.content) return;
   if (isChatMessageExpired(rawMsg)) return; // fix #3: never show 48h+ old rows
 
-  const myId = (currentAuthUser && currentAuthUser.id) || profile.id || 'my_user';
+  // Identity for Realtime is the auth user only: a cached profile id from
+  // another account must never decide whose conversation this is.
+  const myId = (currentAuthUser && currentAuthUser.id) || 'my_user';
 
   // Fix #2: dedupe by id AND by sender+content fingerprint (15s window).
   // The old 3s window let the same message render twice when Realtime
@@ -6556,16 +6724,13 @@ function handleIncomingRealtimeMessage(rawMsg) {
   // Determine thread match
   const senderId = String(rawMsg.sender_id || '');
   const receiverId = String(rawMsg.receiver_id || '');
+  // Isolation: ignore messages where the current user is neither sender
+  // nor receiver — they belong to another account, never to this inbox.
+  const owner = getChatOwnerId();
+  if (owner !== 'anon' && senderId !== owner && receiverId !== owner) return;
   const otherParticipantId = (senderId === String(myId)) ? receiverId : senderId;
 
-  let thread = chatThreads.find(t =>
-    t.creatorId === otherParticipantId ||
-    t.user_id === otherParticipantId ||
-    t.id === otherParticipantId ||
-    t.id === 'thread_' + otherParticipantId ||
-    t.handle === otherParticipantId
-  );
-
+  let thread = findChatThreadByPartner(otherParticipantId);
   if (!thread) {
     // Create new thread for new incoming conversation
     const knownCreator = creators.find(c => c.id === otherParticipantId || c.user_id === otherParticipantId || c.handle === otherParticipantId);
@@ -6573,12 +6738,15 @@ function handleIncomingRealtimeMessage(rawMsg) {
       id: 'thread_' + otherParticipantId,
       creatorId: otherParticipantId,
       user_id: otherParticipantId,
+      owner_id: owner,
       user: knownCreator ? knownCreator.name : (rawMsg.sender_name || 'Creator'),
       handle: knownCreator ? knownCreator.handle : otherParticipantId,
       avatar_url: knownCreator ? knownCreator.avatar_url : (rawMsg.sender_avatar || null),
       messages: []
     };
     chatThreads.unshift(thread);
+  } else if (!thread.owner_id) {
+    thread.owner_id = owner;
   }
 
   const isMe = (senderId === String(myId));
@@ -6622,6 +6790,7 @@ function handleIncomingRealtimeMessage(rawMsg) {
 // Fetch message history between current user and thread participant from Supabase
 async function loadSupabaseMessagesForThread(thread) {
   if (!supabaseClient || !thread) return;
+  if (!chatThreadBelongsToCurrentUser(thread)) return;
   pruneExpiredChatMessages(thread);
   cleanupExpiredChatMessages(); // fix #3: delete 48h+ rows in the background
   const myId = (currentAuthUser && currentAuthUser.id) || profile.id || 'my_user';
@@ -6691,8 +6860,10 @@ async function loadUserChatThreadsFromSupabase() {
   if (!supabaseClient) return;
   pruneAllExpiredChatMessages();
   cleanupExpiredChatMessages(); // fix #3: delete 48h+ rows in the background
-  const myId = (currentAuthUser && currentAuthUser.id) || profile.id;
-  if (!myId || myId === 'my_user') return;
+  // Isolation: history loads only for the authenticated user. A cached
+  // profile id from another account must never pull their threads.
+  const myId = currentAuthUser && currentAuthUser.id;
+  if (!myId) return;
 
   try {
     const { data, error } = await supabaseClient
@@ -6735,12 +6906,6 @@ async function loadUserChatThreadsFromSupabase() {
       });
 
       for (const partnerId of Object.keys(grouped)) {
-        let thread = chatThreads.find(t => 
-          t.creatorId === partnerId || 
-          t.user_id === partnerId || 
-          t.id === 'thread_' + partnerId || 
-          t.id === partnerId
-        );
         const knownCreator = creators.find(c => c.id === partnerId || c.user_id === partnerId || c.handle === partnerId);
 
         let userName = knownCreator ? knownCreator.name : null;
@@ -6755,11 +6920,16 @@ async function loadUserChatThreadsFromSupabase() {
           }
         }
 
+        // One thread per partner: match by id OR handle, so a thread
+        // stored under a numeric profile id merges with this UUID thread
+        // instead of becoming a second row for the same person.
+        let thread = findChatThreadByPartner(partnerId, userHandle);
         if (!thread) {
           thread = {
             id: 'thread_' + partnerId,
             creatorId: partnerId,
             user_id: partnerId,
+            owner_id: getChatOwnerId(),
             user: userName || 'Creator',
             handle: userHandle || partnerId.slice(0, 8),
             avatar_url: userAvatar || '',
@@ -6770,6 +6940,10 @@ async function loadUserChatThreadsFromSupabase() {
           if (userName && (!thread.user || thread.user === 'Creator')) thread.user = userName;
           if (userAvatar && !thread.avatar_url) thread.avatar_url = userAvatar;
           if (userHandle && (!thread.handle || thread.handle === partnerId)) thread.handle = userHandle;
+          // Heal the stored thread to the canonical partner id.
+          thread.creatorId = partnerId;
+          thread.user_id = partnerId;
+          if (!thread.owner_id) thread.owner_id = getChatOwnerId();
         }
 
         grouped[partnerId].forEach(newM => {
@@ -6787,7 +6961,8 @@ async function loadUserChatThreadsFromSupabase() {
         if (lastPartnerMsg && lastPartnerMsg.sender_avatar) thread.avatar_url = lastPartnerMsg.sender_avatar;
       }
 
-      saveChatThreadsToStorage();
+      // One row per partner, only this account's conversations.
+      isolateChatThreadsForCurrentUser();
       renderChatThreads();
     }
   } catch(err) {

@@ -254,11 +254,14 @@ CREATE INDEX IF NOT EXISTS idx_messages_created_at
 -- Enable RLS
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
--- Allow reading messages for conversation participants (or public chat viewing)
+-- Allow reading ONLY messages where the current user participates
+-- (sender or receiver). The old USING (true) let any logged-in user
+-- read every conversation, which leaked other accounts' threads into
+-- the inbox. History loads now require a login, as the chat does.
 DROP POLICY IF EXISTS "Users can read their conversation messages" ON public.messages;
 CREATE POLICY "Users can read their conversation messages"
   ON public.messages FOR SELECT
-  USING (true);
+  USING (auth.uid()::text = sender_id OR auth.uid()::text = receiver_id);
 
 -- Allow inserting messages
 DROP POLICY IF EXISTS "Users can send messages" ON public.messages;
@@ -266,12 +269,14 @@ CREATE POLICY "Users can send messages"
   ON public.messages FOR INSERT
   WITH CHECK (true);
 
--- Allow deleting messages (the app only ever deletes rows older than
--- 48 hours, via delete_expired_chat_messages() / the client cleanup call)
+-- Allow deleting ONLY your own conversation's messages (the app only
+-- ever deletes rows older than 48 hours, via
+-- delete_expired_chat_messages() / the client cleanup call; that
+-- function is SECURITY DEFINER so it still clears every expired row)
 DROP POLICY IF EXISTS "Users can delete expired messages" ON public.messages;
 CREATE POLICY "Users can delete expired messages"
   ON public.messages FOR DELETE
-  USING (true);
+  USING (auth.uid()::text = sender_id OR auth.uid()::text = receiver_id);
 
 -- Add public.messages to the Supabase Realtime publication
 DO $$
