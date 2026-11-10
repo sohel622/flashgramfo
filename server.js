@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -77,10 +78,14 @@ if (process.env.CLOUDINARY_URL) {
   });
 }
 
-// Ensure local uploads directory exists for fallback/caching
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+// Ensure local uploads directory exists in a writable temp directory (avoids EROFS on read-only serverless filesystems)
+const uploadsDir = path.join(os.tmpdir(), 'reelflow_uploads');
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+} catch (dirErr) {
+  console.warn('Could not create temp uploadsDir (EROFS safe):', dirErr.message);
 }
 
 // Multer upload handler (memory storage for stream to Cloudinary, up to 100MB)
@@ -220,12 +225,20 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
 
       const ext = path.extname(fileName) || '.mp4';
       const fileId = 'vid_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-      const savedPath = path.join(uploadsDir, fileId + ext);
+      let videoUrl = '';
+      let thumbnailUrl = '';
 
-      fs.writeFileSync(savedPath, req.file.buffer);
-
-      const videoUrl = `/uploads/${fileId}${ext}`;
-      const thumbnailUrl = `/uploads/${fileId}${ext}`;
+      try {
+        const savedPath = path.join(uploadsDir, fileId + ext);
+        fs.writeFileSync(savedPath, req.file.buffer);
+        videoUrl = `/uploads/${fileId}${ext}`;
+        thumbnailUrl = `/uploads/${fileId}${ext}`;
+      } catch (writeErr) {
+        console.warn('Temp disk write failed (EROFS or permission), falling back to in-memory data URL:', writeErr.message);
+        const mime = req.file.mimetype || 'video/mp4';
+        videoUrl = `data:${mime};base64,${req.file.buffer.toString('base64')}`;
+        thumbnailUrl = videoUrl;
+      }
 
       return res.json({
         approved: true,
@@ -244,6 +257,9 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
     });
   }
 });
+
+// Serve uploaded assets from temporary directory
+app.use('/uploads', express.static(uploadsDir));
 
 // Serve static assets from root directory
 app.use(express.static(__dirname));

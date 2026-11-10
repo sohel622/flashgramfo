@@ -1981,6 +1981,87 @@
     }
     .upload-btn:active { opacity: 0.85; }
 
+    /* Upload Progress Bar Component */
+    .upload-progress-card {
+      margin-bottom: 14px;
+      padding: 13px 15px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      animation: fadeIn .2s ease;
+    }
+    .upload-progress-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .upload-progress-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .upload-progress-spinner {
+      width: 15px;
+      height: 15px;
+      border: 2px solid rgba(254, 44, 85, 0.3);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .75s linear infinite;
+      flex-shrink: 0;
+    }
+    .upload-progress-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .upload-progress-percent {
+      font-family: var(--font-mono, monospace);
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.5px;
+    }
+    .upload-progress-track {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+    }
+    .upload-progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #fe2c55 0%, #ff007f 50%, #00f2fe 100%);
+      background-size: 200% 100%;
+      border-radius: 10px;
+      transition: width 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+      box-shadow: 0 0 10px rgba(254, 44, 85, 0.35);
+      animation: progressGradient 2s linear infinite;
+    }
+    .upload-progress-bar.success {
+      background: #10b981 !important;
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.5) !important;
+    }
+    .upload-progress-bar.error {
+      background: #ef4444 !important;
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.5) !important;
+    }
+    .upload-progress-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11.5px;
+      color: var(--fg2);
+    }
+    @keyframes progressGradient {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+
     /* Comments Sheet */
     .comments-sheet {
       width: 100%;
@@ -2374,9 +2455,27 @@
       <span class="tag-chip" onclick="appendTag('#reels')">#reels</span>
     </div>
 
-    <button class="upload-btn" onclick="submitUpload()">
+    <!-- Smooth Real-Time Upload Progress Bar -->
+    <div id="uploadProgressBox" class="upload-progress-card" style="display:none;">
+      <div class="upload-progress-top">
+        <div class="upload-progress-title-row">
+          <div class="upload-progress-spinner" id="uploadProgressSpinner"></div>
+          <span class="upload-progress-title" id="uploadProgressStatus">Uploading video…</span>
+        </div>
+        <span class="upload-progress-percent" id="uploadProgressPercent">0%</span>
+      </div>
+      <div class="upload-progress-track">
+        <div class="upload-progress-bar" id="uploadProgressBar" style="width: 0%;"></div>
+      </div>
+      <div class="upload-progress-meta">
+        <span id="uploadProgressDetail">Preparing video stream…</span>
+        <span id="uploadProgressSub">Cloudinary AI Moderation</span>
+      </div>
+    </div>
+
+    <button class="upload-btn" id="uploadSubmitBtn" onclick="submitUpload()">
       <span class="material-symbols-rounded">rocket_launch</span>
-      Post to Feed
+      <span id="uploadSubmitBtnText">Post to Feed</span>
     </button>
   </div>
 </div>
@@ -5830,6 +5929,15 @@ function openUpload() {
     openAuthModal();
     return;
   }
+  const progressBox = document.getElementById('uploadProgressBox');
+  if (progressBox) progressBox.style.display = 'none';
+  const submitBtn = document.getElementById('uploadSubmitBtn');
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.style.opacity = '1';
+    const btnText = document.getElementById('uploadSubmitBtnText');
+    if (btnText) btnText.textContent = 'Post to Feed';
+  }
   document.getElementById('upload-modal').classList.add('open');
 }
 
@@ -5967,6 +6075,31 @@ async function loadPostsFromSupabase() {
   }
 }
 
+// Smooth Real-Time Upload Progress Tracker
+function updateUploadProgress(percent, statusText, subText, state = 'progress') {
+  const box = document.getElementById('uploadProgressBox');
+  const bar = document.getElementById('uploadProgressBar');
+  const pct = document.getElementById('uploadProgressPercent');
+  const status = document.getElementById('uploadProgressStatus');
+  const detail = document.getElementById('uploadProgressDetail');
+  const spinner = document.getElementById('uploadProgressSpinner');
+
+  if (!box || !bar || !pct) return;
+
+  box.style.display = 'flex';
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  bar.style.width = clamped + '%';
+  pct.textContent = clamped + '%';
+
+  if (statusText && status) status.textContent = statusText;
+  if (subText && detail) detail.textContent = subText;
+
+  bar.className = 'upload-progress-bar' + (state === 'success' ? ' success' : state === 'error' ? ' error' : '');
+  if (spinner) {
+    spinner.style.display = (state === 'success' || state === 'error') ? 'none' : 'block';
+  }
+}
+
 async function submitUpload() {
   const file = document.getElementById('fileInput').files[0];
   if (!file) {
@@ -5978,12 +6111,15 @@ async function submitUpload() {
   const hashRaw = document.getElementById('hashtagInput').value.trim();
   const hashtags = hashRaw ? hashRaw.split(/\s+/).filter(t => t.length > 0) : [];
   
-  const submitBtn = document.querySelector('.upload-btn');
+  const submitBtn = document.getElementById('uploadSubmitBtn');
+  const submitBtnText = document.getElementById('uploadSubmitBtnText');
   if (submitBtn) {
     submitBtn.disabled = true;
     submitBtn.style.opacity = '0.6';
+    if (submitBtnText) submitBtnText.textContent = 'Uploading…';
   }
-  showToast('Scanning video with Cloudinary AI Moderation…');
+
+  updateUploadProgress(5, 'Starting upload (5%)…', 'Preparing video stream…');
 
   try {
     const formData = new FormData();
@@ -5994,26 +6130,67 @@ async function submitUpload() {
       formData.append('user_id', currentAuthUser.id);
     }
 
-    // 1. Send video to backend Cloudinary upload with AWS Rekognition AI content moderation
-    const resp = await fetch('/api/upload-video', {
-      method: 'POST',
-      body: formData
+    // 1. Send video to backend with real-time XMLHttpRequest progress (0% -> 100%)
+    const resData = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload-video', true);
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable && e.total > 0) {
+          // Progress 8% -> 75% during file upload transfer
+          const ratio = e.loaded / e.total;
+          const currentPct = Math.min(75, Math.max(8, Math.round(ratio * 75)));
+          const mbUploaded = (e.loaded / (1024 * 1024)).toFixed(1);
+          const mbTotal = (e.total / (1024 * 1024)).toFixed(1);
+          updateUploadProgress(
+            currentPct,
+            `Uploading video (${currentPct}%)…`,
+            `${mbUploaded} MB of ${mbTotal} MB transferred`
+          );
+        }
+      });
+
+      xhr.upload.addEventListener('load', () => {
+        // Upload bytes finished, now running Cloudinary AI Moderation scan
+        updateUploadProgress(
+          85,
+          'Scanning with AI Moderation (85%)…',
+          'Cloudinary AWS Rekognition scanning content…'
+        );
+      });
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === XMLHttpRequest.DONE) {
+          try {
+            const data = JSON.parse(xhr.responseText || '{}');
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(data);
+            } else {
+              reject(new Error(data.error || (data.reason ? `Flagged: ${data.reason}` : `Upload failed with status ${xhr.status}`)));
+            }
+          } catch (_) {
+            reject(new Error(xhr.status === 413 ? 'Video file exceeds maximum size' : 'Server error processing video'));
+          }
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Network connection error during upload'));
+      xhr.ontimeout = () => reject(new Error('Upload request timed out'));
+
+      xhr.send(formData);
     });
 
-    const resData = await resp.json();
-
     // Check if video was rejected by AI content moderation (18+ or inappropriate)
-    if (!resp.ok || resData.approved === false || resData.error) {
-      const errMsg = (resData && resData.error) || 'Upload blocked: This video was flagged by AI content moderation as inappropriate or containing 18+ content.';
+    if (resData.approved === false || resData.rejected) {
+      const errMsg = resData.error || resData.reason || 'Upload blocked: This video was flagged by AI content moderation as inappropriate or containing 18+ content.';
+      updateUploadProgress(100, 'Upload Blocked', errMsg, 'error');
       showToast(errMsg, 6000);
-      if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.style.opacity = '1';
-      }
       return;
     }
 
     // Video is approved by AI moderation!
+    updateUploadProgress(92, 'AI Moderation Approved! (92%)', 'Saving post to your profile…');
+
     const videoUrl = resData.video_url;
     const thumbnailUrl = resData.thumbnail_url || (customUploadedThumbBlob ? URL.createObjectURL(customUploadedThumbBlob) : '');
 
@@ -6073,6 +6250,16 @@ async function submitUpload() {
 
     videos.unshift(newVid);
 
+    // Hit 100% on the progress bar!
+    updateUploadProgress(
+      100,
+      'Upload Complete! (100%)',
+      'Post created and published to feed 🎉',
+      'success'
+    );
+
+    await new Promise(r => setTimeout(r, 450));
+
     // Reset upload form
     document.getElementById('upload-modal').classList.remove('open');
     document.getElementById('captionInput').value = '';
@@ -6083,6 +6270,8 @@ async function submitUpload() {
     document.getElementById('uploadPreview').src = '';
     document.getElementById('thumbPreviewImg').style.display = 'none';
     customUploadedThumbBlob = null;
+    const progressBox = document.getElementById('uploadProgressBox');
+    if (progressBox) progressBox.style.display = 'none';
 
     buildFeed();
     renderProfileGrid();
@@ -6093,11 +6282,13 @@ async function submitUpload() {
 
   } catch(err) {
     console.error('submitUpload exception:', err);
-    showToast('Upload error: ' + (err.message || 'Please try again'));
+    updateUploadProgress(100, 'Upload Failed', err.message || 'Please try again', 'error');
+    showToast('Upload error: ' + (err.message || 'Please try again'), 5000);
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.style.opacity = '1';
+      if (submitBtnText) submitBtnText.textContent = 'Post to Feed';
     }
   }
 }
