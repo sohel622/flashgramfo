@@ -3114,6 +3114,7 @@ pruneAllExpiredChatMessages();
   await initSupabase();
   switchChatThreadsForCurrentUser();
   applyProfile();
+  await loadPostsFromSupabase();
   applyForYouRanking();
   buildFeed();
   await loadCreatorsFromSupabase();
@@ -3672,6 +3673,7 @@ async function initSupabase() {
         await loadUserProfileFromSupabase(session.user.id);
         await loadCreatorsFromSupabase();
         loadUserChatThreadsFromSupabase();
+        await loadPostsFromSupabase();
       } else {
         // Only clear the inbox if a real account was active. Anonymous /
         // demo mode keeps the shared key untouched.
@@ -3687,6 +3689,7 @@ async function initSupabase() {
         }
         updateAuthStatusUI();
         await loadCreatorsFromSupabase();
+        await loadPostsFromSupabase();
       }
     });
   } catch(err) {
@@ -5909,64 +5912,194 @@ zone.addEventListener('drop', e => {
   }
 });
 
+// Load posts from Supabase posts table
+async function loadPostsFromSupabase() {
+  if (!supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient
+      .from('posts')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.warn('loadPostsFromSupabase note:', error.message);
+      return;
+    }
+
+    if (data && Array.isArray(data) && data.length > 0) {
+      const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : (profile.id ? String(profile.id).toLowerCase() : null);
+      const dbVids = data.filter(p => p.video_url).map(p => {
+        const isMe = myId && String(p.user_id).toLowerCase() === myId;
+        const pId = p.id ? String(p.id) : ('post_' + (p.created_at || Date.now()));
+        if (p.thumbnail_url) {
+          thumbUrls[pId] = p.thumbnail_url;
+        }
+        return {
+          id: pId,
+          user_id: p.user_id,
+          ts: p.created_at ? new Date(p.created_at).getTime() : Date.now(),
+          videoUrl: p.video_url,
+          thumbnail_url: p.thumbnail_url,
+          caption: p.caption || 'Video',
+          hashtags: [],
+          music: 'Original Audio - Flashgram',
+          username: isMe ? profile.handle : (p.username || 'creator'),
+          userDisplayName: isMe ? profile.name : (p.display_name || 'Creator'),
+          likes: p.likes_count || 0,
+          comments: p.comments_count || 0,
+          shares: p.shares_count || 0,
+          views: p.views || 42,
+          isDatabasePost: true,
+          userComments: []
+        };
+      });
+
+      const existingUrls = new Set(videos.map(v => v.videoUrl).filter(Boolean));
+      const freshVids = dbVids.filter(v => !existingUrls.has(v.videoUrl));
+      if (freshVids.length > 0) {
+        videos = freshVids.concat(videos.filter(v => !v.isDatabasePost));
+        buildFeed();
+        renderProfileGrid();
+      }
+    }
+  } catch(err) {
+    console.warn('loadPostsFromSupabase error:', err);
+  }
+}
+
 async function submitUpload() {
   const file = document.getElementById('fileInput').files[0];
   if (!file) {
     showToast('Please select a video file first');
     return;
   }
+
   const caption = document.getElementById('captionInput').value.trim() || 'My new video';
   const hashRaw = document.getElementById('hashtagInput').value.trim();
   const hashtags = hashRaw ? hashRaw.split(/\s+/).filter(t => t.length > 0) : [];
-  const id = 'v_' + Date.now();
-
-  const newVid = {
-    id,
-    ts: Date.now(),
-    blob: file,
-    thumbnailBlob: customUploadedThumbBlob,
-    caption,
-    hashtags,
-    music: file.name.replace(/\.[^.]+$/,'') + ' - Original Sound',
-    username: profile.handle || 'user',
-    likes: 0,
-    comments: 0,
-    shares: 0,
-    views: 1,
-    userComments: []
-  };
+  
+  const submitBtn = document.querySelector('.upload-btn');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.style.opacity = '0.6';
+  }
+  showToast('Scanning video with Cloudinary AI Moderation…');
 
   try {
-    newVid.blob = new Blob([await file.arrayBuffer()], { type: file.type || 'video/mp4' });
-    if (customUploadedThumbBlob) {
-      newVid.thumbnailBlob = new Blob([await customUploadedThumbBlob.arrayBuffer()], { type: 'image/jpeg' });
-      thumbUrls[id] = URL.createObjectURL(newVid.thumbnailBlob);
+    const formData = new FormData();
+    formData.append('video', file);
+    formData.append('caption', caption);
+    formData.append('hashtags', hashtags.join(' '));
+    if (currentAuthUser) {
+      formData.append('user_id', currentAuthUser.id);
     }
-    await dbPut('videos', newVid);
-  } catch(e) {
-    console.warn('DB put video error', e);
+
+    // 1. Send video to backend Cloudinary upload with AWS Rekognition AI content moderation
+    const resp = await fetch('/api/upload-video', {
+      method: 'POST',
+      body: formData
+    });
+
+    const resData = await resp.json();
+
+    // Check if video was rejected by AI content moderation (18+ or inappropriate)
+    if (!resp.ok || resData.approved === false || resData.error) {
+      const errMsg = (resData && resData.error) || 'Upload blocked: This video was flagged by AI content moderation as inappropriate or containing 18+ content.';
+      showToast(errMsg, 6000);
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '1';
+      }
+      return;
+    }
+
+    // Video is approved by AI moderation!
+    const videoUrl = resData.video_url;
+    const thumbnailUrl = resData.thumbnail_url || (customUploadedThumbBlob ? URL.createObjectURL(customUploadedThumbBlob) : '');
+
+    let postId = 'v_' + Date.now();
+
+    // 2. Conditional Saving to Supabase posts table
+    if (supabaseClient && currentAuthUser) {
+      try {
+        const { data: postRow, error: postErr } = await supabaseClient
+          .from('posts')
+          .insert({
+            user_id: currentAuthUser.id,
+            video_url: videoUrl,
+            thumbnail_url: thumbnailUrl,
+            caption: caption,
+            likes_count: 0,
+            comments_count: 0,
+            shares_count: 0,
+            created_at: new Date().toISOString()
+          })
+          .select()
+          .maybeSingle();
+
+        if (postErr) {
+          console.warn('Supabase post insert note:', postErr.message);
+        } else if (postRow && postRow.id) {
+          postId = String(postRow.id);
+        }
+      } catch(err) {
+        console.warn('Supabase post save error:', err);
+      }
+    }
+
+    // 3. Profile & Feed Mapping: user_id strictly mapped
+    const newVid = {
+      id: postId,
+      user_id: currentAuthUser ? currentAuthUser.id : profile.id,
+      ts: Date.now(),
+      videoUrl: videoUrl,
+      thumbnail_url: thumbnailUrl,
+      caption: caption,
+      hashtags: hashtags,
+      music: (file.name.replace(/\.[^.]+$/,'') || 'Original Sound') + ' - Original Sound',
+      username: profile.handle || 'user',
+      userDisplayName: profile.name || 'Creator',
+      likes: 0,
+      comments: 0,
+      shares: 0,
+      views: 1,
+      isDatabasePost: true,
+      userComments: []
+    };
+
+    if (thumbnailUrl) {
+      thumbUrls[postId] = thumbnailUrl;
+    }
+
+    videos.unshift(newVid);
+
+    // Reset upload form
+    document.getElementById('upload-modal').classList.remove('open');
+    document.getElementById('captionInput').value = '';
+    document.getElementById('hashtagInput').value = '';
+    document.getElementById('fileInput').value = '';
+    document.getElementById('thumbInput').value = '';
+    document.getElementById('uploadPreviewWrap').style.display = 'none';
+    document.getElementById('uploadPreview').src = '';
+    document.getElementById('thumbPreviewImg').style.display = 'none';
+    customUploadedThumbBlob = null;
+
+    buildFeed();
+    renderProfileGrid();
+    applyProfile();
+    goPage('feed', document.getElementById('nav-home'));
+    setTimeout(() => feedEl.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+    showToast('Video approved by AI & published to feed! 🎉');
+
+  } catch(err) {
+    console.error('submitUpload exception:', err);
+    showToast('Upload error: ' + (err.message || 'Please try again'));
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.style.opacity = '1';
+    }
   }
-
-  blobUrls[id] = URL.createObjectURL(newVid.blob);
-  videos.unshift(newVid);
-
-  // Reset form
-  document.getElementById('upload-modal').classList.remove('open');
-  document.getElementById('captionInput').value = '';
-  document.getElementById('hashtagInput').value = '';
-  document.getElementById('fileInput').value = '';
-  document.getElementById('thumbInput').value = '';
-  document.getElementById('uploadPreviewWrap').style.display = 'none';
-  document.getElementById('uploadPreview').src = '';
-  document.getElementById('thumbPreviewImg').style.display = 'none';
-  customUploadedThumbBlob = null;
-
-  buildFeed();
-  renderProfileGrid();
-  applyProfile();
-  goPage('feed', document.getElementById('nav-home'));
-  setTimeout(() => feedEl.scrollTo({ top: 0, behavior: 'smooth' }), 100);
-  showToast('Video published to feed! 🎉');
 }
 
 // ═══════════════════════════════════════════════════════

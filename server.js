@@ -119,28 +119,36 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
       (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET)
     );
 
+    let uploadResult = null;
     if (hasCloudinary) {
       console.log(`[Cloudinary]: Uploading video "${fileName}" with AI Moderation (aws_rek)...`);
-      
-      const uploadResult = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            resource_type: 'video',
-            folder: 'reelflow_videos',
-            moderation: 'aws_rek', // AWS Rekognition AI content moderation
-            eager: [
-              { format: 'jpg', resource_type: 'video', width: 640, crop: 'scale' }
-            ]
-          },
-          (err, result) => {
-            if (err) return reject(err);
-            resolve(result);
-          }
-        );
-        stream.end(req.file.buffer);
-      });
+      try {
+        uploadResult = await new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            {
+              resource_type: 'video',
+              folder: 'reelflow_videos',
+              moderation: 'aws_rek', // AWS Rekognition AI content moderation
+              eager: [
+                { format: 'jpg', resource_type: 'video', width: 640, crop: 'scale' }
+              ]
+            },
+            (err, result) => {
+              if (err) return reject(err);
+              resolve(result);
+            }
+          );
+          stream.end(req.file.buffer);
+        });
+        console.log('[Cloudinary]: Upload complete. Moderation info:', uploadResult.moderation);
+      } catch (uploadErr) {
+        console.warn('[Cloudinary Note]: Could not complete live Cloudinary upload:', uploadErr.message);
+        console.warn('Note: Cloud Name "pwqyc668" and API Key "331376714235518" are registered. The 27-character API Secret is required for live signed requests. Falling back to local upload + AI moderation check.');
+        uploadResult = null;
+      }
+    }
 
-      console.log('[Cloudinary]: Upload complete. Moderation info:', uploadResult.moderation);
+    if (uploadResult) {
 
       // Check moderation status from Cloudinary
       const moderationItems = uploadResult.moderation || [];
