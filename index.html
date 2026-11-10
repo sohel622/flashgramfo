@@ -3123,6 +3123,7 @@ pruneAllExpiredChatMessages();
   renderChatThreads();
   loadUserChatThreadsFromSupabase();
   subscribeToRealtimeChat();
+  startChatPolling();
   document.getElementById('db-loading').classList.add('hidden');
 })();
 
@@ -3132,9 +3133,153 @@ pruneAllExpiredChatMessages();
 // ═══════════════════════════════════════════════════════
 //  SUPABASE INTEGRATION (Auth, Profiles, Storage)
 // ═══════════════════════════════════════════════════════
+// ── Local (offline) adapter: real chat delivery ───────────────────────
+// The old adapter faked Realtime: channel().on() registered nothing,
+// insert() stored nothing (the chat payload has no id), and the query
+// builder had no .or()/.gte()/.order()/.limit() — so in offline mode a
+// message could never reach another user, or even load back. These
+// helpers give the adapter a real message store, a real query builder
+// for the chat queries, and real postgres_changes delivery (same tab +
+// other tabs on this device via the storage event).
+const LOCAL_MESSAGES_KEY = 'reelflow_table_messages';
+let localMessageChannelListeners = [];
+let localMessageSeenIds = null;
+let localMessageStorageBound = false;
+function loadLocalMessageRows() {
+  try {
+    const raw = localStorage.getItem(LOCAL_MESSAGES_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) { return []; }
+}
+function saveLocalMessageRows(rows) {
+  try { localStorage.setItem(LOCAL_MESSAGES_KEY, JSON.stringify(rows.slice(-500))); } catch (_) {}
+}
+function listLocalTableRows(tableName) {
+  const prefix = 'reelflow_table_' + tableName + '_';
+  const rows = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.indexOf(prefix) === 0) {
+        try { const row = JSON.parse(localStorage.getItem(key)); if (row) rows.push(row); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+  return rows;
+}
+function notifyLocalMessageListeners(row) {
+  if (localMessageSeenIds) localMessageSeenIds.add(String(row.id));
+  localMessageChannelListeners.forEach(l => {
+    try { l.callback({ eventType: 'INSERT', new: row, old: null }); } catch (_) {}
+  });
+}
+function bindLocalMessageStorageListener() {
+  if (localMessageStorageBound || typeof window === 'undefined') return;
+  localMessageStorageBound = true;
+  if (localMessageSeenIds === null) localMessageSeenIds = new Set(loadLocalMessageRows().map(r => String(r.id)));
+  window.addEventListener('storage', (e) => {
+    if (!e || e.key !== LOCAL_MESSAGES_KEY) return;
+    loadLocalMessageRows().forEach(row => {
+      const id = String(row.id);
+      if (!localMessageSeenIds.has(id)) {
+        localMessageSeenIds.add(id);
+        notifyLocalMessageListeners(row);
+      }
+    });
+  });
+}
+function splitTopLevel(s) {
+  const out = [];
+  let depth = 0, cur = '';
+  for (const ch of String(s)) {
+    if (ch === '(') depth++;
+    if (ch === ')') depth--;
+    if (ch === ',' && depth === 0) { out.push(cur); cur = ''; } else { cur += ch; }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+function parseLocalEq(s) {
+  const m = String(s).trim().match(/^([A-Za-z0-9_]+)\.eq\.(.*)$/);
+  if (!m) return () => false;
+  return row => String(row[m[1]] === undefined || row[m[1]] === null ? '' : row[m[1]]) === m[2];
+}
+function parseLocalOrCondition(cond) {
+  const parts = splitTopLevel(cond);
+  const preds = parts.map(p => {
+    p = p.trim();
+    if (p.indexOf('and(') === 0 && p.endsWith(')')) {
+      const inner = splitTopLevel(p.slice(4, -1)).map(parseLocalEq);
+      return row => inner.every(f => f(row));
+    }
+    return parseLocalEq(p);
+  });
+  return row => preds.some(f => f(row));
+}
+// Query builder for the local messages table: the exact chain the chat
+// loaders use — .select('*').or(...).gte(...).order(...).limit(...).
+function createLocalMessagesQueryApi() {
+  return {
+    select(fields = '*') {
+      const filters = [];
+      let gteFilter = null;
+      let orderCol = null, orderAsc = true, limitN = null;
+      const api = {
+        or(cond) { filters.push(parseLocalOrCondition(cond)); return api; },
+        eq(col, val) { filters.push(row => String(row[col] === undefined || row[col] === null ? '' : row[col]) === String(val)); return api; },
+        gte(col, val) { gteFilter = row => String(row[col] || '') >= String(val); return api; },
+        order(col, opts) { orderCol = col; orderAsc = !(opts && opts.ascending === false); return api; },
+        limit(n) { limitN = n; return api; },
+        async maybeSingle() { const res = await run(); return { data: res.data[0] || null, error: null }; },
+        then(resolve, reject) { run().then(resolve, reject); }
+      };
+      async function run() {
+        let rows = loadLocalMessageRows();
+        if (filters.length) rows = rows.filter(r => filters.some(f => f(r)));
+        if (gteFilter) rows = rows.filter(gteFilter);
+        if (orderCol) rows = rows.slice().sort((a, b) => {
+          const d = new Date(a[orderCol] || 0) - new Date(b[orderCol] || 0);
+          return orderAsc ? d : -d;
+        });
+        if (limitN !== null && limitN !== undefined) rows = rows.slice(0, limitN);
+        return { data: rows, error: null };
+      }
+      return api;
+    },
+    insert(records) {
+      const arr = Array.isArray(records) ? records : [records];
+      const rows = arr.map(r => {
+        const row = Object.assign({}, r);
+        if (!row.id) row.id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8));
+        if (!row.created_at) row.created_at = new Date().toISOString();
+        return row;
+      });
+      saveLocalMessageRows(loadLocalMessageRows().concat(rows));
+      rows.forEach(notifyLocalMessageListeners);
+      const builder = {
+        select() { return builder; },
+        async single() { return { data: rows[0] || null, error: null }; },
+        then(resolve, reject) { try { resolve({ data: rows, error: null }); } catch (e) { reject(e); } }
+      };
+      return builder;
+    },
+    delete() {
+      return {
+        async lt(col, val) {
+          saveLocalMessageRows(loadLocalMessageRows().filter(r => !(String(r[col] || '') < String(val))));
+          return { data: null, error: null };
+        }
+      };
+    }
+  };
+}
+
 function createLocalSupabaseAdapter() {
   const listeners = [];
+  bindLocalMessageStorageListener();
   return {
+    isLocalAdapter: true,
     auth: {
       async getSession() {
         try {
@@ -3311,39 +3456,72 @@ function createLocalSupabaseAdapter() {
       }
     },
     from(tableName) {
+      // The messages table gets the real local store + query builder, so
+      // chat history loads and inserts work offline exactly like the
+      // Supabase queries the app already makes.
+      if (tableName === 'messages') return createLocalMessagesQueryApi();
       return {
         select(fields = '*') {
-          return {
+          let orderCol = null, orderAsc = true, limitN = null;
+          const api = {
             eq(col, val) {
               return {
                 async maybeSingle() {
                   try {
                     const row = localStorage.getItem(`reelflow_table_${tableName}_${val}`);
                     if (row) return { data: JSON.parse(row), error: null };
+                    // Fall back to scanning rows: a profile stored under
+                    // its user_id key can still be found by its numeric
+                    // id or username.
+                    const found = listLocalTableRows(tableName).find(r => String(r[col] === undefined || r[col] === null ? '' : r[col]) === String(val));
+                    if (found) return { data: found, error: null };
                   } catch(_) {}
                   return { data: null, error: null };
                 }
               };
+            },
+            order(col, opts) { orderCol = col; orderAsc = !(opts && opts.ascending === false); return api; },
+            limit(n) { limitN = n; return api; },
+            then(resolve, reject) {
+              try {
+                let rows = listLocalTableRows(tableName);
+                if (orderCol) rows = rows.slice().sort((a, b) => {
+                  const av = a[orderCol], bv = b[orderCol];
+                  if (av === bv) return 0;
+                  return ((av > bv) ? 1 : -1) * (orderAsc ? 1 : -1);
+                });
+                if (limitN !== null && limitN !== undefined) rows = rows.slice(0, limitN);
+                resolve({ data: rows, error: null });
+              } catch (e) { reject(e); }
             }
           };
+          return api;
         },
-        async insert(records) {
+        insert(records) {
+          const arr = Array.isArray(records) ? records : [records];
+          let stored = null, storeErr = null;
           try {
-            const arr = Array.isArray(records) ? records : [records];
             arr.forEach(r => {
-              if (r && r.id) {
-                localStorage.setItem(`reelflow_table_${tableName}_${r.id}`, JSON.stringify(r));
-              }
+              // Profiles carry user_id but no id — store by either key,
+              // or the row could never be read back.
+              const key = r && (r.id || r.user_id);
+              if (key) localStorage.setItem(`reelflow_table_${tableName}_${key}`, JSON.stringify(r));
             });
-            return { data: records, error: null };
-          } catch(err) {
-            return { data: null, error: err };
-          }
+            stored = arr;
+          } catch (err) { storeErr = err; }
+          const builder = {
+            select() { return builder; },
+            async single() { return { data: stored ? stored[0] : null, error: storeErr }; },
+            async maybeSingle() { return { data: stored ? stored[0] : null, error: storeErr }; },
+            then(resolve, reject) { try { resolve({ data: stored, error: storeErr }); } catch (e) { reject(e); } }
+          };
+          return builder;
         },
         async upsert(row) {
           try {
-            if (row && row.id) {
-              localStorage.setItem(`reelflow_table_${tableName}_${row.id}`, JSON.stringify(row));
+            const key = row && (row.id || row.user_id);
+            if (key) {
+              localStorage.setItem(`reelflow_table_${tableName}_${key}`, JSON.stringify(row));
             }
             return { data: row, error: null };
           } catch(err) {
@@ -3369,7 +3547,12 @@ function createLocalSupabaseAdapter() {
     },
     channel(channelName) {
       return {
-        on(event, filter, callback) { return this; },
+        on(event, filter, callback) {
+          if (event === 'postgres_changes' && typeof callback === 'function') {
+            localMessageChannelListeners.push({ filter: filter || {}, callback: callback });
+          }
+          return this;
+        },
         subscribe(statusCallback) {
           if (typeof statusCallback === 'function') statusCallback('SUBSCRIBED');
           return this;
@@ -3478,6 +3661,13 @@ async function initSupabase() {
       if (session && session.user) {
         currentAuthUser = session.user;
         switchChatThreadsForCurrentUser();
+        // Fresh Realtime join with the new login token, so the channel
+        // is authenticated as this user from the start.
+        if (chatRealtimeChannel) {
+          try { supabaseClient.removeChannel(chatRealtimeChannel); } catch (_) {}
+          chatRealtimeChannel = null;
+        }
+        subscribeToRealtimeChat();
         closeAuthPage();
         await loadUserProfileFromSupabase(session.user.id);
         await loadCreatorsFromSupabase();
@@ -6516,6 +6706,46 @@ function renderChatMessages(thread) {
 
 
 // Send chat message with Supabase persistence and Realtime delivery
+// A real user id is an auth UUID, or a local-adapter id (usr_... /
+// google_usr_...). Anything else (numeric profile id, handle) is NOT an
+// address a message can be delivered to: the other person's history
+// query and RLS both key on their auth UUID.
+function isChatUserId(value) {
+  if (typeof value !== 'string') return false;
+  const v = value.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ||
+    v.indexOf('usr_') === 0 || v.indexOf('google_usr_') === 0;
+}
+// Resolve the recipient to their real user id before sending. The
+// creators list and old threads can carry a numeric profile id or a
+// handle, and a message addressed to one of those can never reach the
+// other person's account — it would be invisible to their inbox query,
+// to RLS, and to Realtime.
+async function resolveChatRecipientId(recipient, thread) {
+  const candidates = [];
+  if (recipient) candidates.push(recipient.user_id, recipient.id, recipient.profile_id);
+  if (thread) candidates.push(thread.user_id, thread.creatorId);
+  for (const c of candidates) if (isChatUserId(c)) return String(c);
+  const lookupId = recipient && (recipient.profile_id || recipient.id);
+  const lookupHandle = (recipient && recipient.handle) || (thread && thread.handle);
+  if (supabaseClient && (lookupId || lookupHandle)) {
+    try {
+      const numericId = lookupId && /^\d+$/.test(String(lookupId)) ? String(lookupId) : null;
+      let q = supabaseClient.from('profiles').select('user_id');
+      if (numericId) q = q.eq('id', numericId);
+      else q = q.eq('username', String(lookupHandle || lookupId).replace(/^@/, ''));
+      const res = await q.maybeSingle();
+      const found = res && res.data && res.data.user_id;
+      if (isChatUserId(found)) {
+        if (recipient) recipient.user_id = String(found);
+        return String(found);
+      }
+    } catch (_) {}
+  }
+  for (const c of candidates) if (c) return String(c);
+  return thread ? String(thread.id || '').replace(/^thread_/, '') : '';
+}
+
 async function sendChatMessage() {
   const inp = document.getElementById('chatInput');
   const text = (inp.value || '').trim();
@@ -6537,10 +6767,16 @@ async function sendChatMessageWithContent(opts) {
   const myName = profile.name || (currentAuthUser ? 'Creator' : 'You');
   const googleMeta = currentAuthUser ? extractGoogleUserMetadata(currentAuthUser) : null;
   const myAvatar = profile.avatar_url || (googleMeta && googleMeta.avatarUrl) || '';
-  const recipientId = (activeChatRecipient && (activeChatRecipient.user_id || activeChatRecipient.id)) ||
-                      thread.user_id ||
-                      thread.creatorId ||
-                      thread.id.replace(/^thread_/, '');
+  // Address the message to the recipient's real user id (auth UUID),
+  // never to a numeric profile id or handle — otherwise the other
+  // person can never receive it (inbox query, RLS and Realtime all key
+  // on their auth UUID). Heal the thread keys to the resolved id.
+  const recipientId = await resolveChatRecipientId(activeChatRecipient, thread);
+  if (recipientId) {
+    if (thread.user_id !== recipientId) thread.user_id = recipientId;
+    if (thread.creatorId !== recipientId) thread.creatorId = recipientId;
+    if (activeChatRecipient && !activeChatRecipient.user_id) activeChatRecipient.user_id = recipientId;
+  }
 
   const isSticker = (opts && opts.message_type === 'sticker') || Boolean(opts && opts.sticker_url);
   const nowIso = new Date().toISOString();
@@ -6597,6 +6833,7 @@ async function sendChatMessageWithContent(opts) {
       if (inserted && inserted.id) dbId = inserted.id;
     } catch (err) {
       console.warn('Supabase message save error:', err);
+      showToast('Could not send message — please check your connection and try again');
     }
     if (dbId) {
       seenChatMessageIds.delete(String(clientMsgId));
@@ -6616,23 +6853,34 @@ async function insertChatMessageRow(payload) {
   const query = supabaseClient.from('messages').insert(payload);
   if (query && typeof query.select === 'function') {
     const { data, error } = await query.select('id,created_at').single();
-    if (error) {
-      if (/column|message_type|sticker/i.test(error.message || '')) {
-        const fallback = {
-          sender_id: payload.sender_id,
-          receiver_id: payload.receiver_id,
-          content: payload.content,
-          sender_name: payload.sender_name,
-          sender_avatar: payload.sender_avatar,
-          created_at: payload.created_at
-        };
-        const retry = await supabaseClient.from('messages').insert(fallback).select('id,created_at').single();
-        if (retry.error) throw retry.error;
-        return retry.data;
+    if (!error) return data;
+    const msg = String((error && error.message) || '');
+    const code = String((error && error.code) || '');
+    // The row WAS inserted but is not SELECT-visible to the sender
+    // (RLS: guest sender, or sender_id != auth uid) — PostgREST returns
+    // zero rows for .single(). Never retry: that would save the message
+    // twice. The optimistic copy stays, and the Realtime echo is dropped
+    // by the fingerprint dedupe.
+    if (code === 'PGRST116' || /no rows|multiple \(or no\) rows/i.test(msg)) return null;
+    if (/column|message_type|sticker/i.test(msg)) {
+      const fallback = {
+        sender_id: payload.sender_id,
+        receiver_id: payload.receiver_id,
+        content: payload.content,
+        sender_name: payload.sender_name,
+        sender_avatar: payload.sender_avatar,
+        created_at: payload.created_at
+      };
+      const retry = await supabaseClient.from('messages').insert(fallback).select('id,created_at').single();
+      if (retry.error) {
+        const rmsg = String((retry.error && retry.error.message) || '');
+        const rcode = String((retry.error && retry.error.code) || '');
+        if (rcode === 'PGRST116' || /no rows|multiple \(or no\) rows/i.test(rmsg)) return null;
+        throw retry.error;
       }
-      throw error;
+      return retry.data;
     }
-    return data;
+    throw error;
   }
   const { data, error } = await query;
   if (error) throw error;
@@ -6648,6 +6896,7 @@ async function insertChatMessageRow(payload) {
 // message on top of the postgres_changes INSERT, which could double-send.
 let chatRealtimeRetry = 0;
 let chatRealtimeRetryTimer = null;
+let chatRealtimeConnected = false;
 function subscribeToRealtimeChat() {
   if (!supabaseClient) return;
   if (chatRealtimeChannel) {
@@ -6670,9 +6919,11 @@ function subscribeToRealtimeChat() {
       })
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
+          chatRealtimeConnected = true;
           chatRealtimeRetry = 0;
           if (chatRealtimeRetryTimer) { clearTimeout(chatRealtimeRetryTimer); chatRealtimeRetryTimer = null; }
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          chatRealtimeConnected = false;
           console.warn('Supabase Realtime Chat subscription lost:', status, err || '');
           chatRealtimeChannel = null;
           const delay = Math.min(1000 * Math.pow(2, chatRealtimeRetry), 10000);
@@ -6682,8 +6933,29 @@ function subscribeToRealtimeChat() {
         }
       });
   } catch (err) {
+    chatRealtimeConnected = false;
     console.warn('Realtime chat channel setup warning:', err);
   }
+}
+
+// Polling fallback: if Realtime never connects (for example the messages
+// table was never added to the realtime publication in Supabase), new
+// messages would otherwise only appear after a page refresh. Poll the
+// open chat / inbox every 20s, but ONLY while Realtime is down — when
+// the channel is healthy this does nothing.
+let chatPollTimer = null;
+function startChatPolling() {
+  if (chatPollTimer) return;
+  chatPollTimer = setInterval(() => {
+    if (chatRealtimeConnected || !supabaseClient) return;
+    if (activeChatThreadId) {
+      const thread = chatThreads.find(t => t.id === activeChatThreadId);
+      if (thread) loadSupabaseMessagesForThread(thread);
+    } else {
+      const inboxPage = document.getElementById('page-inbox');
+      if (inboxPage && inboxPage.classList.contains('active')) loadUserChatThreadsFromSupabase();
+    }
+  }, 20000);
 }
 
 // Best-effort client-side cleanup of messages older than 48 hours

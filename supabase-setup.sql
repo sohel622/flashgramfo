@@ -263,11 +263,15 @@ CREATE POLICY "Users can read their conversation messages"
   ON public.messages FOR SELECT
   USING (auth.uid()::text = sender_id OR auth.uid()::text = receiver_id);
 
--- Allow inserting messages
+-- Allow inserting ONLY your own messages: the sender_id must be the
+-- logged-in user's id. This is what makes a sent message visible to
+-- the sender afterwards and deliverable to the receiver through
+-- Realtime. Guests must log in to send (the app shows a message if
+-- the insert is rejected).
 DROP POLICY IF EXISTS "Users can send messages" ON public.messages;
 CREATE POLICY "Users can send messages"
   ON public.messages FOR INSERT
-  WITH CHECK (true);
+  WITH CHECK (auth.uid()::text = sender_id);
 
 -- Allow deleting ONLY your own conversation's messages (the app only
 -- ever deletes rows older than 48 hours, via
@@ -278,7 +282,10 @@ CREATE POLICY "Users can delete expired messages"
   ON public.messages FOR DELETE
   USING (auth.uid()::text = sender_id OR auth.uid()::text = receiver_id);
 
--- Add public.messages to the Supabase Realtime publication
+-- Add public.messages to the Supabase Realtime publication.
+-- Without this step, postgres_changes NEVER fires and no message
+-- arrives live — this is the most common reason chat looks "broken"
+-- even though messages save fine. Run this file once in the SQL Editor.
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -288,7 +295,7 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
   END IF;
 EXCEPTION WHEN OTHERS THEN
-  NULL;
+  RAISE NOTICE 'Could not add messages to the realtime publication: %', SQLERRM;
 END $$;
 
 -- ========================================================
