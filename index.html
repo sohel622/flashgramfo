@@ -1125,6 +1125,9 @@
       object-fit: cover;
       pointer-events: none;
     }
+    .grid-item video.thumb-error {
+      display: none;
+    }
     .grid-badge {
       position: absolute;
       bottom: 6px;
@@ -2422,7 +2425,7 @@
 
     <!-- Video Preview -->
     <div id="uploadPreviewWrap">
-      <video id="uploadPreview" controls muted playsinline></video>
+      <video id="uploadPreview" controls muted loop autoplay playsinline preload="auto"></video>
       <div id="uploadFilename"></div>
     </div>
 
@@ -5393,7 +5396,8 @@ function renderProfileGrid() {
 
   let list = [];
   if (currentProfileTab === 'videos') {
-    list = videos.filter(v => !v.isSeed || v.username === profile.handle);
+    // My videos only: every user's uploads used to show up here.
+    list = videos.filter(v => isMyVideo(v));
     if (!list.length) {
       const empty = document.createElement('div');
       empty.className = 'profile-empty';
@@ -5443,25 +5447,8 @@ function renderProfileGrid() {
     item.className = 'grid-item';
     item.onclick = () => openInFeed(originalIndex);
 
-    if (thumbUrls[v.id] && isImageUrl(thumbUrls[v.id])) {
-      const img = document.createElement('img');
-      img.src = thumbUrls[v.id];
-      item.appendChild(img);
-    } else if (blobUrls[v.id]) {
-      const vid = document.createElement('video');
-      vid.src = playableVideoUrl(blobUrls[v.id]) + '#t=0.1';
-      vid.muted = true;
-      vid.playsInline = true;
-      vid.preload = 'metadata';
-      item.appendChild(vid);
-    } else if (v.videoUrl) {
-      const vid = document.createElement('video');
-      vid.src = playableVideoUrl(v.videoUrl) + '#t=0.1';
-      vid.muted = true;
-      vid.playsInline = true;
-      vid.preload = 'metadata';
-      item.appendChild(vid);
-    }
+    const thumb = makeGridThumb(v);
+    if (thumb) item.appendChild(thumb);
 
     // Views / Likes badge
     const badge = document.createElement('div');
@@ -5735,6 +5722,66 @@ function playableVideoUrl(url) {
   }
   return url;
 }
+// ── Every <video> the app creates goes through one attribute set ──
+// autoplay + muted: muted autoplay is allowed on Android/iOS, so the
+// first frames decode immediately instead of waiting on a play() call
+// that the browser may block (that wait is the black screen). The feed
+// unmutes the active slide for sound; thumbnails stay muted.
+// loop + playsinline: seamless replay, no fullscreen takeover on iOS.
+function configureVideoEl(vid, opts) {
+  opts = opts || {};
+  vid.muted = opts.muted !== false;
+  vid.playsInline = true;
+  vid.loop = !!opts.loop;
+  vid.autoplay = !!opts.autoplay;
+  vid.preload = opts.preload || 'metadata';
+  if (opts.className) vid.className = opts.className;
+  return vid;
+}
+
+// Pick the URL a video element should actually play. A Cloudinary URL
+// (mp4 delivery via playableVideoUrl) beats the local blob: the blob is
+// the file in its ORIGINAL format, and a .mov blob plays audio-only
+// with a BLACK picture on Android. A local path or a dead blob is never
+// preferred over a live cloud URL.
+function bestVideoSrc(v) {
+  if (!v) return '';
+  const cloud = playableVideoUrl(v.videoUrl);
+  if (isCloudVideoUrl(cloud)) return cloud;
+  const blob = (typeof blobUrls !== 'undefined' && blobUrls[v.id]) || '';
+  if (blob) return blob;
+  return cloud || '';
+}
+
+// Grid thumbnail for one video: a real image when one exists, else a
+// muted looping <video> preview. A video that fails to load hides
+// itself (thumb-error) instead of leaving a black cell.
+function makeGridThumb(v) {
+  if (thumbUrls[v.id] && isImageUrl(thumbUrls[v.id])) {
+    const img = document.createElement('img');
+    img.src = thumbUrls[v.id];
+    return img;
+  }
+  const src = bestVideoSrc(v);
+  if (!src) return null;
+  const vid = configureVideoEl(document.createElement('video'), { autoplay: false, muted: true, loop: true, preload: 'metadata' });
+  vid.src = src + '#t=0.1';
+  const poster = videoPosterFor(v);
+  if (poster) vid.poster = poster;
+  vid.addEventListener('error', () => vid.classList.add('thumb-error'));
+  return vid;
+}
+
+// Is this video the current user's own upload? Seeds count only when
+// their creator handle is mine; everything else needs an owner match.
+function isMyVideo(v) {
+  if (!v) return false;
+  const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : (profile.id ? String(profile.id).toLowerCase() : null);
+  const owner = v.user_id ? String(v.user_id).toLowerCase() : null;
+  if (owner && myId) return owner === myId;
+  return v.username === profile.handle;
+}
+
 // Rebuild the feed without yanking the viewer back to the first video.
 function rebuildFeedPreservingPosition() {
   const currentId = activeIdx >= 0 && videos[activeIdx] ? videos[activeIdx].id : null;
@@ -5755,23 +5802,20 @@ function makeSlide(v, i) {
   slide.dataset.idx = i;
   slide.dataset.id = v.id;
 
-  // Video element
-  const vid = document.createElement('video');
-  vid.className = 'slide-video';
-  vid.loop = true;
-  vid.playsInline = true;
+  // Video element — muted autoplay so the first frames decode at once
+  // (an unmuted play() is blocked until the user taps); setActive()
+  // unmutes the slide the viewer is actually watching.
+  const vid = configureVideoEl(document.createElement('video'), { autoplay: true, muted: true, loop: true, preload: 'auto', className: 'slide-video' });
   // Android multitasking: let Chrome pop this video into picture-in-picture
   // automatically when the user switches apps (tab hidden).
   vid.setAttribute('autopictureinpicture', '');
   vid.disablePictureInPicture = false;
-  vid.preload = 'metadata';
-  vid.muted = false;
   // Poster frame: never a black box while the video loads (or if it
   // fails). A thumbnail that is not an image is ignored on purpose.
   const poster = videoPosterFor(v);
   if (poster) vid.poster = poster;
 
-  const src = blobUrls[v.id] || playableVideoUrl(v.videoUrl);
+  const src = bestVideoSrc(v);
   if (src && i <= 1) vid.src = src;
 
   // A src the browser cannot decode must not stay a silent black box:
@@ -6150,6 +6194,92 @@ function handleIncomingPost(p) {
 }
 
 // Load posts from Supabase posts table
+// Merge freshly loaded DB videos into the local feed list, deduped by
+// video URL and by post id (a URL and an id each count as the same
+// video). Pure list logic, easy to test.
+function mergeDbVideosInto(existing, fresh) {
+  const seen = new Set();
+  (existing || []).forEach(v => {
+    if (v && v.videoUrl) seen.add(v.videoUrl);
+    if (v && v.id) seen.add(String(v.id));
+  });
+  const add = [];
+  (fresh || []).forEach(v => {
+    if (!v || !v.videoUrl) return;
+    if (seen.has(v.videoUrl) || seen.has(String(v.id))) return;
+    seen.add(v.videoUrl);
+    seen.add(String(v.id));
+    add.push(v);
+  });
+  return add.concat(existing || []);
+}
+
+// Refresh MY videos from the database: my posts rows, plus any URL in
+// profiles.videos that has no post row yet. Called when the profile
+// page opens, so a video uploaded on another device (or before a fresh
+// login) shows up instead of only what this device remembers.
+async function loadMyVideosForProfile() {
+  if (!supabaseClient || !currentAuthUser) return false;
+  const myId = String(currentAuthUser.id);
+  const myIdLower = myId.toLowerCase();
+  let changed = false;
+  try {
+    const { data, error } = await supabaseClient
+      .from('posts')
+      .select('*')
+      .eq('user_id', myId)
+      .order('created_at', { ascending: false });
+    if (!error && Array.isArray(data)) {
+      const dbVids = data.filter(p => p.video_url).map(p => mapPostToVideo(p, myIdLower));
+      if (dbVids.length) {
+        const merged = mergeDbVideosInto(videos, dbVids);
+        if (merged.length !== videos.length) { videos = merged; changed = true; }
+      }
+    } else if (error) {
+      console.warn('loadMyVideosForProfile posts note:', error.message);
+    }
+  } catch (err) {
+    console.warn('loadMyVideosForProfile posts error:', err);
+  }
+  try {
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .select('videos')
+      .eq('user_id', myId)
+      .maybeSingle();
+    if (!error && data) {
+      const urls = Array.isArray(data.videos) ? data.videos : (typeof data.videos === 'string' && data.videos ? [data.videos] : []);
+      const existing = new Set(videos.map(v => v.videoUrl).filter(Boolean));
+      const extra = urls
+        .filter(u => isCloudVideoUrl(u) && !existing.has(u))
+        .map(u => ({
+          id: 'pv_' + u.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(-40),
+          user_id: myId,
+          ts: Date.now(),
+          videoUrl: u,
+          thumbnail_url: u.indexOf('res.cloudinary.com') !== -1 ? u.replace(/\.[^.]+$/, '.jpg') : '',
+          caption: 'Video',
+          hashtags: [],
+          music: 'Original Audio - Flashgram',
+          username: profile.handle || 'user',
+          userDisplayName: profile.name || 'Creator',
+          likes: 0, comments: 0, shares: 0, views: 42,
+          isDatabasePost: true,
+          userComments: []
+        }));
+      if (extra.length) {
+        videos = mergeDbVideosInto(videos, extra);
+        changed = true;
+      }
+    }
+  } catch (err) {
+    // profiles.videos may not exist yet (run supabase-setup.sql) — the
+    // posts above are the main source, so this stays a silent no-op.
+    console.warn('loadMyVideosForProfile profiles.videos note:', err);
+  }
+  return changed;
+}
+
 async function loadPostsFromSupabase() {
   if (!supabaseClient) return;
   try {
@@ -6854,23 +6984,8 @@ function renderDiscover() {
     item.className = 'grid-item';
     item.onclick = () => openInFeed(originalIndex);
 
-    if (thumbUrls[v.id] && isImageUrl(thumbUrls[v.id])) {
-      const img = document.createElement('img');
-      img.src = thumbUrls[v.id];
-      item.appendChild(img);
-    } else if (blobUrls[v.id]) {
-      const vid = document.createElement('video');
-      vid.src = playableVideoUrl(blobUrls[v.id]) + '#t=0.1';
-      vid.muted = true;
-      vid.playsInline = true;
-      item.appendChild(vid);
-    } else if (v.videoUrl) {
-      const vid = document.createElement('video');
-      vid.src = playableVideoUrl(v.videoUrl) + '#t=0.1';
-      vid.muted = true;
-      vid.playsInline = true;
-      item.appendChild(vid);
-    }
+    const thumb = makeGridThumb(v);
+    if (thumb) item.appendChild(thumb);
 
     const badge = document.createElement('div');
     badge.className = 'grid-badge';
@@ -7917,6 +8032,8 @@ function goPage(page, navEl) {
     if (page === 'profile') {
       if (currentAuthUser && supabaseClient) {
         loadUserProfileFromSupabase(currentAuthUser.id);
+        // Pull my videos fresh from the database, then re-render.
+        loadMyVideosForProfile().then(changed => { if (changed) renderProfileGrid(); });
       }
       applyProfile();
       renderProfileGrid();
@@ -8007,7 +8124,7 @@ function ensureSrc(s) {
     if (p) vid.poster = p;
   }
   if (vid && !vid.getAttribute('src')) {
-    const src = blobUrls[vidId] || playableVideoUrl(vidObj?.videoUrl);
+    const src = bestVideoSrc(vidObj);
     if (src) {
       vid.src = src;
       vid.preload = 'auto';
