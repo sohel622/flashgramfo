@@ -6248,6 +6248,43 @@ async function savePostToSupabase(payload) {
   }
 }
 
+// Client-side unsigned Cloudinary upload: the browser posts the video
+// straight to Cloudinary with the unsigned preset — no API key or secret
+// in the client, and no server round-trip for the file itself.
+const CLOUDINARY_UPLOAD_URL = 'https://api.cloudinary.com/v1_1/pwqyc668/video/upload';
+const CLOUDINARY_UPLOAD_PRESET = 'sohel98';
+
+// Same 18+ keyword gate the server used to enforce: an unsigned upload
+// goes straight to Cloudinary, so the filename + caption are checked
+// here before anything leaves the device.
+const INAPPROPRIATE_UPLOAD_KEYWORDS = ['18+', 'nsfw', 'porn', 'nudity', 'nude', 'inappropriate', 'violence', 'gore', 'explicit'];
+function isInappropriateUpload(fileName, caption) {
+  const name = String(fileName || '').toLowerCase();
+  const cap = String(caption || '').toLowerCase();
+  return INAPPROPRIATE_UPLOAD_KEYWORDS.some(k => name.includes(k) || cap.includes(k));
+}
+// Read the human error out of Cloudinary's error shape
+// ({error: {message}} or a plain string).
+function cloudinaryUploadErrorMessage(data) {
+  if (!data) return '';
+  const e = data.error;
+  if (typeof e === 'string') return e;
+  if (e && typeof e.message === 'string') return e.message;
+  return '';
+}
+// Map a Cloudinary unsigned-upload response to the video + thumbnail
+// URLs the app needs. The preset makes no eager thumbnail, so the JPG
+// frame is derived from the video URL itself when needed.
+function mapCloudinaryUploadResponse(resData) {
+  const videoUrl = (resData && (resData.secure_url || resData.video_url)) || '';
+  let thumbnailUrl = (resData && resData.thumbnail_url) || '';
+  if (!thumbnailUrl && resData && Array.isArray(resData.eager) && resData.eager[0] && resData.eager[0].secure_url) {
+    thumbnailUrl = resData.eager[0].secure_url;
+  }
+  if (!thumbnailUrl && videoUrl) thumbnailUrl = videoUrl.replace(/\.[^.]+$/, '.jpg');
+  return { videoUrl: videoUrl, thumbnailUrl: thumbnailUrl };
+}
+
 async function submitUpload() {
   const file = document.getElementById('fileInput').files[0];
   if (!file) {
@@ -6258,6 +6295,15 @@ async function submitUpload() {
   const caption = document.getElementById('captionInput').value.trim() || 'My new video';
   const hashRaw = document.getElementById('hashtagInput').value.trim();
   const hashtags = hashRaw ? hashRaw.split(/\s+/).filter(t => t.length > 0) : [];
+
+  // 18+ gate: an unsigned upload skips the server, so obvious
+  // inappropriate content is blocked here, before anything is sent.
+  if (isInappropriateUpload(file.name, caption)) {
+    const errMsg = 'Video rejected: Inappropriate content detected.';
+    updateUploadProgress(100, 'Upload Blocked', errMsg, 'error');
+    showToast(errMsg, 6000);
+    return;
+  }
   
   const submitBtn = document.getElementById('uploadSubmitBtn');
   const submitBtnText = document.getElementById('uploadSubmitBtnText');
@@ -6270,18 +6316,16 @@ async function submitUpload() {
   updateUploadProgress(5, 'Starting upload (5%)…', 'Preparing video stream…');
 
   try {
+    // 1. Upload straight to Cloudinary with the unsigned preset:
+    // FormData carries the file + upload_preset, nothing else — no API
+    // key, no signature, no server round-trip for the video bytes.
     const formData = new FormData();
-    formData.append('video', file);
-    formData.append('caption', caption);
-    formData.append('hashtags', hashtags.join(' '));
-    if (currentAuthUser) {
-      formData.append('user_id', currentAuthUser.id);
-    }
+    formData.append('file', file);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
 
-    // 1. Send video to backend with real-time XMLHttpRequest progress (0% -> 100%)
     const resData = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/upload-video', true);
+      xhr.open('POST', CLOUDINARY_UPLOAD_URL, true);
 
       xhr.upload.addEventListener('progress', (e) => {
         if (e.lengthComputable && e.total > 0) {
@@ -6299,11 +6343,11 @@ async function submitUpload() {
       });
 
       xhr.upload.addEventListener('load', () => {
-        // Upload bytes finished, now running Cloudinary AI Moderation scan
+        // Bytes are on Cloudinary now; it is preparing the video.
         updateUploadProgress(
           85,
-          'Scanning with AI Moderation (85%)…',
-          'Cloudinary AWS Rekognition scanning content…'
+          'Processing on Cloudinary (85%)…',
+          'Cloudinary is preparing your video…'
         );
       });
 
@@ -6314,7 +6358,9 @@ async function submitUpload() {
             if (xhr.status >= 200 && xhr.status < 300) {
               resolve(data);
             } else {
-              reject(new Error(data.error || (data.reason ? `Flagged: ${data.reason}` : `Upload failed with status ${xhr.status}`)));
+              // Cloudinary answers errors as {error: {message}}.
+              const cloudErr = cloudinaryUploadErrorMessage(data);
+              reject(new Error(cloudErr || (data.reason ? `Flagged: ${data.reason}` : `Upload failed with status ${xhr.status}`)));
             }
           } catch (_) {
             reject(new Error(xhr.status === 413 ? 'Video file exceeds maximum size' : 'Server error processing video'));
@@ -6335,11 +6381,21 @@ async function submitUpload() {
       showToast(errMsg, 6000);
       return;
     }
+    // Unsigned uploads report Cloudinary moderation in the response:
+    // block a rejected video the same way, before anything is saved.
+    const moderationItems = Array.isArray(resData.moderation) ? resData.moderation : [];
+    if (moderationItems.some(m => m && m.status === 'rejected')) {
+      const errMsg = 'Video rejected: Inappropriate content detected.';
+      updateUploadProgress(100, 'Upload Blocked', errMsg, 'error');
+      showToast(errMsg, 6000);
+      return;
+    }
 
-    // Video is approved by AI moderation!
-    updateUploadProgress(92, 'AI Moderation Approved! (92%)', 'Saving post to your profile…');
+    // Video uploaded to Cloudinary!
+    updateUploadProgress(92, 'Upload complete! (92%)', 'Saving post to your profile…');
 
-    const videoUrl = resData.video_url;
+    const mapped = mapCloudinaryUploadResponse(resData);
+    const videoUrl = mapped.videoUrl;
     // A video_url saved to posts must be a public HTTPS cloud URL
     // (from Cloudinary or Supabase Storage). A local disk path (/uploads/...) or data: URL
     // is preview-only on this device and must not reach the database.
@@ -6348,7 +6404,7 @@ async function submitUpload() {
     // A thumbnail must be an image: the local fallback returns the video
     // file itself as thumbnail_url, which renders as a broken/black
     // image. Fall back to the user-picked thumbnail, or none.
-    let thumbnailUrl = resData.thumbnail_url || '';
+    let thumbnailUrl = mapped.thumbnailUrl;
     if (thumbnailUrl && !isImageUrl(thumbnailUrl)) thumbnailUrl = '';
     if (!thumbnailUrl && customUploadedThumbBlob) thumbnailUrl = URL.createObjectURL(customUploadedThumbBlob);
     // A blob: thumbnail only lives for this session — never store it in
