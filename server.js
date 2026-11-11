@@ -147,9 +147,15 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
         });
         console.log('[Cloudinary]: Upload complete. Moderation info:', uploadResult.moderation);
       } catch (uploadErr) {
-        console.warn('[Cloudinary Note]: Could not complete live Cloudinary upload:', uploadErr.message);
-        console.warn('Note: Cloud Name "pwqyc668" and API Key "331376714235518" are registered. The 27-character API Secret is required for live signed requests. Falling back to local upload + AI moderation check.');
-        uploadResult = null;
+        // Cloudinary IS configured, so this upload was supposed to land
+        // there. Never fall back to a local file here: a local path saved
+        // as the post's video_url plays on no other device or user.
+        console.error('[Cloudinary Error]: Upload failed:', uploadErr.message);
+        return res.status(502).json({
+          approved: false,
+          rejected: false,
+          error: 'Cloudinary upload failed: ' + (uploadErr.message || 'unknown error') + '. Check CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in .env.'
+        });
       }
     }
 
@@ -210,6 +216,9 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
 
       return res.json({
         approved: true,
+        cloudinary: true,
+        // The full public Cloudinary URL (result.secure_url) — this exact
+        // URL is what belongs in posts.video_url.
         video_url: videoUrl,
         thumbnail_url: thumbnailUrl,
         public_id: uploadResult.public_id,
@@ -246,6 +255,10 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
 
       return res.json({
         approved: true,
+        cloudinary: false,
+        // Local preview only: this path lives on this server's temp
+        // folder and plays on no other device. The client must NOT save
+        // it into posts.video_url.
         video_url: videoUrl,
         thumbnail_url: thumbnailUrl,
         local_fallback: true,

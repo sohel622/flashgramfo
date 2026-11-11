@@ -6205,12 +6205,24 @@ function updateUploadProgress(percent, statusText, subText, state = 'progress') 
   }
 }
 
+// A video_url that may be saved to posts must be a public, shareable
+// https URL — i.e. the Cloudinary secure_url. A local relative path
+// (/uploads/...), a data: URL or a blob: URL plays on no other device,
+// so it must never reach the database.
+function isCloudVideoUrl(url) {
+  return typeof url === 'string' && /^https:\/\/[^/]+\//i.test(url);
+}
+
 // Insert a post row. If the database rejects an optional column
 // (e.g. a posts table created before this file added a column), retry
 // once with only the core fields, so one missing column can never lose
 // the whole upload.
 async function savePostToSupabase(payload) {
   if (!supabaseClient) return { row: null, error: 'no client' };
+  if (!isCloudVideoUrl(payload.video_url)) {
+    // Refuse before any Supabase call: local paths are never saved.
+    return { row: null, error: 'local video path — not saved to posts' };
+  }
   try {
     const first = await supabaseClient.from('posts').insert(payload).select().maybeSingle();
     if (!first.error) return { row: first.data || null, error: null };
@@ -6328,6 +6340,12 @@ async function submitUpload() {
     updateUploadProgress(92, 'AI Moderation Approved! (92%)', 'Saving post to your profile…');
 
     const videoUrl = resData.video_url;
+    // Only a Cloudinary upload may become a post: the exact secure_url
+    // from the response. A local fallback path (/uploads/...) or a data:
+    // URL is preview-only on this device and must never be saved to
+    // posts.video_url.
+    const isCloudUpload = isCloudVideoUrl(videoUrl) && resData.local_fallback !== true && resData.cloudinary !== false;
+    const postLocalOnly = !isCloudUpload;
     // A thumbnail must be an image: the local fallback returns the video
     // file itself as thumbnail_url, which renders as a broken/black
     // image. Fall back to the user-picked thumbnail, or none.
@@ -6348,7 +6366,10 @@ async function submitUpload() {
     // still claimed "published" — now the user is told, and the video
     // is kept locally (not marked as a database post) instead of being
     // silently lost from the feed on the next refresh.
-    if (supabaseClient && currentAuthUser) {
+    // A local-only upload never reaches this insert at all.
+    if (postLocalOnly) {
+      console.warn('Post not saved to Supabase: video is not on Cloudinary (local path only).');
+    } else if (supabaseClient && currentAuthUser) {
       const result = await savePostToSupabase({
         user_id: currentAuthUser.id,
         video_url: videoUrl,
@@ -6400,7 +6421,15 @@ async function submitUpload() {
 
     // Hit 100% on the progress bar — but only claim "published" when
     // the database save actually succeeded.
-    if (postSaveFailed) {
+    if (postLocalOnly) {
+      updateUploadProgress(
+        100,
+        'Upload finished, saved on this device only',
+        'This video is not on Cloudinary, so it was not saved to the feed. Set the Cloudinary keys in .env and upload again.',
+        'error'
+      );
+      showToast('Video saved on this device only — Cloudinary is not configured, so it was not published to the feed.', 6000);
+    } else if (postSaveFailed) {
       updateUploadProgress(
         100,
         'Upload finished, feed save failed',
@@ -6444,7 +6473,7 @@ async function submitUpload() {
     applyProfile();
     goPage('feed', document.getElementById('nav-home'));
     setTimeout(() => feedEl.scrollTo({ top: 0, behavior: 'smooth' }), 100);
-    showToast('Video approved by AI & published to feed! 🎉');
+    if (postSaved) showToast('Video approved by AI & published to feed! 🎉');
 
   } catch(err) {
     console.error('submitUpload exception:', err);
