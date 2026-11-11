@@ -345,7 +345,65 @@ EXCEPTION WHEN OTHERS THEN
 END $$;
 
 -- ========================================================
--- 8. Supabase Dashboard URL Configuration Guide
+-- 8. Video Posts Table (Cloudinary Uploads & Feed)
+-- ========================================================
+CREATE TABLE IF NOT EXISTS public.posts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  video_url TEXT NOT NULL,
+  thumbnail_url TEXT,
+  caption TEXT,
+  likes_count INTEGER DEFAULT 0,
+  comments_count INTEGER DEFAULT 0,
+  shares_count INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_posts_user_id ON public.posts (user_id);
+CREATE INDEX IF NOT EXISTS idx_posts_created_at ON public.posts (created_at DESC);
+
+-- Enable RLS
+ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
+
+-- Allow public read access to all approved posts for the feed and profiles
+DROP POLICY IF EXISTS "Public can view posts" ON public.posts;
+CREATE POLICY "Public can view posts"
+  ON public.posts FOR SELECT
+  USING (true);
+
+-- Allow authenticated users to insert their own posts
+DROP POLICY IF EXISTS "Users can insert own posts" ON public.posts;
+CREATE POLICY "Users can insert own posts"
+  ON public.posts FOR INSERT
+  WITH CHECK (auth.uid()::text = user_id OR auth.role() = 'anon');
+
+-- Allow users to update their own posts
+DROP POLICY IF EXISTS "Users can update own posts" ON public.posts;
+CREATE POLICY "Users can update own posts"
+  ON public.posts FOR UPDATE
+  USING (auth.uid()::text = user_id);
+
+-- Allow users to delete their own posts
+DROP POLICY IF EXISTS "Users can delete own posts" ON public.posts;
+CREATE POLICY "Users can delete own posts"
+  ON public.posts FOR DELETE
+  USING (auth.uid()::text = user_id);
+
+-- Add public.posts to the Supabase Realtime publication
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'posts'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.posts;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+-- ========================================================
+-- 9. Supabase Dashboard URL Configuration Guide
 -- ========================================================
 -- Go to: Supabase Dashboard -> Authentication -> URL Configuration
 --
