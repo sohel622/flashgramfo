@@ -115,7 +115,7 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
         approved: false,
         rejected: true,
         reason: 'Flagged by AI content moderation for inappropriate or 18+ content',
-        error: 'Upload blocked: This video was flagged by AI content moderation as inappropriate or containing 18+ content.'
+        error: 'Video rejected: Inappropriate content detected.'
       });
     }
 
@@ -203,7 +203,7 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
           approved: false,
           rejected: true,
           reason: rejectionDetail,
-          error: 'Upload blocked: This video was flagged by AI content moderation as inappropriate or containing 18+ content.'
+          error: 'Video rejected: Inappropriate content detected.'
         });
       }
 

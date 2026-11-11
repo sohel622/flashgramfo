@@ -6330,7 +6330,7 @@ async function submitUpload() {
 
     // Check if video was rejected by AI content moderation (18+ or inappropriate)
     if (resData.approved === false || resData.rejected) {
-      const errMsg = resData.error || resData.reason || 'Upload blocked: This video was flagged by AI content moderation as inappropriate or containing 18+ content.';
+      const errMsg = resData.error || resData.reason || 'Video rejected: Inappropriate content detected.';
       updateUploadProgress(100, 'Upload Blocked', errMsg, 'error');
       showToast(errMsg, 6000);
       return;
