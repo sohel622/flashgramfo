@@ -266,7 +266,7 @@ ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can read their conversation messages" ON public.messages;
 CREATE POLICY "Users can read their conversation messages"
   ON public.messages FOR SELECT
-  USING (auth.uid()::text = sender_id OR auth.uid()::text = receiver_id);
+  USING (auth.uid()::text = sender_id::text OR auth.uid()::text = receiver_id::text);
 
 -- Allow inserting ONLY your own messages: the sender_id must be the
 -- logged-in user's id. This is what makes a sent message visible to
@@ -276,7 +276,7 @@ CREATE POLICY "Users can read their conversation messages"
 DROP POLICY IF EXISTS "Users can send messages" ON public.messages;
 CREATE POLICY "Users can send messages"
   ON public.messages FOR INSERT
-  WITH CHECK (auth.uid()::text = sender_id);
+  WITH CHECK (auth.uid()::text = sender_id::text);
 
 -- Allow deleting ONLY your own conversation's messages (the app only
 -- ever deletes rows older than 48 hours, via
@@ -285,7 +285,7 @@ CREATE POLICY "Users can send messages"
 DROP POLICY IF EXISTS "Users can delete expired messages" ON public.messages;
 CREATE POLICY "Users can delete expired messages"
   ON public.messages FOR DELETE
-  USING (auth.uid()::text = sender_id OR auth.uid()::text = receiver_id);
+  USING (auth.uid()::text = sender_id::text OR auth.uid()::text = receiver_id::text);
 
 -- Add public.messages to the Supabase Realtime publication.
 -- Without this step, postgres_changes NEVER fires and no message

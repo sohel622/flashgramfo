@@ -7509,8 +7509,12 @@ async function resolveChatRecipientId(recipient, thread) {
       }
     } catch (_) {}
   }
-  for (const c of candidates) if (c) return String(c);
-  return thread ? String(thread.id || '').replace(/^thread_/, '') : '';
+  // Never fall back to a numeric profile id or a bare thread id: a
+  // message addressed to one can never be seen by the other person
+  // (inbox query, RLS and Realtime all key on their auth UUID), while
+  // the sender would still see the optimistic copy. Return '' so the
+  // send is refused with an honest error instead.
+  return '';
 }
 
 async function sendChatMessage() {
@@ -7539,11 +7543,15 @@ async function sendChatMessageWithContent(opts) {
   // person can never receive it (inbox query, RLS and Realtime all key
   // on their auth UUID). Heal the thread keys to the resolved id.
   const recipientId = await resolveChatRecipientId(activeChatRecipient, thread);
-  if (recipientId) {
-    if (thread.user_id !== recipientId) thread.user_id = recipientId;
-    if (thread.creatorId !== recipientId) thread.creatorId = recipientId;
-    if (activeChatRecipient && !activeChatRecipient.user_id) activeChatRecipient.user_id = recipientId;
+  if (!recipientId) {
+    // No real user id, no send: an optimistic copy would look sent
+    // while the other person could never receive it.
+    showToast('Could not reach this person — their account could not be found. Ask them to open the app once, then try again.', 6000);
+    return;
   }
+  if (thread.user_id !== recipientId) thread.user_id = recipientId;
+  if (thread.creatorId !== recipientId) thread.creatorId = recipientId;
+  if (activeChatRecipient && !activeChatRecipient.user_id) activeChatRecipient.user_id = recipientId;
 
   const isSticker = (opts && opts.message_type === 'sticker') || Boolean(opts && opts.sticker_url);
   const nowIso = new Date().toISOString();
@@ -7705,24 +7713,26 @@ function subscribeToRealtimeChat() {
   }
 }
 
-// Polling fallback: if Realtime never connects (for example the messages
-// table was never added to the realtime publication in Supabase), new
-// messages would otherwise only appear after a page refresh. Poll the
-// open chat / inbox every 20s, but ONLY while Realtime is down — when
-// the channel is healthy this does nothing.
+// Polling safety net: poll the open chat / inbox every 20s, whether or
+// not the Realtime channel looks healthy. SUBSCRIBED does not mean the
+// messages table is in the realtime publication — a healthy-looking
+// channel can deliver nothing at all, and without this poll those
+// messages would only appear after a page refresh. Realtime is the fast
+// path; this is what guarantees delivery.
+function pollChatOnce() {
+  if (!supabaseClient) return;
+  if (activeChatThreadId) {
+    const thread = chatThreads.find(t => t.id === activeChatThreadId);
+    if (thread) loadSupabaseMessagesForThread(thread);
+  } else {
+    const inboxPage = document.getElementById('page-inbox');
+    if (inboxPage && inboxPage.classList.contains('active')) loadUserChatThreadsFromSupabase();
+  }
+}
 let chatPollTimer = null;
 function startChatPolling() {
   if (chatPollTimer) return;
-  chatPollTimer = setInterval(() => {
-    if (chatRealtimeConnected || !supabaseClient) return;
-    if (activeChatThreadId) {
-      const thread = chatThreads.find(t => t.id === activeChatThreadId);
-      if (thread) loadSupabaseMessagesForThread(thread);
-    } else {
-      const inboxPage = document.getElementById('page-inbox');
-      if (inboxPage && inboxPage.classList.contains('active')) loadUserChatThreadsFromSupabase();
-    }
-  }, 20000);
+  chatPollTimer = setInterval(pollChatOnce, 20000);
 }
 
 // Best-effort client-side cleanup of messages older than 48 hours
@@ -7826,6 +7836,17 @@ function handleIncomingRealtimeMessage(rawMsg) {
 }
 
 
+// The partner id to query with: the first real user id (UUID / usr_*)
+  // among the recipient object and the thread keys. A numeric profile id
+// would pair with my UUID in the .or() query and match zero rows.
+function resolveChatPartnerId(thread) {
+  const candidates = [];
+  if (activeChatRecipient) candidates.push(activeChatRecipient.user_id, activeChatRecipient.id, activeChatRecipient.profile_id);
+  if (thread) candidates.push(thread.user_id, thread.creatorId, String(thread.id || '').replace(/^thread_/, ''));
+  for (const c of candidates) if (isChatUserId(c)) return String(c);
+  return '';
+}
+
 // Fetch message history between current user and thread participant from Supabase
 async function loadSupabaseMessagesForThread(thread) {
   if (!supabaseClient || !thread) return;
@@ -7833,10 +7854,8 @@ async function loadSupabaseMessagesForThread(thread) {
   pruneExpiredChatMessages(thread);
   cleanupExpiredChatMessages(); // fix #3: delete 48h+ rows in the background
   const myId = (currentAuthUser && currentAuthUser.id) || profile.id || 'my_user';
-  const otherId = (activeChatRecipient && (activeChatRecipient.user_id || activeChatRecipient.id)) ||
-                  thread.user_id ||
-                  thread.creatorId ||
-                  thread.id.replace(/^thread_/, '');
+  const otherId = resolveChatPartnerId(thread);
+  if (!otherId) return; // no real partner id to query with
 
   try {
     const { data, error } = await supabaseClient
@@ -7851,6 +7870,11 @@ async function loadSupabaseMessagesForThread(thread) {
       console.warn('Supabase load messages note:', error.message || error);
       return;
     }
+
+    // Heal the thread to the resolved partner id (a numeric id stored
+    // on the thread can never match a DB row).
+    if (thread.user_id !== otherId) thread.user_id = otherId;
+    if (thread.creatorId !== otherId) thread.creatorId = otherId;
 
     if (data && data.length > 0) {
       data.forEach(row => {
