@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   email TEXT,
   avatar_url TEXT,
   bio TEXT,
+  videos TEXT[] DEFAULT '{}',
   role TEXT DEFAULT 'user',
   website TEXT,
   pronouns TEXT,
@@ -51,6 +52,10 @@ BEGIN
 
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'bio_updated_at') THEN
     ALTER TABLE public.profiles ADD COLUMN bio_updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now());
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'videos') THEN
+    ALTER TABLE public.profiles ADD COLUMN videos TEXT[] DEFAULT '{}';
   END IF;
 END $$;
 

@@ -6285,6 +6285,63 @@ function mapCloudinaryUploadResponse(resData) {
   return { videoUrl: videoUrl, thumbnailUrl: thumbnailUrl };
 }
 
+// Merge a video URL into an existing videos list (TEXT[]), deduped.
+// Accepts null / a single string (legacy) / an array. Passing a null
+// URL just normalizes the current list without appending.
+function mergeProfileVideos(current, videoUrl) {
+  let list = [];
+  if (Array.isArray(current)) list = current.filter(v => typeof v === 'string' && v.length > 0);
+  else if (typeof current === 'string' && current.length > 0) list = [current];
+  if (!videoUrl || list.indexOf(videoUrl) !== -1) return list;
+  return list.concat([videoUrl]);
+}
+
+// Save (or update) one Cloudinary video URL into the current user's
+// profiles.videos list: read the row, append the URL (no duplicates),
+// write the list back. Never throws — returns {updated, error}.
+// Skips silently for guests and for non-cloud URLs.
+async function saveVideoUrlToProfileVideos(videoUrl) {
+  const skipped = { updated: false, error: null, skipped: true };
+  if (!supabaseClient || !currentAuthUser || !currentAuthUser.id) return skipped;
+  if (!isCloudVideoUrl(videoUrl)) return skipped;
+  const userId = currentAuthUser.id;
+  try {
+    // Profiles are keyed by user_id; fall back to id when the schema
+    // uses id as the primary key instead (same fallback as the profile
+    // upsert).
+    let key = 'user_id';
+    let read = await supabaseClient.from('profiles').select('videos').eq(key, userId).maybeSingle();
+    if (read.error && (read.error.code === '42703' || String(read.error.message || '').indexOf('user_id') !== -1)) {
+      key = 'id';
+      read = await supabaseClient.from('profiles').select('videos').eq(key, userId).maybeSingle();
+    }
+    if (read.error) return { updated: false, error: String(read.error.message || read.error) };
+    const row = read.data;
+    const currentList = mergeProfileVideos(row && row.videos, null);
+    if (currentList.indexOf(videoUrl) !== -1) {
+      return { updated: false, error: null, skipped: true, duplicate: true };
+    }
+    const next = mergeProfileVideos(currentList, videoUrl);
+    let write;
+    if (row) {
+      write = await supabaseClient.from('profiles').update({ videos: next, updated_at: new Date().toISOString() }).eq(key, userId);
+      // If the live table has no updated_at, retry with videos only.
+      if (write.error && write.error.code === '42703' && String(write.error.message || '').indexOf('updated_at') !== -1) {
+        write = await supabaseClient.from('profiles').update({ videos: next }).eq(key, userId);
+      }
+    } else {
+      // No profile row yet — create one holding just this videos list.
+      const payload = { videos: next, updated_at: new Date().toISOString() };
+      payload[key] = userId;
+      write = await supabaseClient.from('profiles').upsert(payload);
+    }
+    if (write.error) return { updated: false, error: String(write.error.message || write.error) };
+    return { updated: true, error: null };
+  } catch (err) {
+    return { updated: false, error: String((err && err.message) || err) };
+  }
+}
+
 async function submitUpload() {
   const file = document.getElementById('fileInput').files[0];
   if (!file) {
@@ -6448,6 +6505,20 @@ async function submitUpload() {
       }
     }
 
+    // 2b. Save the Cloudinary secure_url into profiles.videos for this
+    // user — the same URL that went into the post. Runs whenever the
+    // video is on Cloudinary and the uploader is logged in (even when
+    // the posts insert failed, the URL still belongs in their list).
+    // A failed profile update never blocks the upload itself.
+    let profileVideosFailed = false;
+    if (isCloudUpload && currentAuthUser) {
+      const pv = await saveVideoUrlToProfileVideos(videoUrl);
+      if (pv.error) {
+        profileVideosFailed = true;
+        console.warn('profiles.videos update note:', pv.error);
+      }
+    }
+
     // 3. Profile & Feed Mapping: user_id strictly mapped
     const newVid = {
       id: postId,
@@ -6497,6 +6568,13 @@ async function submitUpload() {
         100,
         'Upload Complete! (100%)',
         'Saved on this device only — log in to publish it to the feed',
+        'success'
+      );
+    } else if (profileVideosFailed) {
+      updateUploadProgress(
+        100,
+        'Upload Complete! (100%)',
+        'Published to the feed — but your profile videos list could not be updated. Run supabase-setup.sql, then upload again.',
         'success'
       );
     } else {
