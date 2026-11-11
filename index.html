@@ -6340,11 +6340,10 @@ async function submitUpload() {
     updateUploadProgress(92, 'AI Moderation Approved! (92%)', 'Saving post to your profile…');
 
     const videoUrl = resData.video_url;
-    // Only a Cloudinary upload may become a post: the exact secure_url
-    // from the response. A local fallback path (/uploads/...) or a data:
-    // URL is preview-only on this device and must never be saved to
-    // posts.video_url.
-    const isCloudUpload = isCloudVideoUrl(videoUrl) && resData.local_fallback !== true && resData.cloudinary !== false;
+    // A video_url saved to posts must be a public HTTPS cloud URL
+    // (from Cloudinary or Supabase Storage). A local disk path (/uploads/...) or data: URL
+    // is preview-only on this device and must not reach the database.
+    const isCloudUpload = isCloudVideoUrl(videoUrl) && resData.local_fallback !== true;
     const postLocalOnly = !isCloudUpload;
     // A thumbnail must be an image: the local fallback returns the video
     // file itself as thumbnail_url, which renders as a broken/black
