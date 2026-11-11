@@ -2894,7 +2894,7 @@ const defaultSeedVideos = [
   {
     id: 'seed-1',
     ts: Date.now() - 3600000 * 2,
-    videoUrl: '/videos/sample1_916.mp4',
+    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
     caption: 'Nature blooming in stunning detail 🌸 Stop and appreciate the details today #nature #bloom #vibes #fyp',
     hashtags: ['#nature', '#bloom', '#vibes', '#fyp'],
     music: 'Nature Vibes - Original Sound',
@@ -2914,7 +2914,7 @@ const defaultSeedVideos = [
   {
     id: 'seed-2',
     ts: Date.now() - 3600000 * 6,
-    videoUrl: '/videos/sample2_916.mp4',
+    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
     caption: 'Big Buck Bunny adventures never get old 🐰 A masterpiece of open source animation! #animation #classic #cinema #cartoon',
     hashtags: ['#animation', '#classic', '#cinema', '#cartoon'],
     music: 'Peach Open Movie - Fun Beats',
@@ -2933,7 +2933,7 @@ const defaultSeedVideos = [
   {
     id: 'seed-3',
     ts: Date.now() - 3600000 * 12,
-    videoUrl: '/videos/sample3_916.mp4',
+    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
     caption: 'Deep blue ocean currents and marine life wonders 🌊 Protect our marine ecosystem! #ocean #nature #blue #wildlife',
     hashtags: ['#ocean', '#nature', '#blue', '#wildlife'],
     music: 'Calm Waves Studio - Ocean Sounds',
@@ -3214,6 +3214,7 @@ pruneAllExpiredChatMessages();
   switchChatThreadsForCurrentUser();
   applyProfile();
   await loadPostsFromSupabase();
+  subscribeToPostsRealtime();
   applyForYouRanking();
   buildFeed();
   await loadCreatorsFromSupabase();
@@ -3268,9 +3269,11 @@ function listLocalTableRows(tableName) {
   } catch (_) {}
   return rows;
 }
-function notifyLocalMessageListeners(row) {
+function notifyLocalTableListeners(tableName, row) {
   if (localMessageSeenIds) localMessageSeenIds.add(String(row.id));
   localMessageChannelListeners.forEach(l => {
+    const t = l.filter && l.filter.table;
+    if (t && t !== tableName) return;
     try { l.callback({ eventType: 'INSERT', new: row, old: null }); } catch (_) {}
   });
 }
@@ -3284,7 +3287,7 @@ function bindLocalMessageStorageListener() {
       const id = String(row.id);
       if (!localMessageSeenIds.has(id)) {
         localMessageSeenIds.add(id);
-        notifyLocalMessageListeners(row);
+        notifyLocalTableListeners('messages', row);
       }
     });
   });
@@ -3356,7 +3359,7 @@ function createLocalMessagesQueryApi() {
         return row;
       });
       saveLocalMessageRows(loadLocalMessageRows().concat(rows));
-      rows.forEach(notifyLocalMessageListeners);
+      rows.forEach(row => notifyLocalTableListeners('messages', row));
       const builder = {
         select() { return builder; },
         async single() { return { data: rows[0] || null, error: null }; },
@@ -3602,12 +3605,16 @@ function createLocalSupabaseAdapter() {
           let stored = null, storeErr = null;
           try {
             arr.forEach(r => {
+              // Rows without any id (e.g. a post) would overwrite each
+              // other under one key — give every row its own id first.
+              if (r && !r.id) r.id = 'row_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
               // Profiles carry user_id but no id — store by either key,
               // or the row could never be read back.
               const key = r && (r.id || r.user_id);
               if (key) localStorage.setItem(`reelflow_table_${tableName}_${key}`, JSON.stringify(r));
             });
             stored = arr;
+            stored.forEach(r => notifyLocalTableListeners(tableName, r));
           } catch (err) { storeErr = err; }
           const builder = {
             select() { return builder; },
@@ -3773,6 +3780,7 @@ async function initSupabase() {
         await loadCreatorsFromSupabase();
         loadUserChatThreadsFromSupabase();
         await loadPostsFromSupabase();
+        subscribeToPostsRealtime();
       } else {
         // Only clear the inbox if a real account was active. Anonymous /
         // demo mode keeps the shared key untouched.
@@ -5435,20 +5443,20 @@ function renderProfileGrid() {
     item.className = 'grid-item';
     item.onclick = () => openInFeed(originalIndex);
 
-    if (thumbUrls[v.id]) {
+    if (thumbUrls[v.id] && isImageUrl(thumbUrls[v.id])) {
       const img = document.createElement('img');
       img.src = thumbUrls[v.id];
       item.appendChild(img);
     } else if (blobUrls[v.id]) {
       const vid = document.createElement('video');
-      vid.src = blobUrls[v.id] + '#t=0.1';
+      vid.src = playableVideoUrl(blobUrls[v.id]) + '#t=0.1';
       vid.muted = true;
       vid.playsInline = true;
       vid.preload = 'metadata';
       item.appendChild(vid);
     } else if (v.videoUrl) {
       const vid = document.createElement('video');
-      vid.src = v.videoUrl + '#t=0.1';
+      vid.src = playableVideoUrl(v.videoUrl) + '#t=0.1';
       vid.muted = true;
       vid.playsInline = true;
       vid.preload = 'metadata';
@@ -5698,6 +5706,49 @@ function buildFeed() {
   setActive(0);
 }
 
+// ── Video playback helpers ──────────────────────────────────────────
+// A thumbnail/poster must be an IMAGE. The local upload fallback used
+// to return the video file itself as thumbnail_url, which renders as a
+// broken (black) image wherever it is used as <img> or poster.
+function isImageUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  if (url.indexOf('data:image/') === 0) return true;
+  if (url.indexOf('blob:') === 0) return true;
+  if (url.indexOf('res.cloudinary.com') !== -1 && url.indexOf('/image/upload/') !== -1) return true;
+  return /\.(jpg|jpeg|png|webp|gif|avif)(\?|#|$)/i.test(url);
+}
+function videoPosterFor(v) {
+  const t = (v && (v.thumbnail_url || (typeof thumbUrls !== 'undefined' && thumbUrls[v.id]))) || '';
+  return isImageUrl(t) ? t : '';
+}
+// Cloudinary serves the uploaded file in its ORIGINAL format unless asked
+// otherwise. A .mov upload stays a .mov — and most Android browsers play
+// the audio of a .mov but show a BLACK screen for its video track, which
+// is exactly the reported bug. Ask Cloudinary for mp4 delivery so the
+// frames always decode.
+function playableVideoUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  if (url.indexOf('res.cloudinary.com') !== -1 && url.indexOf('/video/upload/') !== -1) {
+    if (url.indexOf('f_mp4') !== -1 || url.indexOf('f_auto') !== -1) return url;
+    if (/\.mp4(\?|#|$)/i.test(url)) return url;
+    return url.replace('/video/upload/', '/video/upload/f_mp4/');
+  }
+  return url;
+}
+// Rebuild the feed without yanking the viewer back to the first video.
+function rebuildFeedPreservingPosition() {
+  const currentId = activeIdx >= 0 && videos[activeIdx] ? videos[activeIdx].id : null;
+  buildFeed();
+  if (currentId) {
+    const idx = videos.findIndex(v => v.id === currentId);
+    if (idx > 0) {
+      const slide = feedEl.children[idx];
+      if (slide) slide.scrollIntoView({ behavior: 'auto' });
+      setActive(idx);
+    }
+  }
+}
+
 function makeSlide(v, i) {
   const slide = document.createElement('div');
   slide.className = 'video-slide';
@@ -5715,9 +5766,20 @@ function makeSlide(v, i) {
   vid.disablePictureInPicture = false;
   vid.preload = 'metadata';
   vid.muted = false;
+  // Poster frame: never a black box while the video loads (or if it
+  // fails). A thumbnail that is not an image is ignored on purpose.
+  const poster = videoPosterFor(v);
+  if (poster) vid.poster = poster;
 
-  const src = blobUrls[v.id] || v.videoUrl;
+  const src = blobUrls[v.id] || playableVideoUrl(v.videoUrl);
   if (src && i <= 1) vid.src = src;
+
+  // A src the browser cannot decode must not stay a silent black box:
+  // keep the poster visible and say why, so the failure is diagnosable
+  // instead of looking like a broken player.
+  vid.addEventListener('error', () => {
+    console.warn('Video failed to load (poster left visible):', vid.getAttribute('src') || v.videoUrl);
+  });
 
   vid.addEventListener('loadedmetadata', () => {
     if (vid.videoWidth && vid.videoHeight) {
@@ -6020,6 +6082,73 @@ zone.addEventListener('drop', e => {
   }
 });
 
+// Map one posts-table row to a feed video object (shared by the
+// initial load and the realtime handler, so both show the same thing).
+function mapPostToVideo(p, myId) {
+  const isMe = myId && String(p.user_id).toLowerCase() === myId;
+  const pId = p.id ? String(p.id) : ('post_' + (p.created_at || Date.now()));
+  // Only real image thumbnails go into the thumbnail map: a video file
+  // or a dead blob: URL stored as thumbnail_url would render black.
+  if (p.thumbnail_url && isImageUrl(p.thumbnail_url) && p.thumbnail_url.indexOf('blob:') !== 0) {
+    thumbUrls[pId] = p.thumbnail_url;
+  }
+  return {
+    id: pId,
+    user_id: p.user_id,
+    ts: p.created_at ? new Date(p.created_at).getTime() : Date.now(),
+    videoUrl: p.video_url,
+    thumbnail_url: p.thumbnail_url,
+    caption: p.caption || 'Video',
+    hashtags: p.hashtags ? String(p.hashtags).split(/\s+/).filter(t => t.length > 0) : [],
+    music: 'Original Audio - Flashgram',
+    username: isMe ? profile.handle : (p.username || 'creator'),
+    userDisplayName: isMe ? profile.name : (p.display_name || 'Creator'),
+    likes: p.likes_count || 0,
+    comments: p.comments_count || 0,
+    shares: p.shares_count || 0,
+    views: p.views || 42,
+    isDatabasePost: true,
+    userComments: []
+  };
+}
+
+// A newly uploaded post arrives here the moment it is inserted — for
+// every user with the feed open, without a page refresh.
+let postsRealtimeChannel = null;
+function subscribeToPostsRealtime() {
+  if (!supabaseClient || postsRealtimeChannel) return;
+  try {
+    postsRealtimeChannel = supabaseClient.channel('realtime_posts')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'posts'
+      }, payload => {
+        if (payload && payload.new) handleIncomingPost(payload.new);
+      })
+      .subscribe((status, err) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn('Posts realtime lost:', status, err || '');
+          postsRealtimeChannel = null;
+          setTimeout(subscribeToPostsRealtime, 5000);
+        }
+      });
+  } catch (err) {
+    console.warn('Posts realtime setup warning:', err);
+    postsRealtimeChannel = null;
+  }
+}
+function handleIncomingPost(p) {
+  if (!p || !p.video_url) return;
+  // Skip our own upload echo (it was already added locally on submit).
+  if (videos.some(v => v.videoUrl === p.video_url)) return;
+  if (p.id && videos.some(v => String(v.id) === String(p.id))) return;
+  const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : (profile.id ? String(profile.id).toLowerCase() : null);
+  videos.unshift(mapPostToVideo(p, myId));
+  rebuildFeedPreservingPosition();
+  renderProfileGrid();
+}
+
 // Load posts from Supabase posts table
 async function loadPostsFromSupabase() {
   if (!supabaseClient) return;
@@ -6036,37 +6165,13 @@ async function loadPostsFromSupabase() {
 
     if (data && Array.isArray(data) && data.length > 0) {
       const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : (profile.id ? String(profile.id).toLowerCase() : null);
-      const dbVids = data.filter(p => p.video_url).map(p => {
-        const isMe = myId && String(p.user_id).toLowerCase() === myId;
-        const pId = p.id ? String(p.id) : ('post_' + (p.created_at || Date.now()));
-        if (p.thumbnail_url) {
-          thumbUrls[pId] = p.thumbnail_url;
-        }
-        return {
-          id: pId,
-          user_id: p.user_id,
-          ts: p.created_at ? new Date(p.created_at).getTime() : Date.now(),
-          videoUrl: p.video_url,
-          thumbnail_url: p.thumbnail_url,
-          caption: p.caption || 'Video',
-          hashtags: [],
-          music: 'Original Audio - Flashgram',
-          username: isMe ? profile.handle : (p.username || 'creator'),
-          userDisplayName: isMe ? profile.name : (p.display_name || 'Creator'),
-          likes: p.likes_count || 0,
-          comments: p.comments_count || 0,
-          shares: p.shares_count || 0,
-          views: p.views || 42,
-          isDatabasePost: true,
-          userComments: []
-        };
-      });
+      const dbVids = data.filter(p => p.video_url).map(p => mapPostToVideo(p, myId));
 
       const existingUrls = new Set(videos.map(v => v.videoUrl).filter(Boolean));
       const freshVids = dbVids.filter(v => !existingUrls.has(v.videoUrl));
       if (freshVids.length > 0) {
         videos = freshVids.concat(videos.filter(v => !v.isDatabasePost));
-        buildFeed();
+        rebuildFeedPreservingPosition();
         renderProfileGrid();
       }
     }
@@ -6097,6 +6202,37 @@ function updateUploadProgress(percent, statusText, subText, state = 'progress') 
   bar.className = 'upload-progress-bar' + (state === 'success' ? ' success' : state === 'error' ? ' error' : '');
   if (spinner) {
     spinner.style.display = (state === 'success' || state === 'error') ? 'none' : 'block';
+  }
+}
+
+// Insert a post row. If the database rejects an optional column
+// (e.g. a posts table created before this file added a column), retry
+// once with only the core fields, so one missing column can never lose
+// the whole upload.
+async function savePostToSupabase(payload) {
+  if (!supabaseClient) return { row: null, error: 'no client' };
+  try {
+    const first = await supabaseClient.from('posts').insert(payload).select().maybeSingle();
+    if (!first.error) return { row: first.data || null, error: null };
+    const msg = String((first.error && first.error.message) || '');
+    if (/column/i.test(msg)) {
+      const minimal = {
+        user_id: payload.user_id,
+        video_url: payload.video_url,
+        thumbnail_url: payload.thumbnail_url,
+        caption: payload.caption,
+        likes_count: 0,
+        comments_count: 0,
+        shares_count: 0,
+        created_at: payload.created_at
+      };
+      const retry = await supabaseClient.from('posts').insert(minimal).select().maybeSingle();
+      if (!retry.error) return { row: retry.data || null, error: null };
+      return { row: null, error: String((retry.error && retry.error.message) || 'insert failed') };
+    }
+    return { row: null, error: msg || 'insert failed' };
+  } catch (err) {
+    return { row: null, error: String((err && err.message) || err) };
   }
 }
 
@@ -6192,35 +6328,47 @@ async function submitUpload() {
     updateUploadProgress(92, 'AI Moderation Approved! (92%)', 'Saving post to your profile…');
 
     const videoUrl = resData.video_url;
-    const thumbnailUrl = resData.thumbnail_url || (customUploadedThumbBlob ? URL.createObjectURL(customUploadedThumbBlob) : '');
+    // A thumbnail must be an image: the local fallback returns the video
+    // file itself as thumbnail_url, which renders as a broken/black
+    // image. Fall back to the user-picked thumbnail, or none.
+    let thumbnailUrl = resData.thumbnail_url || '';
+    if (thumbnailUrl && !isImageUrl(thumbnailUrl)) thumbnailUrl = '';
+    if (!thumbnailUrl && customUploadedThumbBlob) thumbnailUrl = URL.createObjectURL(customUploadedThumbBlob);
+    // A blob: thumbnail only lives for this session — never store it in
+    // the database, or every later load shows a dead (black) thumbnail.
+    const dbThumbnailUrl = (thumbnailUrl && thumbnailUrl.indexOf('blob:') === 0) ? '' : thumbnailUrl;
 
     let postId = 'v_' + Date.now();
+    let postSaveFailed = false;
+    let postSaveMessage = '';
+    let postSaved = false;
 
-    // 2. Conditional Saving to Supabase posts table
+    // 2. Save to the Supabase posts table, immediately after moderation.
+    // A failed insert used to be a silent console.warn while the UI
+    // still claimed "published" — now the user is told, and the video
+    // is kept locally (not marked as a database post) instead of being
+    // silently lost from the feed on the next refresh.
     if (supabaseClient && currentAuthUser) {
-      try {
-        const { data: postRow, error: postErr } = await supabaseClient
-          .from('posts')
-          .insert({
-            user_id: currentAuthUser.id,
-            video_url: videoUrl,
-            thumbnail_url: thumbnailUrl,
-            caption: caption,
-            likes_count: 0,
-            comments_count: 0,
-            shares_count: 0,
-            created_at: new Date().toISOString()
-          })
-          .select()
-          .maybeSingle();
-
-        if (postErr) {
-          console.warn('Supabase post insert note:', postErr.message);
-        } else if (postRow && postRow.id) {
-          postId = String(postRow.id);
-        }
-      } catch(err) {
-        console.warn('Supabase post save error:', err);
+      const result = await savePostToSupabase({
+        user_id: currentAuthUser.id,
+        video_url: videoUrl,
+        thumbnail_url: dbThumbnailUrl,
+        caption: caption,
+        hashtags: hashtags.join(' '),
+        username: profile.handle || null,
+        display_name: profile.name || null,
+        likes_count: 0,
+        comments_count: 0,
+        shares_count: 0,
+        created_at: new Date().toISOString()
+      });
+      if (result.error) {
+        postSaveFailed = true;
+        postSaveMessage = result.error;
+        console.warn('Supabase post insert note:', result.error);
+      } else if (result.row && result.row.id) {
+        postId = String(result.row.id);
+        postSaved = true;
       }
     }
 
@@ -6240,7 +6388,7 @@ async function submitUpload() {
       comments: 0,
       shares: 0,
       views: 1,
-      isDatabasePost: true,
+      isDatabasePost: postSaved,
       userComments: []
     };
 
@@ -6250,13 +6398,31 @@ async function submitUpload() {
 
     videos.unshift(newVid);
 
-    // Hit 100% on the progress bar!
-    updateUploadProgress(
-      100,
-      'Upload Complete! (100%)',
-      'Post created and published to feed 🎉',
-      'success'
-    );
+    // Hit 100% on the progress bar — but only claim "published" when
+    // the database save actually succeeded.
+    if (postSaveFailed) {
+      updateUploadProgress(
+        100,
+        'Upload finished, feed save failed',
+        'Video is on this device only — the feed database rejected the save. Run supabase-setup.sql, then try again.',
+        'error'
+      );
+      showToast('Video uploaded, but saving to the feed failed. Run supabase-setup.sql and try again.', 6000);
+    } else if (!currentAuthUser) {
+      updateUploadProgress(
+        100,
+        'Upload Complete! (100%)',
+        'Saved on this device only — log in to publish it to the feed',
+        'success'
+      );
+    } else {
+      updateUploadProgress(
+        100,
+        'Upload Complete! (100%)',
+        'Post created and published to feed 🎉',
+        'success'
+      );
+    }
 
     await new Promise(r => setTimeout(r, 450));
 
@@ -6526,19 +6692,19 @@ function renderDiscover() {
     item.className = 'grid-item';
     item.onclick = () => openInFeed(originalIndex);
 
-    if (thumbUrls[v.id]) {
+    if (thumbUrls[v.id] && isImageUrl(thumbUrls[v.id])) {
       const img = document.createElement('img');
       img.src = thumbUrls[v.id];
       item.appendChild(img);
     } else if (blobUrls[v.id]) {
       const vid = document.createElement('video');
-      vid.src = blobUrls[v.id] + '#t=0.1';
+      vid.src = playableVideoUrl(blobUrls[v.id]) + '#t=0.1';
       vid.muted = true;
       vid.playsInline = true;
       item.appendChild(vid);
     } else if (v.videoUrl) {
       const vid = document.createElement('video');
-      vid.src = v.videoUrl + '#t=0.1';
+      vid.src = playableVideoUrl(v.videoUrl) + '#t=0.1';
       vid.muted = true;
       vid.playsInline = true;
       item.appendChild(vid);
@@ -7674,8 +7840,12 @@ function ensureSrc(s) {
   const vid = s.querySelector('video');
   const vidId = s.dataset.id;
   const vidObj = videos.find(x => x.id === vidId);
+  if (!vid.getAttribute('poster') && vidObj) {
+    const p = videoPosterFor(vidObj);
+    if (p) vid.poster = p;
+  }
   if (vid && !vid.getAttribute('src')) {
-    const src = blobUrls[vidId] || vidObj?.videoUrl;
+    const src = blobUrls[vidId] || playableVideoUrl(vidObj?.videoUrl);
     if (src) {
       vid.src = src;
       vid.preload = 'auto';

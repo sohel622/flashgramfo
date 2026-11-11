@@ -232,7 +232,11 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
         const savedPath = path.join(uploadsDir, fileId + ext);
         fs.writeFileSync(savedPath, req.file.buffer);
         videoUrl = `/uploads/${fileId}${ext}`;
-        thumbnailUrl = `/uploads/${fileId}${ext}`;
+        // A thumbnail must be an image: the video file itself is NOT a
+        // thumbnail — serving it as one renders a broken/black image in
+        // the feed and profile grid. Leave it empty; the client falls
+        // back to the user-picked thumbnail or the video's first frame.
+        thumbnailUrl = '';
       } catch (writeErr) {
         console.warn('Temp disk write failed (EROFS or permission), falling back to in-memory data URL:', writeErr.message);
         const mime = req.file.mimetype || 'video/mp4';

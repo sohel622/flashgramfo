@@ -360,3 +360,86 @@ END $$;
 --    https://ais-dev-srrwbq2np52usw4em6euev-582735108837.asia-southeast1.run.app/**
 -- ========================================================
 
+
+-- ========================================================
+-- 9. Posts Table (video uploads)
+-- ========================================================
+-- The app inserts every approved upload here (video_url,
+-- thumbnail_url, caption, user_id) and reads the home/profile
+-- feeds from it. Before this section existed, the insert had no
+-- table to land in and failed silently, so uploads never synced.
+CREATE TABLE IF NOT EXISTS public.posts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  video_url TEXT NOT NULL,
+  thumbnail_url TEXT,
+  caption TEXT,
+  hashtags TEXT,
+  username TEXT,
+  display_name TEXT,
+  likes_count INTEGER NOT NULL DEFAULT 0,
+  comments_count INTEGER NOT NULL DEFAULT 0,
+  shares_count INTEGER NOT NULL DEFAULT 0,
+  views INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- Columns for posts tables created before this file (safe to re-run)
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS video_url TEXT;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS caption TEXT;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS hashtags TEXT;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS username TEXT;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS display_name TEXT;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS likes_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS comments_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS shares_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS views INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now());
+
+CREATE INDEX IF NOT EXISTS idx_posts_created_at
+  ON public.posts (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_user_id
+  ON public.posts (user_id, created_at DESC);
+
+-- Enable RLS
+ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
+
+-- Anyone can watch the feed: public read
+DROP POLICY IF EXISTS "Anyone can view posts" ON public.posts;
+CREATE POLICY "Anyone can view posts"
+  ON public.posts FOR SELECT
+  USING (true);
+
+-- Only the logged-in uploader can insert their own post
+DROP POLICY IF EXISTS "Users can create their own posts" ON public.posts;
+CREATE POLICY "Users can create their own posts"
+  ON public.posts FOR INSERT
+  WITH CHECK (auth.uid()::text = user_id::text);
+
+-- Only the owner can update or delete their post
+DROP POLICY IF EXISTS "Users can update their own posts" ON public.posts;
+CREATE POLICY "Users can update their own posts"
+  ON public.posts FOR UPDATE
+  USING (auth.uid()::text = user_id::text);
+
+DROP POLICY IF EXISTS "Users can delete their own posts" ON public.posts;
+CREATE POLICY "Users can delete their own posts"
+  ON public.posts FOR DELETE
+  USING (auth.uid()::text = user_id::text);
+
+-- Add public.posts to the Supabase Realtime publication, so a new
+-- upload appears in every open feed instantly (postgres_changes).
+-- Without this, the feed only updates on a page refresh.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'posts'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.posts;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'Could not add posts to the realtime publication: %', SQLERRM;
+END $$;
