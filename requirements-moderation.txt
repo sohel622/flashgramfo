@@ -1,0 +1,14 @@
+# video_moderation.py dependencies (Python 3.10+)
+# Install in order:
+#   pip install -r requirements-moderation.txt
+#   pip install --no-deps "git+https://github.com/notAI-tech/NudeNet.git"
+# (nudenet is installed --no-deps so it does not pull opencv-python
+#  over opencv-python-headless below.)
+fastapi
+uvicorn
+python-multipart
+httpx
+opencv-python-headless
+numpy
+onnxruntime
+pillow
