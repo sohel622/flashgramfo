@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   email TEXT,
   avatar_url TEXT,
   bio TEXT,
+  -- Kept for old data only: the app no longer writes video URLs
+  -- here. posts is the single source of truth for video URLs.
   videos TEXT[] DEFAULT '{}',
   role TEXT DEFAULT 'user',
   website TEXT,
@@ -431,9 +433,15 @@ END $$;
 -- thumbnail_url, caption, user_id) and reads the home/profile
 -- feeds from it. Before this section existed, the insert had no
 -- table to land in and failed silently, so uploads never synced.
+-- posts.user_id is a LOGICAL reference to the uploader (their auth
+-- UUID or, in local/guest mode, a usr_* id) -- deliberately NOT a
+-- FOREIGN KEY to profiles(user_id): a hard FK would reject every
+-- guest/local upload and any post saved before a profile row exists.
+-- Ownership is enforced by the RLS policies below, and (user_id,
+-- created_at) is indexed.
 CREATE TABLE IF NOT EXISTS public.posts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL,
+  user_id TEXT NOT NULL,
   video_url TEXT NOT NULL,
   thumbnail_url TEXT,
   caption TEXT,
@@ -448,7 +456,7 @@ CREATE TABLE IF NOT EXISTS public.posts (
 );
 
 -- Columns for posts tables created before this file (safe to re-run)
-ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS user_id TEXT;
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS video_url TEXT;
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS caption TEXT;
@@ -465,6 +473,22 @@ CREATE INDEX IF NOT EXISTS idx_posts_created_at
   ON public.posts (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_user_id
   ON public.posts (user_id, created_at DESC);
+
+-- One row per video URL, ever. First, drop duplicates already in the
+-- table: for each URL keep the oldest row (a duplicate keeps no unique
+-- content -- it is the same file from the same uploader); the rest go.
+-- Safe to re-run: it deletes nothing when there are no duplicates.
+DELETE FROM public.posts a
+WHERE a.id NOT IN (
+  SELECT DISTINCT ON (video_url) id
+  FROM public.posts
+  ORDER BY video_url, created_at NULLS LAST, id
+);
+
+-- Then make a second insert impossible at the database level. (The app
+-- also checks first now, so the index is the second line of defence.)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_video_url_unique
+  ON public.posts (video_url);
 
 -- Enable RLS
 ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;

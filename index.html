@@ -426,6 +426,13 @@
       color: #fff;
       text-shadow: 0 1px 4px rgba(0,0,0,.8);
     }
+    .post-time {
+      font-weight: 400;
+      font-size: 13px;
+      color: rgba(255,255,255,.75);
+      text-shadow: 0 1px 4px rgba(0,0,0,.8);
+      white-space: nowrap;
+    }
     .bottom-info .caption {
       font-size: 14px;
       color: rgba(255,255,255,.95);
@@ -3227,7 +3234,6 @@ pruneAllExpiredChatMessages();
   applyProfile();
   await loadPostsFromSupabase();
   await retryPendingPostUploads();
-  await syncProfileVideosFromPosts();
   subscribeToPostsRealtime();
   applyForYouRanking();
   buildFeed();
@@ -3794,7 +3800,6 @@ async function initSupabase() {
         loadUserChatThreadsFromSupabase();
         await loadPostsFromSupabase();
         await retryPendingPostUploads();
-        await syncProfileVideosFromPosts();
         subscribeToPostsRealtime();
       } else {
         // Only clear the inbox if a real account was active. Anonymous /
@@ -6062,6 +6067,7 @@ function makeInfo(v) {
   wrap.innerHTML = `
     <div class="author-row">
       <span class="author-name">@${v.username || 'user'}</span>
+      ${(v.created_at || v.ts) ? `<span class="post-time">· ${formatRelativeTime(v.created_at || v.ts)}</span>` : ''}
     </div>
     <div class="caption">${v.caption || ''}</div>
     <div class="hashtags">${tags}</div>
@@ -6259,6 +6265,7 @@ function mapPostToVideo(p, myId) {
     id: pId,
     user_id: p.user_id,
     ts: p.created_at ? new Date(p.created_at).getTime() : Date.now(),
+    created_at: p.created_at || null,
     videoUrl: p.video_url,
     thumbnail_url: p.thumbnail_url,
     caption: p.caption || 'Video',
@@ -6333,10 +6340,13 @@ function mergeDbVideosInto(existing, fresh) {
   return add.concat(existing || []);
 }
 
-// Refresh MY videos from the database: my posts rows, plus any URL in
-// profiles.videos that has no post row yet. Called when the profile
-// page opens, so a video uploaded on another device (or before a fresh
-// login) shows up instead of only what this device remembers.
+// Refresh MY videos from the database: my posts rows, and only those.
+// The posts table is the single source of truth for video URLs --
+// profile details stay in profiles, and no video URL is written to
+// (or read back from) profiles.videos any more. Called when the
+// profile page opens, so a video uploaded on another device (or
+// before a fresh login) shows up instead of only what this device
+// remembers.
 async function loadMyVideosForProfile() {
   if (!supabaseClient || !currentAuthUser) return false;
   const myId = String(currentAuthUser.id);
@@ -6360,45 +6370,6 @@ async function loadMyVideosForProfile() {
   } catch (err) {
     console.warn('loadMyVideosForProfile posts error:', err);
   }
-  try {
-    const { data, error } = await supabaseClient
-      .from('profiles')
-      .select('videos')
-      .eq('user_id', myId)
-      .maybeSingle();
-    if (!error && data) {
-      const urls = Array.isArray(data.videos) ? data.videos : (typeof data.videos === 'string' && data.videos ? [data.videos] : []);
-      const existing = new Set(videos.map(v => v.videoUrl).filter(Boolean));
-      const extra = urls
-        .filter(u => isCloudVideoUrl(u) && !existing.has(u))
-        .map(u => ({
-          id: 'pv_' + u.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(-40),
-          user_id: myId,
-          ts: Date.now(),
-          videoUrl: u,
-          thumbnail_url: u.indexOf('res.cloudinary.com') !== -1 ? u.replace(/\.[^.]+$/, '.jpg') : '',
-          caption: 'Video',
-          hashtags: [],
-          music: 'Original Audio - Flashgram',
-          username: profile.handle || 'user',
-          userDisplayName: profile.name || 'Creator',
-          likes: 0, comments: 0, shares: 0, views: 42,
-          isDatabasePost: true,
-          userComments: []
-        }));
-      if (extra.length) {
-        videos = mergeDbVideosInto(videos, extra);
-        changed = true;
-      }
-    }
-  } catch (err) {
-    // profiles.videos may not exist yet (run supabase-setup.sql) — the
-    // posts above are the main source, so this stays a silent no-op.
-    console.warn('loadMyVideosForProfile profiles.videos note:', err);
-  }
-  // Heal the second table too: any of my post URLs missing from
-  // profiles.videos get written back (best effort).
-  await syncProfileVideosFromPosts();
   return changed;
 }
 
@@ -6465,39 +6436,66 @@ function isCloudVideoUrl(url) {
   return typeof url === 'string' && /^https:\/\/[^/]+\//i.test(url);
 }
 
-// Insert a post row. If the database rejects an optional column
-// (e.g. a posts table created before this file added a column), retry
-// once with only the core fields, so one missing column can never lose
-// the whole upload.
+// Insert a post row, exactly once per video URL. Two guards:
+//  (1) a SELECT-first check -- if a row with this video_url already
+//      exists (an earlier save, or an outbox retry after a save whose
+//      response was lost), return that row and insert nothing;
+//  (2) an in-flight map -- two saves for the same URL running at the
+//      same time share the one insert instead of racing.
+// The timestamp is NOT sent: the database sets created_at itself
+// (now()), so the saved time is the server time, never the device
+// clock. If the database rejects an optional column (e.g. a posts
+// table created before this file added a column), retry once with
+// only the core fields, so one missing column can never lose the
+// whole upload.
+const pendingPostSaves = new Map();
 async function savePostToSupabase(payload) {
   if (!supabaseClient) return { row: null, error: 'no client' };
   if (!isCloudVideoUrl(payload.video_url)) {
     // Refuse before any Supabase call: local paths are never saved.
     return { row: null, error: 'local video path — not saved to posts' };
   }
-  try {
-    const first = await supabaseClient.from('posts').insert(payload).select().maybeSingle();
-    if (!first.error) return { row: first.data || null, error: null };
-    const msg = String((first.error && first.error.message) || '');
-    if (/column/i.test(msg)) {
-      const minimal = {
-        user_id: payload.user_id,
-        video_url: payload.video_url,
-        thumbnail_url: payload.thumbnail_url,
-        caption: payload.caption,
-        likes_count: 0,
-        comments_count: 0,
-        shares_count: 0,
-        created_at: payload.created_at
-      };
-      const retry = await supabaseClient.from('posts').insert(minimal).select().maybeSingle();
-      if (!retry.error) return { row: retry.data || null, error: null };
-      return { row: null, error: String((retry.error && retry.error.message) || 'insert failed') };
+  const videoUrl = payload.video_url;
+  if (pendingPostSaves.has(videoUrl)) return pendingPostSaves.get(videoUrl);
+  const task = (async () => {
+    try {
+      // Guard 1: an existing row with this URL means "already saved".
+      try {
+        const existing = await supabaseClient.from('posts').select('*').eq('video_url', videoUrl).maybeSingle();
+        if (!existing.error && existing.data && existing.data.id) {
+          return { row: existing.data, error: null, duplicate: true };
+        }
+      } catch (_) {
+        // Posts table missing (supabase-setup.sql not run yet) or a
+        // transient read failure: fall through to the insert, which
+        // will fail and queue as before.
+      }
+      const insertPayload = Object.assign({}, payload);
+      delete insertPayload.created_at; // the DB sets created_at (now())
+      const first = await supabaseClient.from('posts').insert(insertPayload).select().maybeSingle();
+      if (!first.error) return { row: first.data || null, error: null, duplicate: false };
+      const msg = String((first.error && first.error.message) || '');
+      if (/column/i.test(msg)) {
+        const minimal = {
+          user_id: payload.user_id,
+          video_url: payload.video_url,
+          thumbnail_url: payload.thumbnail_url,
+          caption: payload.caption,
+          likes_count: 0,
+          comments_count: 0,
+          shares_count: 0
+        };
+        const retry = await supabaseClient.from('posts').insert(minimal).select().maybeSingle();
+        if (!retry.error) return { row: retry.data || null, error: null, duplicate: false };
+        return { row: null, error: String((retry.error && retry.error.message) || 'insert failed') };
+      }
+      return { row: null, error: msg || 'insert failed' };
+    } catch (err) {
+      return { row: null, error: String((err && err.message) || err) };
     }
-    return { row: null, error: msg || 'insert failed' };
-  } catch (err) {
-    return { row: null, error: String((err && err.message) || err) };
-  }
+  })();
+  pendingPostSaves.set(videoUrl, task);
+  try { return await task; } finally { pendingPostSaves.delete(videoUrl); }
 }
 
 // Client-side unsigned Cloudinary upload: the browser posts the video
@@ -6652,60 +6650,6 @@ function uploadViaModeration(file, caption) {
 // Merge a video URL into an existing videos list (TEXT[]), deduped.
 // Accepts null / a single string (legacy) / an array. Passing a null
 // URL just normalizes the current list without appending.
-function mergeProfileVideos(current, videoUrl) {
-  let list = [];
-  if (Array.isArray(current)) list = current.filter(v => typeof v === 'string' && v.length > 0);
-  else if (typeof current === 'string' && current.length > 0) list = [current];
-  if (!videoUrl || list.indexOf(videoUrl) !== -1) return list;
-  return list.concat([videoUrl]);
-}
-
-// Save (or update) one Cloudinary video URL into the current user's
-// profiles.videos list: read the row, append the URL (no duplicates),
-// write the list back. Never throws — returns {updated, error}.
-// Skips silently for guests and for non-cloud URLs.
-async function saveVideoUrlToProfileVideos(videoUrl) {
-  const skipped = { updated: false, error: null, skipped: true };
-  if (!supabaseClient || !currentAuthUser || !currentAuthUser.id) return skipped;
-  if (!isCloudVideoUrl(videoUrl)) return skipped;
-  const userId = currentAuthUser.id;
-  try {
-    // Profiles are keyed by user_id; fall back to id when the schema
-    // uses id as the primary key instead (same fallback as the profile
-    // upsert).
-    let key = 'user_id';
-    let read = await supabaseClient.from('profiles').select('videos').eq(key, userId).maybeSingle();
-    if (read.error && (read.error.code === '42703' || String(read.error.message || '').indexOf('user_id') !== -1)) {
-      key = 'id';
-      read = await supabaseClient.from('profiles').select('videos').eq(key, userId).maybeSingle();
-    }
-    if (read.error) return { updated: false, error: String(read.error.message || read.error) };
-    const row = read.data;
-    const currentList = mergeProfileVideos(row && row.videos, null);
-    if (currentList.indexOf(videoUrl) !== -1) {
-      return { updated: false, error: null, skipped: true, duplicate: true };
-    }
-    const next = mergeProfileVideos(currentList, videoUrl);
-    let write;
-    if (row) {
-      write = await supabaseClient.from('profiles').update({ videos: next, updated_at: new Date().toISOString() }).eq(key, userId);
-      // If the live table has no updated_at, retry with videos only.
-      if (write.error && write.error.code === '42703' && String(write.error.message || '').indexOf('updated_at') !== -1) {
-        write = await supabaseClient.from('profiles').update({ videos: next }).eq(key, userId);
-      }
-    } else {
-      // No profile row yet — create one holding just this videos list.
-      const payload = { videos: next, updated_at: new Date().toISOString() };
-      payload[key] = userId;
-      write = await supabaseClient.from('profiles').upsert(payload);
-    }
-    if (write.error) return { updated: false, error: String(write.error.message || write.error) };
-    return { updated: true, error: null };
-  } catch (err) {
-    return { updated: false, error: String((err && err.message) || err) };
-  }
-}
-
 // ── Upload outbox: never lose a video whose DB save failed ──
 // Cloudinary keeps the file, but the posts row is what makes it visible
 // in the feed. If the insert fails (network, RLS, missing table), the
@@ -6751,8 +6695,7 @@ async function retryPendingPostUploads() {
       display_name: item.display_name || profile.name || null,
       likes_count: 0,
       comments_count: 0,
-      shares_count: 0,
-      created_at: item.created_at || new Date().toISOString()
+      shares_count: 0
     });
     if (result.error) {
       item.last_error = result.error;
@@ -6764,10 +6707,14 @@ async function retryPendingPostUploads() {
     if (local) {
       local.isDatabasePost = true;
       if (result.row && result.row.id) local.id = String(result.row.id);
+      // The row's own time is the post time -- never the device clock.
+      if (result.row && result.row.created_at) {
+        local.created_at = result.row.created_at;
+        local.ts = new Date(result.row.created_at).getTime();
+      }
     } else if (result.row) {
       videos.unshift(mapPostToVideo(result.row, String(currentAuthUser.id).toLowerCase()));
     }
-    await saveVideoUrlToProfileVideos(item.video_url); // best effort
     list = list.filter(p => p !== item);
     done += 1;
   }
@@ -6778,62 +6725,6 @@ async function retryPendingPostUploads() {
     showToast(done + (done === 1 ? ' video' : ' videos') + ' published from the retry queue 🎉');
   }
   return done;
-}
-
-// Convergence for profiles.videos: every URL in my posts rows must also
-// be in my profiles.videos list. Runs at boot and on profile open, so a
-// profiles update that failed during an upload is healed later instead
-// of diverging forever.
-let profileVideosSyncRunning = false;
-async function syncProfileVideosFromPosts() {
-  if (!supabaseClient || !currentAuthUser || profileVideosSyncRunning) return 0;
-  profileVideosSyncRunning = true;
-  try {
-    const myId = String(currentAuthUser.id);
-    const postsRes = await supabaseClient.from('posts').select('video_url').eq('user_id', myId).order('created_at', { ascending: false }).limit(200);
-    if (postsRes.error || !Array.isArray(postsRes.data)) {
-      if (postsRes.error) console.error('[upload] profile-videos sync: posts read failed:', postsRes.error.message || postsRes.error);
-      return 0;
-    }
-    const postUrls = postsRes.data.map(p => p.video_url).filter(u => isCloudVideoUrl(u));
-    if (!postUrls.length) return 0;
-    let key = 'user_id';
-    let profRes = await supabaseClient.from('profiles').select('videos').eq(key, myId).maybeSingle();
-    if (profRes.error && (profRes.error.code === '42703' || String(profRes.error.message || '').indexOf('user_id') !== -1)) {
-      key = 'id';
-      profRes = await supabaseClient.from('profiles').select('videos').eq(key, myId).maybeSingle();
-    }
-    if (profRes.error) {
-      console.error('[upload] profile-videos sync: profiles read failed:', profRes.error.message || profRes.error);
-      return 0;
-    }
-    const current = mergeProfileVideos(profRes.data && profRes.data.videos, null);
-    const missing = postUrls.filter(u => current.indexOf(u) === -1);
-    if (!missing.length) return 0;
-    const next = current.concat(missing);
-    let write;
-    if (profRes.data) {
-      write = await supabaseClient.from('profiles').update({ videos: next, updated_at: new Date().toISOString() }).eq(key, myId);
-      if (write.error && write.error.code === '42703' && String(write.error.message || '').indexOf('updated_at') !== -1) {
-        write = await supabaseClient.from('profiles').update({ videos: next }).eq(key, myId);
-      }
-    } else {
-      const payload = { videos: next, updated_at: new Date().toISOString() };
-      payload[key] = myId;
-      write = await supabaseClient.from('profiles').upsert(payload);
-    }
-    if (write.error) {
-      console.error('[upload] profile-videos sync: update failed:', write.error.message || write.error);
-      return 0;
-    }
-    console.log('[upload] profile-videos sync healed', missing.length, 'URLs');
-    return missing.length;
-  } catch (err) {
-    console.error('[upload] profile-videos sync error:', err);
-    return 0;
-  } finally {
-    profileVideosSyncRunning = false;
-  }
 }
 
 async function submitUpload() {
@@ -6967,6 +6858,7 @@ async function submitUpload() {
     const dbThumbnailUrl = (thumbnailUrl && thumbnailUrl.indexOf('blob:') === 0) ? '' : thumbnailUrl;
 
     let postId = 'v_' + Date.now();
+    let dbCreatedAt = null;
     let postSaveFailed = false;
     let postSaveMessage = '';
     let postSaved = false;
@@ -6990,8 +6882,7 @@ async function submitUpload() {
         display_name: profile.name || null,
         likes_count: 0,
         comments_count: 0,
-        shares_count: 0,
-        created_at: new Date().toISOString()
+        shares_count: 0
       };
       const result = await savePostToSupabase(postPayload);
       if (result.error) {
@@ -7003,28 +6894,22 @@ async function submitUpload() {
       } else if (result.row && result.row.id) {
         postId = String(result.row.id);
         postSaved = true;
+        // The row's created_at is the post time -- the database set
+        // it, not this device's clock.
+        if (result.row.created_at) dbCreatedAt = result.row.created_at;
       }
     }
 
-    // 2b. Save the Cloudinary secure_url into profiles.videos for this
-    // user — the same URL that went into the post. Runs whenever the
-    // video is on Cloudinary and the uploader is logged in (even when
-    // the posts insert failed, the URL still belongs in their list).
-    // A failed profile update never blocks the upload itself.
-    let profileVideosFailed = false;
-    if (isCloudUpload && currentAuthUser) {
-      const pv = await saveVideoUrlToProfileVideos(videoUrl);
-      if (pv.error) {
-        profileVideosFailed = true;
-        console.error('[upload] profiles.videos update failed:', pv.error);
-      }
-    }
+    // No profiles.videos write any more: the posts row above is the
+    // single home of this video URL. Profile details stay in
+    // profiles; a video URL is never copied into the user table.
 
     // 3. Profile & Feed Mapping: user_id strictly mapped
     const newVid = {
       id: postId,
       user_id: currentAuthUser ? currentAuthUser.id : profile.id,
-      ts: Date.now(),
+      ts: dbCreatedAt ? new Date(dbCreatedAt).getTime() : Date.now(),
+      created_at: dbCreatedAt || null,
       videoUrl: videoUrl,
       thumbnail_url: thumbnailUrl,
       caption: caption,
@@ -7070,13 +6955,6 @@ async function submitUpload() {
         100,
         'Upload Complete! (100%)',
         'Saved on this device only — log in to publish it to the feed',
-        'success'
-      );
-    } else if (profileVideosFailed) {
-      updateUploadProgress(
-        100,
-        'Upload Complete! (100%)',
-        'Published to the feed — but your profile videos list could not be updated. Run supabase-setup.sql, then upload again.',
         'success'
       );
     } else {
