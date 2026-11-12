@@ -288,15 +288,44 @@
 
     .progress-bar-wrap {
       position: absolute;
-      bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+      bottom: calc(48px + env(safe-area-inset-bottom, 0px));
       left: 0;
       right: 0;
+      height: 26px;
+      z-index: 30;
+      cursor: pointer;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+    }
+    .progress-track {
+      position: relative;
+      width: 100%;
       height: 2.5px;
       background: rgba(255,255,255,0.22);
-      z-index: 30;
       overflow: hidden;
+      transition: height .18s ease;
     }
-    .progress-bar { height: 100%; width: 0%; background: #fff; }
+    .progress-bar { height: 100%; width: 0%; background: #fff; transition: width .15s linear; }
+    .progress-time {
+      position: absolute;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 7px;
+      border-radius: 5px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .15s ease;
+    }
+    .video-slide.scrubbing .progress-track { height: 7px; }
+    .video-slide.scrubbing .progress-bar { transition: none; }
+    .video-slide.scrubbing .progress-time { opacity: 1; }
 
     /* Right Actions Column */
     .right-actions {
@@ -5783,6 +5812,73 @@ function rebuildFeedPreservingPosition() {
   }
 }
 
+// ── TikTok-style progress scrubber ──
+// The thin bar at the bottom of each slide shows playback position.
+// Pressing and dragging it expands the bar, shows the time (mm:ss / mm:ss),
+// seeks the video live, and on release resumes playback.
+function fmtTime(sec) {
+  if (!isFinite(sec) || sec < 0) sec = 0;
+  sec = Math.floor(sec);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? h + ':' + mm + ':' + ss : mm + ':' + ss;
+}
+function progressRatioFromEvent(e, wrap) {
+  const rect = wrap.getBoundingClientRect();
+  if (!rect || rect.width <= 0) return 0;
+  return Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+}
+let scrubState = null; // { slide, vid, wasPlaying, ratio }
+function setScrubPosition(slide, vid, ratio) {
+  const bar = slide.querySelector('.progress-bar');
+  if (bar) bar.style.width = (ratio * 100) + '%';
+  const label = slide.querySelector('.progress-time');
+  if (label) {
+    label.textContent = fmtTime(ratio * (vid.duration || 0)) + ' / ' + fmtTime(vid.duration);
+    // Keep the label on screen near the edges.
+    label.style.left = Math.min(93, Math.max(7, ratio * 100)) + '%';
+  }
+}
+function startScrub(slide, vid, e) {
+  const wrap = slide.querySelector('.progress-bar-wrap');
+  if (!wrap || !vid.duration || !isFinite(vid.duration)) return false;
+  const ratio = progressRatioFromEvent(e, wrap);
+  scrubState = { slide: slide, vid: vid, wasPlaying: !vid.paused, ratio: ratio };
+  slide.classList.add('scrubbing');
+  vid.pause();
+  setScrubPosition(slide, vid, ratio);
+  return true;
+}
+function moveScrub(e) {
+  if (!scrubState) return;
+  const wrap = scrubState.slide.querySelector('.progress-bar-wrap');
+  const ratio = progressRatioFromEvent(e, wrap);
+  scrubState.ratio = ratio;
+  setScrubPosition(scrubState.slide, scrubState.vid, ratio);
+  // Scrub the picture along with the finger (the browser coalesces seeks).
+  try { scrubState.vid.currentTime = ratio * scrubState.vid.duration; } catch (_) {}
+}
+function endScrub() {
+  if (!scrubState) return;
+  const s = scrubState;
+  scrubState = null;
+  s.slide.classList.remove('scrubbing');
+  try { s.vid.currentTime = s.ratio * s.vid.duration; } catch (_) {}
+  // Resume only if the feed is still showing this video (the user may
+  // have navigated away mid-scrub — never restart background audio).
+  if (s.wasPlaying && isFeedPageVisible() && videos[activeIdx] && s.slide.dataset.id === videos[activeIdx].id) {
+    s.vid.play().catch(()=>{});
+  }
+}
+// The drag continues on the window so it never drops if the finger
+// leaves the bar; each listener is registered once, here.
+window.addEventListener('pointermove', e => { if (scrubState) moveScrub(e); });
+window.addEventListener('pointerup', () => { if (scrubState) endScrub(); });
+window.addEventListener('pointercancel', () => { if (scrubState) endScrub(); });
+
 function makeSlide(v, i) {
   const slide = document.createElement('div');
   slide.className = 'video-slide';
@@ -5820,14 +5916,25 @@ function makeSlide(v, i) {
   });
 
   vid.addEventListener('timeupdate', () => {
+    if (scrubState && scrubState.vid === vid) return; // scrub owns the bar right now
     const pb = slide.querySelector('.progress-bar');
     if (pb && vid.duration) pb.style.width = (vid.currentTime / vid.duration * 100) + '%';
   });
 
   slide.appendChild(vid);
   slide.insertAdjacentHTML('beforeend',
-    '<div class="progress-bar-wrap"><div class="progress-bar"></div></div>'
+    '<div class="progress-bar-wrap"><div class="progress-track"><div class="progress-bar"></div></div><div class="progress-time">00:00 / 00:00</div></div>'
   );
+
+  // Scrubbing: press and drag the bar to seek. The wrap sits above the
+  // tap overlay (z-index 30 vs 5), so the drag never toggles play/pause
+  // or likes; touch-action:none keeps the feed from scrolling mid-drag.
+  const pwrap = slide.querySelector('.progress-bar-wrap');
+  pwrap.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    e.preventDefault();
+    startScrub(slide, vid, e);
+  });
 
   // Tap overlay (Single tap pause/resume, double tap like)
   const tap = document.createElement('div');
@@ -8400,6 +8507,7 @@ function setActive(idx) {
       }
     } else {
       s.classList.remove('is-active');
+      s.classList.remove('scrubbing');
       vid.pause();
       vid.muted = true;
       vid.autoplay = false;
