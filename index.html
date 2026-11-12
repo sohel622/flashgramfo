@@ -2507,7 +2507,7 @@
   <div class="comments-sheet" onclick="event.stopPropagation()">
     <div class="comments-header">
       <span id="commentsTitle">Comments</span>
-      <button class="cm-close" onclick="document.getElementById('comments-modal').classList.remove('open')"><span class="material-symbols-rounded">close</span></button>
+      <button class="cm-close" onclick="closeFeedModal('comments-modal')"><span class="material-symbols-rounded">close</span></button>
     </div>
     <div class="comments-list" id="commentsList"></div>
     <div class="comment-input-row">
@@ -5684,13 +5684,17 @@ function buildFeed() {
 
   videos.forEach((v, i) => feedEl.appendChild(makeSlide(v, i)));
 
+  // Viewability: a slide becomes the active video only once ~80% of it
+  // is visible (the web equivalent of FlatList's viewabilityConfig).
+  // With full-height slides at most one can be 80% visible at a time,
+  // so the switch is unambiguous while scrolling.
   feedObserver = new IntersectionObserver(entries => {
     entries.forEach(e => {
-      if (e.isIntersecting && e.intersectionRatio >= 0.55) {
+      if (e.isIntersecting && e.intersectionRatio >= 0.8) {
         setActive(+e.target.dataset.idx);
       }
     });
-  }, { threshold: [0.55, 0.85] });
+  }, { threshold: [0.8] });
 
   feedEl.querySelectorAll('.video-slide').forEach(s => feedObserver.observe(s));
   activeIdx = -1;
@@ -6049,6 +6053,7 @@ function openUpload() {
     if (btnText) btnText.textContent = 'Post to Feed';
   }
   document.getElementById('upload-modal').classList.add('open');
+  pauseAllFeedVideos();
 }
 
 document.getElementById('fileInput').addEventListener('change', function() {
@@ -6918,6 +6923,7 @@ function openComments(id) {
   list.innerHTML = '';
   (v?.userComments || []).forEach(c => addCommentEl(list, c.user, c.text, c.time));
   document.getElementById('comments-modal').classList.add('open');
+  pauseAllFeedVideos();
 }
 
 function addCommentEl(list, user, text, time) {
@@ -6960,10 +6966,12 @@ function openShare(id) {
   window._shareId = id;
   document.getElementById('shareUrl').textContent = 'reelflow.app/v/' + id;
   document.getElementById('share-modal').classList.add('open');
+  pauseAllFeedVideos();
 }
 
 function shareAct(type) {
   document.getElementById('share-modal').classList.remove('open');
+  resumeActiveFeedVideo();
   const v = videos.find(x => x.id === window._shareId);
   if (v) {
     recordFeedEvent('share', v);
@@ -7490,6 +7498,7 @@ function openDirectMessageWithCreator(creatorId) {
 
   renderChatMessages(thread);
   document.getElementById('chat-modal').classList.add('open');
+  pauseAllFeedVideos();
   setTimeout(() => {
     const input = document.getElementById('chatInput');
     if (input) input.focus();
@@ -7535,11 +7544,13 @@ function openChat(threadId) {
 
   renderChatMessages(thread);
   document.getElementById('chat-modal').classList.add('open');
+  pauseAllFeedVideos();
 }
 
 function closeChat() {
   closeStickerPicker();
   document.getElementById('chat-modal').classList.remove('open');
+  resumeActiveFeedVideo();
 }
 
 // Render messages: the avatar on a bubble is the sender's avatar stored
@@ -8190,6 +8201,38 @@ async function loadUserChatThreadsFromSupabase() {
 // ═══════════════════════════════════════════════════════
 //  NAVIGATION & PAGES
 // ═══════════════════════════════════════════════════════
+// ── Feed playback lifecycle (TikTok-style) ──
+// Pause every feed video and silence it: only the video in view ever
+// has sound. Used when leaving the feed or when a full-screen overlay
+// (chat, comments, share, upload, more) covers it.
+function pauseAllFeedVideos() {
+  feedEl.querySelectorAll('video').forEach(x => { x.pause(); x.muted = true; });
+}
+// Resume the active feed video, only when the feed page is showing.
+// Restores the user's own mute choice (window._muted): a video the user
+// muted stays muted, anything else comes back with sound.
+function resumeActiveFeedVideo() {
+  const topbar = document.getElementById('topbar');
+  if (topbar && topbar.style.display === 'none') return; // not on the feed page
+  const slides = feedEl.querySelectorAll('.video-slide');
+  const slide = slides[activeIdx];
+  const vid = slide && slide.querySelector('video');
+  if (!vid) return;
+  vid.muted = !!window._muted;
+  const playPromise = vid.play();
+  if (playPromise !== undefined) {
+    playPromise.catch(() => {
+      vid.muted = true;
+      vid.play().catch(()=>{});
+    });
+  }
+}
+// Close a feed overlay modal and resume the video behind it.
+function closeFeedModal(id) {
+  document.getElementById(id).classList.remove('open');
+  resumeActiveFeedVideo();
+}
+
 function goPage(page, navEl) {
   ['discover', 'inbox', 'profile'].forEach(p => {
     document.getElementById('page-' + p).classList.toggle('active', p === page);
@@ -8201,12 +8244,10 @@ function goPage(page, navEl) {
   const topbar = document.getElementById('topbar');
   if (page === 'feed') {
     topbar.style.display = 'flex';
-    const activeSlide = feedEl.querySelectorAll('.video-slide')[activeIdx];
-    const vid = activeSlide && activeSlide.querySelector('video');
-    if (vid) vid.play().catch(()=>{});
+    resumeActiveFeedVideo();
   } else {
     topbar.style.display = 'none';
-    feedEl.querySelectorAll('video').forEach(x => x.pause());
+    pauseAllFeedVideos();
     if (page === 'profile') {
       if (currentAuthUser && supabaseClient) {
         loadUserProfileFromSupabase(currentAuthUser.id);
@@ -8247,7 +8288,10 @@ function switchFeedTab(tab) {
 }
 
 function closeOnBackdrop(e, id) {
-  if (e.target.id === id) document.getElementById(id).classList.remove('open');
+  if (e.target.id === id) {
+    document.getElementById(id).classList.remove('open');
+    if (['chat-modal', 'comments-modal', 'share-modal', 'more-modal', 'upload-modal'].indexOf(id) !== -1) resumeActiveFeedVideo();
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -8343,6 +8387,7 @@ function setActive(idx) {
       s.classList.add('is-active');
       const pi = s.querySelector('.pause-icon');
       if (pi) pi.className = 'pause-icon';
+      vid.autoplay = true;
       vid.muted = false;
       window._muted = false;
       const playPromise = vid.play();
@@ -8361,6 +8406,8 @@ function setActive(idx) {
     } else {
       s.classList.remove('is-active');
       vid.pause();
+      vid.muted = true;
+      vid.autoplay = false;
       try { vid.currentTime = 0; } catch(_){}
       const pb = s.querySelector('.progress-bar');
       if (pb) pb.style.width = '0%';
@@ -8437,6 +8484,7 @@ let moreId = null;
 function openMore(id) {
   moreId = id;
   document.getElementById('more-modal').classList.add('open');
+  pauseAllFeedVideos();
 }
 function moreAct(act) {
   document.getElementById('more-modal').classList.remove('open');
@@ -8447,6 +8495,9 @@ function moreAct(act) {
   } else if (act === 'mute') {
     toggleMute();
   }
+  // 'share' opens its own modal (which pauses again); anything else
+  // leaves the feed visible, so the video resumes.
+  if (act !== 'share') resumeActiveFeedVideo();
 }
 
 async function deleteVideo(id) {
