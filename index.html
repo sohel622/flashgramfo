@@ -3217,6 +3217,8 @@ pruneAllExpiredChatMessages();
   switchChatThreadsForCurrentUser();
   applyProfile();
   await loadPostsFromSupabase();
+  await retryPendingPostUploads();
+  await syncProfileVideosFromPosts();
   subscribeToPostsRealtime();
   applyForYouRanking();
   buildFeed();
@@ -3783,6 +3785,8 @@ async function initSupabase() {
         await loadCreatorsFromSupabase();
         loadUserChatThreadsFromSupabase();
         await loadPostsFromSupabase();
+        await retryPendingPostUploads();
+        await syncProfileVideosFromPosts();
         subscribeToPostsRealtime();
       } else {
         // Only clear the inbox if a real account was active. Anonymous /
@@ -6277,6 +6281,9 @@ async function loadMyVideosForProfile() {
     // posts above are the main source, so this stays a silent no-op.
     console.warn('loadMyVideosForProfile profiles.videos note:', err);
   }
+  // Heal the second table too: any of my post URLs missing from
+  // profiles.videos get written back (best effort).
+  await syncProfileVideosFromPosts();
   return changed;
 }
 
@@ -6472,6 +6479,136 @@ async function saveVideoUrlToProfileVideos(videoUrl) {
   }
 }
 
+// ── Upload outbox: never lose a video whose DB save failed ──
+// Cloudinary keeps the file, but the posts row is what makes it visible
+// in the feed. If the insert fails (network, RLS, missing table), the
+// post is queued locally and retried on the next app start / login,
+// until it lands. True cross-system transactions are not possible
+// between Cloudinary and Supabase from the browser, so this at-least-once
+// retry + convergence is how "reliable" is achieved here.
+const PENDING_UPLOADS_KEY = 'reelflow_pending_uploads';
+function loadPendingUploads() {
+  try {
+    const raw = localStorage.getItem(PENDING_UPLOADS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) { return []; }
+}
+function savePendingUploads(list) {
+  try { localStorage.setItem(PENDING_UPLOADS_KEY, JSON.stringify(list)); } catch (_) {}
+}
+function queuePendingPostUpload(payload) {
+  const list = loadPendingUploads();
+  if (list.some(p => p.video_url === payload.video_url)) return list.length;
+  list.push(Object.assign({}, payload, { queued_at: new Date().toISOString(), attempts: 0, last_error: '' }));
+  savePendingUploads(list);
+  console.error('[upload] post queued for retry (DB save failed):', payload.video_url);
+  return list.length;
+}
+async function retryPendingPostUploads() {
+  if (!supabaseClient || !currentAuthUser) return 0;
+  let list = loadPendingUploads();
+  if (!list.length) return 0;
+  let done = 0;
+  for (const item of list.slice()) {
+    if (!isCloudVideoUrl(item.video_url)) { list = list.filter(p => p !== item); continue; }
+    if (item.user_id && String(item.user_id) !== String(currentAuthUser.id)) continue; // another account's queue
+    item.attempts = (item.attempts || 0) + 1;
+    const result = await savePostToSupabase({
+      user_id: currentAuthUser.id,
+      video_url: item.video_url,
+      thumbnail_url: item.thumbnail_url || '',
+      caption: item.caption || 'Video',
+      hashtags: item.hashtags || '',
+      username: item.username || profile.handle || null,
+      display_name: item.display_name || profile.name || null,
+      likes_count: 0,
+      comments_count: 0,
+      shares_count: 0,
+      created_at: item.created_at || new Date().toISOString()
+    });
+    if (result.error) {
+      item.last_error = result.error;
+      console.error('[upload] pending post retry failed:', item.video_url, result.error);
+      continue;
+    }
+    // Converge the local copy: same URL, now a real DB post.
+    const local = videos.find(v => v.videoUrl === item.video_url);
+    if (local) {
+      local.isDatabasePost = true;
+      if (result.row && result.row.id) local.id = String(result.row.id);
+    } else if (result.row) {
+      videos.unshift(mapPostToVideo(result.row, String(currentAuthUser.id).toLowerCase()));
+    }
+    await saveVideoUrlToProfileVideos(item.video_url); // best effort
+    list = list.filter(p => p !== item);
+    done += 1;
+  }
+  savePendingUploads(list);
+  if (done > 0) {
+    rebuildFeedPreservingPosition();
+    renderProfileGrid();
+    showToast(done + (done === 1 ? ' video' : ' videos') + ' published from the retry queue 🎉');
+  }
+  return done;
+}
+
+// Convergence for profiles.videos: every URL in my posts rows must also
+// be in my profiles.videos list. Runs at boot and on profile open, so a
+// profiles update that failed during an upload is healed later instead
+// of diverging forever.
+let profileVideosSyncRunning = false;
+async function syncProfileVideosFromPosts() {
+  if (!supabaseClient || !currentAuthUser || profileVideosSyncRunning) return 0;
+  profileVideosSyncRunning = true;
+  try {
+    const myId = String(currentAuthUser.id);
+    const postsRes = await supabaseClient.from('posts').select('video_url').eq('user_id', myId).order('created_at', { ascending: false }).limit(200);
+    if (postsRes.error || !Array.isArray(postsRes.data)) {
+      if (postsRes.error) console.error('[upload] profile-videos sync: posts read failed:', postsRes.error.message || postsRes.error);
+      return 0;
+    }
+    const postUrls = postsRes.data.map(p => p.video_url).filter(u => isCloudVideoUrl(u));
+    if (!postUrls.length) return 0;
+    let key = 'user_id';
+    let profRes = await supabaseClient.from('profiles').select('videos').eq(key, myId).maybeSingle();
+    if (profRes.error && (profRes.error.code === '42703' || String(profRes.error.message || '').indexOf('user_id') !== -1)) {
+      key = 'id';
+      profRes = await supabaseClient.from('profiles').select('videos').eq(key, myId).maybeSingle();
+    }
+    if (profRes.error) {
+      console.error('[upload] profile-videos sync: profiles read failed:', profRes.error.message || profRes.error);
+      return 0;
+    }
+    const current = mergeProfileVideos(profRes.data && profRes.data.videos, null);
+    const missing = postUrls.filter(u => current.indexOf(u) === -1);
+    if (!missing.length) return 0;
+    const next = current.concat(missing);
+    let write;
+    if (profRes.data) {
+      write = await supabaseClient.from('profiles').update({ videos: next, updated_at: new Date().toISOString() }).eq(key, myId);
+      if (write.error && write.error.code === '42703' && String(write.error.message || '').indexOf('updated_at') !== -1) {
+        write = await supabaseClient.from('profiles').update({ videos: next }).eq(key, myId);
+      }
+    } else {
+      const payload = { videos: next, updated_at: new Date().toISOString() };
+      payload[key] = myId;
+      write = await supabaseClient.from('profiles').upsert(payload);
+    }
+    if (write.error) {
+      console.error('[upload] profile-videos sync: update failed:', write.error.message || write.error);
+      return 0;
+    }
+    console.log('[upload] profile-videos sync healed', missing.length, 'URLs');
+    return missing.length;
+  } catch (err) {
+    console.error('[upload] profile-videos sync error:', err);
+    return 0;
+  } finally {
+    profileVideosSyncRunning = false;
+  }
+}
+
 async function submitUpload() {
   const file = document.getElementById('fileInput').files[0];
   if (!file) {
@@ -6487,6 +6624,7 @@ async function submitUpload() {
   // inappropriate content is blocked here, before anything is sent.
   if (isInappropriateUpload(file.name, caption)) {
     const errMsg = 'Video rejected: Inappropriate content detected.';
+    console.error('[upload] Video rejected by keyword gate:', file.name, caption);
     updateUploadProgress(100, 'Upload Blocked', errMsg, 'error');
     showToast(errMsg, 6000);
     return;
@@ -6513,6 +6651,9 @@ async function submitUpload() {
     const resData = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', CLOUDINARY_UPLOAD_URL, true);
+      // A stalled upload must fail loudly instead of spinning forever:
+      // the ontimeout handler below only fires when this is set.
+      xhr.timeout = 600000; // 10 minutes
 
       xhr.upload.addEventListener('progress', (e) => {
         if (e.lengthComputable && e.total > 0) {
@@ -6540,23 +6681,29 @@ async function submitUpload() {
 
       xhr.onreadystatechange = () => {
         if (xhr.readyState === XMLHttpRequest.DONE) {
-          try {
-            const data = JSON.parse(xhr.responseText || '{}');
-            if (xhr.status >= 200 && xhr.status < 300) {
-              resolve(data);
-            } else {
-              // Cloudinary answers errors as {error: {message}}.
-              const cloudErr = cloudinaryUploadErrorMessage(data);
-              reject(new Error(cloudErr || (data.reason ? `Flagged: ${data.reason}` : `Upload failed with status ${xhr.status}`)));
-            }
-          } catch (_) {
-            reject(new Error(xhr.status === 413 ? 'Video file exceeds maximum size' : 'Server error processing video'));
+          let data = {};
+          try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { data = {}; }
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(data);
+          } else {
+            // Cloudinary answers errors as {error: {message}}.
+            const cloudErr = cloudinaryUploadErrorMessage(data);
+            let detail = cloudErr || (data.reason ? `Flagged: ${data.reason}` : '');
+            if (!detail) detail = xhr.status === 413 ? 'Video file exceeds maximum size' : `Upload failed with status ${xhr.status}`;
+            console.error('[upload] Cloudinary upload failed:', xhr.status, detail);
+            reject(new Error(detail));
           }
         }
       };
 
-      xhr.onerror = () => reject(new Error('Network connection error during upload'));
-      xhr.ontimeout = () => reject(new Error('Upload request timed out'));
+      xhr.onerror = () => {
+        console.error('[upload] Network connection error during upload');
+        reject(new Error('Network connection error during upload'));
+      };
+      xhr.ontimeout = () => {
+        console.error('[upload] Upload request timed out after', xhr.timeout, 'ms');
+        reject(new Error('Upload request timed out'));
+      };
 
       xhr.send(formData);
     });
@@ -6564,6 +6711,7 @@ async function submitUpload() {
     // Check if video was rejected by AI content moderation (18+ or inappropriate)
     if (resData.approved === false || resData.rejected) {
       const errMsg = resData.error || resData.reason || 'Video rejected: Inappropriate content detected.';
+      console.error('[upload] Video rejected by moderation:', errMsg);
       updateUploadProgress(100, 'Upload Blocked', errMsg, 'error');
       showToast(errMsg, 6000);
       return;
@@ -6573,6 +6721,7 @@ async function submitUpload() {
     const moderationItems = Array.isArray(resData.moderation) ? resData.moderation : [];
     if (moderationItems.some(m => m && m.status === 'rejected')) {
       const errMsg = 'Video rejected: Inappropriate content detected.';
+      console.error('[upload] Video rejected by Cloudinary moderation:', JSON.stringify(moderationItems));
       updateUploadProgress(100, 'Upload Blocked', errMsg, 'error');
       showToast(errMsg, 6000);
       return;
@@ -6610,9 +6759,9 @@ async function submitUpload() {
     // silently lost from the feed on the next refresh.
     // A local-only upload never reaches this insert at all.
     if (postLocalOnly) {
-      console.warn('Post not saved to Supabase: video is not on Cloudinary (local path only).');
+      console.warn('[upload] Post not saved to Supabase: video is not on Cloudinary (local path only).');
     } else if (supabaseClient && currentAuthUser) {
-      const result = await savePostToSupabase({
+      const postPayload = {
         user_id: currentAuthUser.id,
         video_url: videoUrl,
         thumbnail_url: dbThumbnailUrl,
@@ -6624,11 +6773,14 @@ async function submitUpload() {
         comments_count: 0,
         shares_count: 0,
         created_at: new Date().toISOString()
-      });
+      };
+      const result = await savePostToSupabase(postPayload);
       if (result.error) {
         postSaveFailed = true;
         postSaveMessage = result.error;
-        console.warn('Supabase post insert note:', result.error);
+        console.error('[upload] Supabase post insert failed:', result.error);
+        // Never lose the upload: queue it and retry on the next start.
+        queuePendingPostUpload(postPayload);
       } else if (result.row && result.row.id) {
         postId = String(result.row.id);
         postSaved = true;
@@ -6645,7 +6797,7 @@ async function submitUpload() {
       const pv = await saveVideoUrlToProfileVideos(videoUrl);
       if (pv.error) {
         profileVideosFailed = true;
-        console.warn('profiles.videos update note:', pv.error);
+        console.error('[upload] profiles.videos update failed:', pv.error);
       }
     }
 
@@ -6686,13 +6838,14 @@ async function submitUpload() {
       );
       showToast('Video saved on this device only — Cloudinary is not configured, so it was not published to the feed.', 6000);
     } else if (postSaveFailed) {
+      const detail = postSaveMessage ? ' Error: ' + postSaveMessage : '';
       updateUploadProgress(
         100,
         'Upload finished, feed save failed',
-        'Video is on this device only — the feed database rejected the save. Run supabase-setup.sql, then try again.',
+        'Video is on this device only — the feed database rejected the save.' + detail + ' It is queued and will be published automatically.',
         'error'
       );
-      showToast('Video uploaded, but saving to the feed failed. Run supabase-setup.sql and try again.', 6000);
+      showToast('Video uploaded, but saving to the feed failed.' + detail + ' Queued — it will be published automatically.', 6000);
     } else if (!currentAuthUser) {
       updateUploadProgress(
         100,
@@ -6735,6 +6888,7 @@ async function submitUpload() {
     renderProfileGrid();
     applyProfile();
     goPage('feed', document.getElementById('nav-home'));
+    retryPendingPostUploads();
     setTimeout(() => feedEl.scrollTo({ top: 0, behavior: 'smooth' }), 100);
     if (postSaved) showToast('Video approved by AI & published to feed! 🎉');
 
