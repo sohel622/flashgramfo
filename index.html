@@ -250,6 +250,11 @@
       position: relative;
       background: #000;
       overflow: hidden;
+      /* Skip layout/paint for off-screen slides (the web equivalent of
+         removeClippedSubviews). The intrinsic size keeps the scrollbar
+         stable while a slide is skipped. */
+      content-visibility: auto;
+      contain-intrinsic-size: 100dvh;
     }
     .slide-video {
       position: absolute;
@@ -3193,11 +3198,8 @@ pruneAllExpiredChatMessages();
     const rows = await dbGetAll('videos');
     rows.sort((a,b) => b.ts - a.ts);
 
-    // Create session blob URLs for user-uploaded videos
-    rows.forEach(v => {
-      if (v.blob) blobUrls[v.id] = URL.createObjectURL(v.blob);
-      if (v.thumbnailBlob) thumbUrls[v.id] = URL.createObjectURL(v.thumbnailBlob);
-    });
+    // Blob URLs are created lazily (see getBlobUrl/getThumbUrl): making
+    // one for every upload at boot kept every video file in memory.
 
     if (rows.length === 0) {
       videos = defaultSeedVideos.slice();
@@ -5720,8 +5722,25 @@ function isImageUrl(url) {
   if (url.indexOf('res.cloudinary.com') !== -1 && url.indexOf('/image/upload/') !== -1) return true;
   return /\.(jpg|jpeg|png|webp|gif|avif)(\?|#|$)/i.test(url);
 }
+// Blob URLs are created lazily, not at boot: creating one for every
+// upload kept every video file in memory on low-end phones. Only the
+// slide that actually needs the blob (no cloud URL) gets one, cached here.
+function getBlobUrl(v) {
+  if (!v || !v.blob) return '';
+  if (blobUrls[v.id]) return blobUrls[v.id];
+  try { blobUrls[v.id] = URL.createObjectURL(v.blob); } catch (_) { return ''; }
+  return blobUrls[v.id];
+}
+function getThumbUrl(v) {
+  if (!v) return '';
+  const cached = (typeof thumbUrls !== 'undefined' && thumbUrls[v.id]) || '';
+  if (cached) return cached;
+  if (!v.thumbnailBlob) return '';
+  try { thumbUrls[v.id] = URL.createObjectURL(v.thumbnailBlob); } catch (_) { return ''; }
+  return thumbUrls[v.id];
+}
 function videoPosterFor(v) {
-  const t = (v && (v.thumbnail_url || (typeof thumbUrls !== 'undefined' && thumbUrls[v.id]))) || '';
+  const t = (v && (v.thumbnail_url || getThumbUrl(v))) || '';
   return isImageUrl(t) ? t : '';
 }
 // Cloudinary serves the uploaded file in its ORIGINAL format unless asked
@@ -5732,9 +5751,13 @@ function videoPosterFor(v) {
 function playableVideoUrl(url) {
   if (!url || typeof url !== 'string') return url;
   if (url.indexOf('res.cloudinary.com') !== -1 && url.indexOf('/video/upload/') !== -1) {
-    if (url.indexOf('f_mp4') !== -1 || url.indexOf('f_auto') !== -1) return url;
-    if (/\.mp4(\?|#|$)/i.test(url)) return url;
-    return url.replace('/video/upload/', '/video/upload/f_mp4/');
+    // Already transformed (e.g. f_mp4 from the server or an earlier
+    // version): leave it alone.
+    if (url.indexOf('f_mp4') !== -1 || url.indexOf('f_auto') !== -1 || url.indexOf('w_360') !== -1) return url;
+    // Mobile rendition for low-end phones: 360p + auto quality + mp4
+    // delivery, so a budget device decodes a small stream instead of
+    // the full-size upload.
+    return url.replace('/video/upload/', '/video/upload/w_360,q_auto,f_mp4/');
   }
   return url;
 }
@@ -5764,7 +5787,7 @@ function bestVideoSrc(v) {
   if (!v) return '';
   const cloud = playableVideoUrl(v.videoUrl);
   if (isCloudVideoUrl(cloud)) return cloud;
-  const blob = (typeof blobUrls !== 'undefined' && blobUrls[v.id]) || '';
+  const blob = getBlobUrl(v);
   if (blob) return blob;
   return cloud || '';
 }
@@ -5773,9 +5796,10 @@ function bestVideoSrc(v) {
 // muted looping <video> preview. A video that fails to load hides
 // itself (thumb-error) instead of leaving a black cell.
 function makeGridThumb(v) {
-  if (thumbUrls[v.id] && isImageUrl(thumbUrls[v.id])) {
+  const thumb = getThumbUrl(v);
+  if (thumb && isImageUrl(thumb)) {
     const img = document.createElement('img');
-    img.src = thumbUrls[v.id];
+    img.src = thumb;
     return img;
   }
   const src = bestVideoSrc(v);
