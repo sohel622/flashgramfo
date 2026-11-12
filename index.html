@@ -6506,6 +6506,20 @@ async function savePostToSupabase(payload) {
 const CLOUDINARY_UPLOAD_URL = 'https://api.cloudinary.com/v1_1/pwqyc668/video/upload';
 const CLOUDINARY_UPLOAD_PRESET = 'sohel98';
 
+// Video moderation (video_moderation.py): when this URL is set, uploads
+// go to the moderation endpoint FIRST -- it checks the video frames,
+// then forwards the SAME file to Cloudinary with the unsigned preset
+// above and returns its secure_url. Empty = the old direct upload.
+// Set it after deploying video_moderation.py, either by editing this
+// line or from the browser console:
+//   localStorage.setItem('reelflow_moderation_url',
+//     'https://your-server.example.com/moderate-upload');
+const MODERATION_UPLOAD_URL = (() => {
+  try {
+    return (localStorage.getItem('reelflow_moderation_url') || '').trim();
+  } catch (_) { return ''; }
+})();
+
 // Same 18+ keyword gate the server used to enforce: an unsigned upload
 // goes straight to Cloudinary, so the filename + caption are checked
 // here before anything leaves the device.
@@ -6535,6 +6549,101 @@ function mapCloudinaryUploadResponse(resData) {
   }
   if (!thumbnailUrl && videoUrl) thumbnailUrl = videoUrl.replace(/\.[^.]+$/, '.jpg');
   return { videoUrl: videoUrl, thumbnailUrl: thumbnailUrl };
+}
+
+// Read the human error out of the moderation endpoint's response:
+// {error: "Video violates community guidelines..."} (a plain string,
+// not Cloudinary's {error: {message}} shape).
+function moderationUploadErrorMessage(data, status) {
+  if (data && typeof data.error === 'string' && data.error) return data.error;
+  if (status === 403) return 'Video violates community guidelines due to sensitive content';
+  if (status === 503) return 'Moderation service is unavailable — please try again later';
+  if (status === 413) return 'Video file exceeds maximum size';
+  if (status === 422) return 'Could not read this video file';
+  return 'Upload failed with status ' + status;
+}
+// Shared file-upload progress (8% -> 75% while the bytes transfer).
+// Used by both the direct Cloudinary upload and the moderation upload.
+function updateUploadBarFromEvent(e) {
+  if (e.lengthComputable && e.total > 0) {
+    // Progress 8% -> 75% during file upload transfer
+    const ratio = e.loaded / e.total;
+    const currentPct = Math.min(75, Math.max(8, Math.round(ratio * 75)));
+    const mbUploaded = (e.loaded / (1024 * 1024)).toFixed(1);
+    const mbTotal = (e.total / (1024 * 1024)).toFixed(1);
+    updateUploadProgress(
+      currentPct,
+      `Uploading video (${currentPct}%)…`,
+      `${mbUploaded} MB of ${mbTotal} MB transferred`
+    );
+  }
+}
+// Upload through the moderation endpoint: the file goes to the Python
+// service, which checks the frames and forwards the SAME file to
+// Cloudinary. Resolves to a Cloudinary-shaped {secure_url,
+// thumbnail_url} so the rest of submitUpload runs unchanged.
+// Rejects with the server's exact error on 403/422/413/502/503 --
+// fail closed: a video the moderator could not check is never
+// published unchecked.
+function uploadViaModeration(file, caption) {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('caption', caption);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', MODERATION_UPLOAD_URL, true);
+    // Same 10-minute budget as the direct upload: the check itself is
+    // fast, but the Cloudinary forward after it can be slow.
+    xhr.timeout = 600000;
+
+    xhr.upload.addEventListener('progress', updateUploadBarFromEvent);
+
+    xhr.upload.addEventListener('load', () => {
+      // Bytes are on the moderation server now; it is checking the
+      // video and forwarding it to Cloudinary.
+      updateUploadProgress(
+        85,
+        'Checking video (85%)…',
+        'Moderation is reviewing your video…'
+      );
+    });
+
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === XMLHttpRequest.DONE) {
+        let data = {};
+        try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { data = {}; }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          if (data.ok === false) {
+            const detail = moderationUploadErrorMessage(data, xhr.status);
+            console.error('[upload] Moderation refused the video:', detail);
+            reject(new Error(detail));
+            return;
+          }
+          if (data.video_url) {
+            resolve({ secure_url: data.video_url, thumbnail_url: data.thumbnail_url || '' });
+          } else {
+            console.error('[upload] Moderation server returned no video URL:', JSON.stringify(data));
+            reject(new Error('Moderation server returned no video URL'));
+          }
+        } else {
+          const detail = moderationUploadErrorMessage(data, xhr.status);
+          console.error('[upload] Moderation upload failed:', xhr.status, detail);
+          reject(new Error(detail));
+        }
+      }
+    };
+
+    xhr.onerror = () => {
+      console.error('[upload] Network connection error during moderation upload');
+      reject(new Error('Network connection error during upload'));
+    };
+    xhr.ontimeout = () => {
+      console.error('[upload] Moderation upload request timed out after', xhr.timeout, 'ms');
+      reject(new Error('Upload request timed out'));
+    };
+
+    xhr.send(formData);
+  });
 }
 
 // Merge a video URL into an existing videos list (TEXT[]), deduped.
@@ -6756,34 +6865,26 @@ async function submitUpload() {
   updateUploadProgress(5, 'Starting upload (5%)…', 'Preparing video stream…');
 
   try {
-    // 1. Upload straight to Cloudinary with the unsigned preset:
-    // FormData carries the file + upload_preset, nothing else — no API
-    // key, no signature, no server round-trip for the video bytes.
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-
-    const resData = await new Promise((resolve, reject) => {
+    // 1. Get the video onto Cloudinary. When the moderation endpoint is
+    // configured (MODERATION_UPLOAD_URL), the file goes there first --
+    // it checks the frames, then forwards the SAME file to Cloudinary
+    // with the unsigned preset. Otherwise the old direct upload runs.
+    // Either way the result is a Cloudinary-shaped {secure_url,
+    // thumbnail_url}, so everything below runs unchanged. A video the
+    // moderator refuses (403) or cannot check (503) is never published.
+    const resData = MODERATION_UPLOAD_URL
+      ? await uploadViaModeration(file, caption)
+      : await new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
       const xhr = new XMLHttpRequest();
       xhr.open('POST', CLOUDINARY_UPLOAD_URL, true);
       // A stalled upload must fail loudly instead of spinning forever:
       // the ontimeout handler below only fires when this is set.
       xhr.timeout = 600000; // 10 minutes
 
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable && e.total > 0) {
-          // Progress 8% -> 75% during file upload transfer
-          const ratio = e.loaded / e.total;
-          const currentPct = Math.min(75, Math.max(8, Math.round(ratio * 75)));
-          const mbUploaded = (e.loaded / (1024 * 1024)).toFixed(1);
-          const mbTotal = (e.total / (1024 * 1024)).toFixed(1);
-          updateUploadProgress(
-            currentPct,
-            `Uploading video (${currentPct}%)…`,
-            `${mbUploaded} MB of ${mbTotal} MB transferred`
-          );
-        }
-      });
+      xhr.upload.addEventListener('progress', updateUploadBarFromEvent);
 
       xhr.upload.addEventListener('load', () => {
         // Bytes are on Cloudinary now; it is preparing the video.
