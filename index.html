@@ -6556,6 +6556,9 @@ function mapCloudinaryUploadResponse(resData) {
 // not Cloudinary's {error: {message}} shape).
 function moderationUploadErrorMessage(data, status) {
   if (data && typeof data.error === 'string' && data.error) return data.error;
+  // The endpoint rejects a flagged video with HTTP 400; 403 is kept
+  // for older servers that still used it.
+  if (status === 400) return 'Video rejected: Contains 18+ or inappropriate content violating community guidelines.';
   if (status === 403) return 'Video violates community guidelines due to sensitive content';
   if (status === 503) return 'Moderation service is unavailable — please try again later';
   if (status === 413) return 'Video file exceeds maximum size';
@@ -6582,7 +6585,7 @@ function updateUploadBarFromEvent(e) {
 // service, which checks the frames and forwards the SAME file to
 // Cloudinary. Resolves to a Cloudinary-shaped {secure_url,
 // thumbnail_url} so the rest of submitUpload runs unchanged.
-// Rejects with the server's exact error on 403/422/413/502/503 --
+// Rejects with the server's exact error on 400/422/413/502/503 --
 // fail closed: a video the moderator could not check is never
 // published unchecked.
 function uploadViaModeration(file, caption) {

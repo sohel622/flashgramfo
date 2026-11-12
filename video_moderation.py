@@ -9,14 +9,17 @@ instead of straight to Cloudinary. The endpoint
 
 1. runs a fast keyword pre-check on the filename + caption
    (same list the app already uses in the browser),
-2. extracts a few evenly-spaced frames with OpenCV,
+2. extracts frames with OpenCV, one every second by default
+   (never more than 30 frames per video -- see below),
 3. scores each frame with a small, open-source ONNX NSFW detector
    (NudeNet 320n, ~12 MB -- no TensorFlow, no GPU, CPU-friendly),
+   and stops at the FIRST frame scoring strictly above 70%,
 4. if every frame is clean, forwards the SAME file to Cloudinary
    with the existing unsigned preset (no API secret needed) and
    returns the secure_url + thumbnail URL,
-5. if any frame is flagged, rejects the upload with the exact
-   message the frontend can show the user.
+5. if even one frame is flagged, rejects the upload at once
+   (HTTP 400), deletes the temporary file, and nothing is
+   forwarded to Cloudinary or saved to Supabase.
 
 So the file that passes the check is the exact file that gets
 published -- the frontend never uploads a second, unchecked copy.
@@ -26,7 +29,7 @@ Flow
   browser  --multipart-->  POST /moderate-upload  --pass-->  Cloudinary
      |                          |  (unsigned preset)          |
      |                          v                             v
-     +-- 403 "Video violates community guidelines ..."   secure_url
+     +-- 400 "Video rejected: Contains 18+ ..."      secure_url
      +-- 200 {video_url, thumbnail_url} --> insert post row
             into Supabase (frontend, unchanged)
 
@@ -53,9 +56,11 @@ Endpoints
       200 safe   -> {"ok": true,  "verdict": "safe",
                      "video_url": ..., "thumbnail_url": ...,
                      "frames_checked": N, "max_score": 0.0, "ms": 123}
-      403 unsafe -> {"ok": false, "verdict": "unsafe",
-                     "error": "Video violates community guidelines due
-                               to sensitive content", "reason": "model"}
+      400 unsafe -> {"ok": false, "verdict": "unsafe",
+                     "error": "Video rejected: Contains 18+ or
+                               inappropriate content violating
+                               community guidelines.",
+                     "reason": "model"}
       413 too large, 422 unreadable video, 503 detector unavailable
   GET  /health            {"ok": true, "detector": "nudenet", ...}
   GET  /                  short usage text
@@ -67,9 +72,14 @@ Environment
   CLOUDINARY_UPLOAD_URL    override the upload URL (tests use a local
                            fake server through this)
   MODERATION_MAX_MB        default 100
-  MODERATION_MAX_FRAMES    default 6  (frames sampled per video)
-  MODERATION_MIN_SCORE     default 0.5 (sensitive-label score that
-                           flags a frame)
+  MODERATION_FRAME_INTERVAL_S
+                           default 1.0 (seconds between sampled
+                           frames; 1-2 s recommended)
+  MODERATION_MAX_FRAMES    default 30 (cap on frames per video;
+                           long videos are thinned evenly so the
+                           whole video stays covered)
+  MODERATION_MIN_SCORE     default 0.70 (a frame is flagged only when
+                           its score is STRICTLY above this)
   MODERATION_DETECTOR      "auto" (default) | "nudenet" | "nsfw-detector"
   MODERATION_CORS_ORIGINS  comma list, default the deployed app origin
   MODERATION_MODEL_PATH    optional path to a different 320n .onnx file
@@ -83,14 +93,19 @@ the obvious cases before any decoding happens.
 
 Performance notes
 -----------------
-* Only ~6 frames per video, sampled across the whole duration, so
-  a 10-minute upload costs about the same as a 10-second one.
+* Frames are sampled every 1 s (MODERATION_FRAME_INTERVAL_S), never
+  more than 30 per video: a 10-minute upload costs the same as a
+  60-second one, and long videos are thinned evenly (first and last
+  samples kept) so the tail is never skipped entirely.
+* Scoring stops at the FIRST flagged frame -- a bad video fails in
+  about a second instead of paying for the rest of the frames.
 * Frames are scored at 320x320 inside the detector; a frame takes
   ~0.02-0.10 s on plain CPU (measured in this sandbox).
-* Inference runs in a worker thread pool, so the HTTP server keeps
-  answering /health while a video is being checked.
-* The model is loaded once and kept in memory; temp files are
-  deleted even when the request fails.
+* Inference runs in a worker thread pool (run_in_executor), so the
+  HTTP server keeps answering /health while a video is being checked.
+* The model is loaded once and kept in memory; the temporary upload
+  file is deleted in a finally block -- on pass, on rejection, and
+  on any error -- so a refused video leaves nothing on disk.
 """
 
 from __future__ import annotations
@@ -130,7 +145,7 @@ SENSITIVE_LABELS = {
     "FEMALE_BREAST_EXPOSED",
     "BUTTOCKS_EXPOSED",
 }
-REJECT_MESSAGE = "Video violates community guidelines due to sensitive content"
+REJECT_MESSAGE = "Video rejected: Contains 18+ or inappropriate content violating community guidelines."
 
 
 def _env_int(name: str, default: int) -> int:
@@ -158,8 +173,11 @@ class Config:
             f"https://api.cloudinary.com/v1_1/{self.cloud_name}/video/upload",
         )
         self.max_mb = _env_int("MODERATION_MAX_MB", 100)
-        self.max_frames = _env_int("MODERATION_MAX_FRAMES", 6)
-        self.min_score = _env_float("MODERATION_MIN_SCORE", 0.5)
+        self.frame_interval_s = min(
+            10.0, max(0.25, _env_float("MODERATION_FRAME_INTERVAL_S", 1.0))
+        )
+        self.max_frames = max(1, _env_int("MODERATION_MAX_FRAMES", 30))
+        self.min_score = _env_float("MODERATION_MIN_SCORE", 0.70)
         self.detector_name = os.environ.get("MODERATION_DETECTOR", "auto").lower()
         self.model_path = os.environ.get("MODERATION_MODEL_PATH") or None
         origins = os.environ.get(
@@ -225,11 +243,14 @@ def keyword_hit(filename: str, caption: str) -> str | None:
 # Frame extraction (OpenCV)
 # --------------------------------------------------------------------------
 
-def extract_frames(path: str, max_frames: int = 6):
-    """Sample up to `max_frames` frames, evenly spread across the video.
+def extract_frames(path: str, max_frames: int = 30, interval_s: float = 1.0):
+    """Sample frames at a fixed interval (one every `interval_s`
+    seconds), up to `max_frames` per video.
 
-    Returns (frames, duration_s, total_frames) where frames is a list of
-    (time_s, bgr_frame). Raises UnreadableVideo if nothing can be read.
+    Long videos are thinned evenly (first and last samples kept) so
+    the whole video stays covered without scoring hundreds of frames.
+    Returns (frames, duration_s, total_frames) where frames is a list
+    of (time_s, bgr_frame). Raises UnreadableVideo if nothing can be read.
     """
     cap = cv2.VideoCapture(path)
     try:
@@ -238,21 +259,46 @@ def extract_frames(path: str, max_frames: int = 6):
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         fps = cap.get(cv2.CAP_PROP_FPS) or 0
         duration = total / fps if fps and total else 0.0
-        count = min(max(1, max_frames), total) if total else max_frames
-        frames = []
-        for i in range(count):
-            # Middle of each slice, so the first/middle/last of the video
-            # are all covered and a short bad clip cannot hide between
-            # two sampled instants.
-            if duration > 0:
-                when = duration * (i + 0.5) / count
-                cap.set(cv2.CAP_PROP_POS_MSEC, when * 1000.0)
+        if duration <= 0:
+            # No duration metadata (e.g. a raw stream): read frames in
+            # order until the cap is hit.
+            frames = []
+            while len(frames) < max(1, max_frames):
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    break
+                frames.append((round(len(frames) * interval_s, 2), frame))
+            if not frames:
+                raise UnreadableVideo()
+            return frames, 0.0, total
+        # One sample in the middle of each interval slice, so the
+        # samples stay evenly spread and a short bad clip cannot hide
+        # exactly between two sampled instants.
+        times = []
+        t = interval_s / 2.0
+        while t < duration:
+            times.append(round(t, 2))
+            t += interval_s
+        if not times:
+            times = [round(duration / 2.0, 2)]
+        if len(times) > max_frames:
+            if max_frames <= 1:
+                times = times[:1]
             else:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+                # Thin evenly, keeping the first and last instant. The
+                # step is > 1 here (len(times) > max_frames), so the
+                # rounded indices are strictly increasing -- no dupes.
+                idx = [
+                    round(i * (len(times) - 1) / (max_frames - 1))
+                    for i in range(max_frames)
+                ]
+                times = [times[j] for j in idx]
+        frames = []
+        for when in times:
+            cap.set(cv2.CAP_PROP_POS_MSEC, when * 1000.0)
             ok, frame = cap.read()
             if ok and frame is not None:
-                when = duration * (i + 0.5) / count if duration > 0 else float(i)
-                frames.append((round(when, 2), frame))
+                frames.append((when, frame))
         if not frames:
             raise UnreadableVideo()
         return frames, round(duration, 2), total
@@ -370,12 +416,17 @@ def moderate_file(
     detector=None,
     max_frames: int | None = None,
     min_score: float | None = None,
+    interval_s: float | None = None,
 ) -> dict:
     """Check one video file. Returns a verdict dict; never raises for a
-    content decision (only DetectorUnavailable / UnreadableVideo)."""
+    content decision (only DetectorUnavailable / UnreadableVideo).
+
+    Scoring stops at the FIRST frame above the threshold -- a flagged
+    video fails fast instead of paying for the remaining frames."""
     started = time.monotonic()
     max_frames = CONFIG.max_frames if max_frames is None else max_frames
     min_score = CONFIG.min_score if min_score is None else min_score
+    interval_s = CONFIG.frame_interval_s if interval_s is None else interval_s
 
     hit = keyword_hit(filename, caption)
     if hit:
@@ -386,11 +437,13 @@ def moderate_file(
             "frames_checked": 0,
             "duration_s": 0.0,
             "max_score": 1.0,
+            "flagged_at": None,
+            "flagged_detections": [],
             "detector": None,
             "ms": int((time.monotonic() - started) * 1000),
         }
 
-    frames, duration, _total = extract_frames(path, max_frames)
+    frames, duration, _total = extract_frames(path, max_frames, interval_s)
     if detector is None:
         detector = load_detector(CONFIG.detector_name)
 
@@ -399,17 +452,32 @@ def moderate_file(
     for when, frame in frames:
         top, sensitive = detector.score_frame(frame)
         max_score = max(max_score, top)
-        per_frame.append(
-            {"t": when, "max_score": round(top, 3), "detections": sensitive}
-        )
+        entry = {"t": when, "max_score": round(top, 3), "detections": sensitive}
+        per_frame.append(entry)
+        # Strict gate: only a score STRICTLY above the threshold flags
+        # the video, and the first flagged frame ends the check at once.
+        if top > min_score:
+            return {
+                "verdict": "unsafe",
+                "reason": "model",
+                "frames_checked": len(per_frame),
+                "duration_s": duration,
+                "max_score": round(top, 3),
+                "flagged_at": when,
+                "flagged_detections": sensitive,
+                "per_frame": per_frame,
+                "detector": getattr(detector, "name", "unknown"),
+                "ms": int((time.monotonic() - started) * 1000),
+            }
 
-    unsafe = max_score >= min_score
     return {
-        "verdict": "unsafe" if unsafe else "safe",
-        "reason": "model" if unsafe else None,
+        "verdict": "safe",
+        "reason": None,
         "frames_checked": len(frames),
         "duration_s": duration,
         "max_score": round(max_score, 3),
+        "flagged_at": None,
+        "flagged_detections": [],
         "per_frame": per_frame,
         "detector": getattr(detector, "name", "unknown"),
         "ms": int((time.monotonic() - started) * 1000),
@@ -499,6 +567,8 @@ def create_app():
             "detector_configured": cfg.detector_name,
             "max_mb": cfg.max_mb,
             "max_frames": cfg.max_frames,
+            "frame_interval_s": cfg.frame_interval_s,
+            "min_score": cfg.min_score,
         }
 
     @app.post("/moderate-upload")
@@ -535,7 +605,7 @@ def create_app():
 
             if result["verdict"] == "unsafe":
                 return JSONResponse(
-                    status_code=403,
+                    status_code=400,
                     content={
                         "ok": False,
                         "verdict": "unsafe",
@@ -664,7 +734,28 @@ def self_test() -> int:
     check(r["verdict"] == "unsafe" and r["reason"] == "model",
           "flagged frame rejects the upload")
     check(r["max_score"] == 0.95, "max score is reported")
-    check(r["frames_checked"] >= 1, "frames were actually sampled")
+    check(r["frames_checked"] == 1, "scoring stops at the first flagged frame")
+    check(r["flagged_at"] == 0.5, "flagged frame timestamp reported (t=0.5 s)")
+
+    print("[self-test] 2b. strict >70% boundary")
+    class _BoundaryDetector:
+        name = "boundary"
+
+        def __init__(self, score):
+            self._score = score
+
+        def score_frame(self, frame):
+            return self._score, [
+                {"label": "FEMALE_BREAST_EXPOSED", "score": self._score}
+            ]
+
+    r = moderate_file(clip, filename="ok.mp4", caption="",
+                      detector=_BoundaryDetector(0.70))
+    check(r["verdict"] == "safe", "exactly 70% does NOT flag (strictly above only)")
+    r = moderate_file(clip, filename="ok.mp4", caption="",
+                      detector=_BoundaryDetector(0.71))
+    check(r["verdict"] == "unsafe" and r["frames_checked"] == 1,
+          "71% flags at once")
 
     print("[self-test] 3. unreadable file -> UnreadableVideo (fail closed)")
     junk = "/tmp/moderation_selftest.txt"
@@ -681,12 +772,23 @@ def self_test() -> int:
         r = moderate_file(clip, filename="beach.mp4", caption="beach day")
         dt = time.monotonic() - t0
         check(r["verdict"] == "safe", f"safe clip passes ({r})")
-        check(r["frames_checked"] == CONFIG.max_frames,
-              f"sampled {r['frames_checked']} frames")
+        check(r["frames_checked"] == 4,
+              f"4 s clip samples every 1 s: {r['frames_checked']} frames")
         check(r["detector"] == "nudenet", "detector is nudenet")
         print(f"      real check took {dt:.2f}s for {r['frames_checked']} frames")
     except DetectorUnavailable as exc:
         check(False, f"real detector must load in this environment: {exc}")
+
+    print("[self-test] 4b. interval sampling + thinning")
+    long_clip = _make_test_clip("/tmp/moderation_selftest_long.mp4", seconds=12)
+    frames12, dur12, _ = extract_frames(long_clip, 30, 1.0)
+    check(len(frames12) == 12,
+          f"12 s clip samples 12 frames at 1 s ({len(frames12)})")
+    check(abs(frames12[0][0] - 0.5) < 0.01 and abs(frames12[-1][0] - 11.5) < 0.01,
+          "samples are the middles of 1 s slices")
+    thin, _, _ = extract_frames(clip, 3, 1.0)
+    check([t for t, _ in thin] == [0.5, 2.5, 3.5],
+          f"long video thins evenly, first+last kept ({[t for t, _ in thin]})")
 
     print("[self-test] 5. forward to a fake Cloudinary (no real upload)")
     # The fake server stays up through step 6: the HTTP end-to-end test
@@ -715,10 +817,24 @@ def self_test() -> int:
     try:
         from fastapi.testclient import TestClient
 
+        # Spy on temp-file deletion: every upload (pass or reject) must
+        # leave nothing on disk afterwards.
+        deleted_tmps = []
+        _real_unlink = os.unlink
+
+        def _spy_unlink(p):
+            deleted_tmps.append(str(p))
+            return _real_unlink(p)
+
+        os.unlink = _spy_unlink
         app = create_app()
         with TestClient(app) as client:
             health = client.get("/health")
             check(health.status_code == 200, "GET /health works")
+            check(health.json().get("min_score") == 0.7,
+                  "health reports the 0.70 threshold")
+            check(health.json().get("frame_interval_s") == 1.0,
+                  "health reports the 1 s sampling interval")
             with open(clip, "rb") as fh:
                 resp = client.post(
                     "/moderate-upload",
@@ -735,12 +851,21 @@ def self_test() -> int:
                     files={"file": ("nsfw_clip.mp4", fh, "video/mp4")},
                     data={"caption": ""},
                 )
-            check(bad.status_code == 403, f"keyword upload -> 403 ({bad.status_code})")
+            check(bad.status_code == 400, f"keyword upload -> 400 ({bad.status_code})")
             check(bad.json().get("error") == REJECT_MESSAGE,
-                  "rejection carries the exact guidelines message")
+                  "rejection carries the exact message")
+        mp4_deleted = [p for p in deleted_tmps if p.endswith(".mp4")]
+        check(len(mp4_deleted) >= 2,
+              f"temp upload files deleted after both requests ({len(mp4_deleted)})")
+        check(all(not os.path.exists(p) for p in mp4_deleted),
+              "deleted temp files are really gone")
     except ImportError as exc:
         print(f"      skipped (fastapi/httpx not installed): {exc}")
     finally:
+        try:
+            os.unlink = _real_unlink
+        except NameError:
+            pass
         server.shutdown()
         server.server_close()
 
