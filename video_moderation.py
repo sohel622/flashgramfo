@@ -9,14 +9,12 @@ instead of straight to Cloudinary. The endpoint
 
 1. runs a fast keyword pre-check on the filename + caption
    (same list the app already uses in the browser),
-2. extracts frames with OpenCV, one every second by default
-   (never more than 30 frames per video -- see below),
-3. scores each frame for 18+/NSFW content and stops at the FIRST
-   frame scoring strictly above 70%. The check is the AI Vision API
-   (Google Cloud Vision SafeSearch) when AI_VISION_API_KEY is set --
-   frames are sent in ONE batched request, up to 16 images at a time.
-   Without a key, the local open-source ONNX detector (NudeNet 320n,
-   ~12 MB -- no TensorFlow, no GPU, CPU-friendly) does the same job,
+2. extracts frames with OpenCV -- EVERY frame of the video, one by
+   one, in order (see below for the safety cap on very long videos),
+3. scores each frame with the local, open-source ONNX NSFW detector
+   (NudeNet 320n, ~12 MB -- no TensorFlow, no GPU, CPU-friendly) and
+   stops at the FIRST frame scoring strictly above 70%.
+   NO third-party API is called: the model runs on this server.
 4. if every frame is clean, forwards the SAME file to Cloudinary
    with the existing unsigned preset (no API secret needed) and
    returns the secure_url + thumbnail URL,
@@ -75,29 +73,17 @@ Environment
                            fake server through this)
   MODERATION_MAX_MB        default 100
   MODERATION_FRAME_INTERVAL_S
-                           default 1.0 (seconds between sampled
-                           frames; 1-2 s recommended)
-  MODERATION_MAX_FRAMES    default 30 (cap on frames per video;
-                           long videos are thinned evenly so the
-                           whole video stays covered)
+                           default 0.0 = EVERY frame, checked one by
+                           one. Set 1.0 or 2.0 only if long videos
+                           are too slow to check frame-by-frame
+  MODERATION_MAX_FRAMES    default 1800 (cap on frames per video:
+                           60 s at 30 fps. A longer video is still
+                           covered end to end -- its frames are spread
+                           evenly, first and last kept)
   MODERATION_MIN_SCORE     default 0.70 (a frame is flagged only when
                            its score is STRICTLY above this)
-  AI_VISION_API_KEY      the AI Vision API key -- from the environment
-                           ONLY. Never in the repo, never in chat, never
-                           in logs. The provider bills per analysed image;
-                           restrict the key in the provider console
-                           (API restrictions) before deploying.
-  AI_VISION_API_URL      default the Google Cloud Vision
-                           images:annotate endpoint; point it at another
-                           compatible provider if yours differs
-  AI_VISION_TIMEOUT_S    default 30 (seconds per batched request)
-  AI_VISION_BATCH_SIZE   default 16 (images per request)
-  AI_VISION_FLAG_VIOLENCE
-                           set to "1" to also flag LIKELY violence
-                           (off by default -- adult/racy only)
-  MODERATION_DETECTOR      "auto" (default: AI Vision when a key is set,
-                           else the local model) | "vision" | "nudenet"
-                           | "nsfw-detector"
+  MODERATION_DETECTOR      "auto" (default: first working LOCAL model)
+                           | "nudenet" | "nsfw-detector"
   MODERATION_CORS_ORIGINS  comma list, default the deployed app origin
   MODERATION_MODEL_PATH    optional path to a different 320n .onnx file
 
@@ -107,26 +93,21 @@ Fail CLOSED: if no detector can be loaded, or the video cannot be
 read, the upload is refused -- never passed through unchecked.
 The keyword gate runs first because it costs nothing and catches
 the obvious cases before any decoding happens.
-The AI Vision API key is read ONLY from the AI_VISION_API_KEY
-environment variable, sent only in request headers to the Vision
-endpoint, and never written to a log, a response, or the repo. If
-the Vision API itself errors (bad key, quota, network), the upload
-is refused with 503 -- it is never passed through on a failed check.
+No third-party AI service is called and no API key is needed at all:
+the model file lives on this server and every frame is checked here.
 
 Performance notes
 -----------------
-* Frames are sampled every 1 s (MODERATION_FRAME_INTERVAL_S), never
-  more than 30 per video: a 10-minute upload costs the same as a
-  60-second one, and long videos are thinned evenly (first and last
-  samples kept) so the tail is never skipped entirely.
+* EVERY frame is checked by default (MODERATION_FRAME_INTERVAL_S=0).
+  A frame takes ~0.02-0.10 s on plain CPU (measured in this sandbox),
+  so a clean 15 s clip costs roughly 10-45 s of checking -- the price
+  of leaving no gap between samples. If long videos are too slow,
+  set MODERATION_FRAME_INTERVAL_S=1 to sample once per second.
 * Scoring stops at the FIRST flagged frame -- a bad video fails in
-  about a second instead of paying for the rest of the frames.
-* AI Vision frames are BATCHED: one HTTP request carries up to 16
-  images (each a small JPEG, max 1024 px), so a 30-frame video costs
-  at most 2 API calls, not 30. The request runs inside the worker
-  thread pool, never on the event loop.
-* Frames are scored at 320x320 inside the detector; a frame takes
-  ~0.02-0.10 s on plain CPU (measured in this sandbox).
+  about a second instead of paying for the rest of the frames, and
+  the video is never even fully decoded.
+* Frames stream in one at a time (a generator, not a list), so a
+  60-second video does not hold ~1800 frames in memory at once.
 * Inference runs in a worker thread pool (run_in_executor), so the
   HTTP server keeps answering /health while a video is being checked.
 * The model is loaded once and kept in memory; the temporary upload
@@ -199,10 +180,12 @@ class Config:
             f"https://api.cloudinary.com/v1_1/{self.cloud_name}/video/upload",
         )
         self.max_mb = _env_int("MODERATION_MAX_MB", 100)
-        self.frame_interval_s = min(
-            10.0, max(0.25, _env_float("MODERATION_FRAME_INTERVAL_S", 1.0))
+        _interval = _env_float("MODERATION_FRAME_INTERVAL_S", 0.0)
+        # 0 means EVERY frame; otherwise seconds between samples.
+        self.frame_interval_s = (
+            0.0 if _interval <= 0 else min(10.0, max(0.25, _interval))
         )
-        self.max_frames = max(1, _env_int("MODERATION_MAX_FRAMES", 30))
+        self.max_frames = max(1, _env_int("MODERATION_MAX_FRAMES", 1800))
         self.min_score = _env_float("MODERATION_MIN_SCORE", 0.70)
         self.detector_name = os.environ.get("MODERATION_DETECTOR", "auto").lower()
         self.model_path = os.environ.get("MODERATION_MODEL_PATH") or None
@@ -269,15 +252,10 @@ def keyword_hit(filename: str, caption: str) -> str | None:
 # Frame extraction (OpenCV)
 # --------------------------------------------------------------------------
 
-def extract_frames(path: str, max_frames: int = 30, interval_s: float = 1.0):
-    """Sample frames at a fixed interval (one every `interval_s`
-    seconds), up to `max_frames` per video.
-
-    Long videos are thinned evenly (first and last samples kept) so
-    the whole video stays covered without scoring hundreds of frames.
-    Returns (frames, duration_s, total_frames) where frames is a list
-    of (time_s, bgr_frame). Raises UnreadableVideo if nothing can be read.
-    """
+def _probe_video(path: str):
+    """Return (duration_s, total_frames, fps), or (0.0, 0, 0.0) when
+    the video has no usable metadata. Raises UnreadableVideo when
+    the file cannot be opened at all."""
     cap = cv2.VideoCapture(path)
     try:
         if not cap.isOpened():
@@ -285,49 +263,93 @@ def extract_frames(path: str, max_frames: int = 30, interval_s: float = 1.0):
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         fps = cap.get(cv2.CAP_PROP_FPS) or 0
         duration = total / fps if fps and total else 0.0
+        return round(duration, 2), total, fps
+    finally:
+        cap.release()
+
+
+def iter_frames(path: str, max_frames: int = 1800, interval_s: float = 0.0):
+    """Yield (time_s, bgr_frame) one at a time, in ascending order.
+
+    interval_s <= 0 means EVERY frame, read sequentially -- nothing
+    is skipped between samples. interval_s > 0 samples the middle
+    of each slice instead (faster on long videos).
+    At most `max_frames` frames are produced: a longer video is still
+    covered end to end, its frames spread evenly with the first and
+    last kept. Frames stream out (a generator), so a long video never
+    holds hundreds of frames in memory at once.
+    Raises UnreadableVideo if nothing can be read.
+    """
+    duration, total, fps = _probe_video(path)
+    cap = cv2.VideoCapture(path)
+    try:
+        if not cap.isOpened():
+            raise UnreadableVideo()
+        yielded = 0
         if duration <= 0:
             # No duration metadata (e.g. a raw stream): read frames in
-            # order until the cap is hit.
-            frames = []
-            while len(frames) < max(1, max_frames):
+            # order until the cap is hit; the time is the frame number.
+            while yielded < max(1, max_frames):
                 ok, frame = cap.read()
                 if not ok or frame is None:
                     break
-                frames.append((round(len(frames) * interval_s, 2), frame))
-            if not frames:
-                raise UnreadableVideo()
-            return frames, 0.0, total
-        # One sample in the middle of each interval slice, so the
-        # samples stay evenly spread and a short bad clip cannot hide
-        # exactly between two sampled instants.
-        times = []
-        t = interval_s / 2.0
-        while t < duration:
-            times.append(round(t, 2))
-            t += interval_s
-        if not times:
-            times = [round(duration / 2.0, 2)]
-        if len(times) > max_frames:
-            if max_frames <= 1:
-                times = times[:1]
-            else:
-                # Thin evenly, keeping the first and last instant. The
-                # step is > 1 here (len(times) > max_frames), so the
-                # rounded indices are strictly increasing -- no dupes.
-                idx = [
-                    round(i * (len(times) - 1) / (max_frames - 1))
-                    for i in range(max_frames)
-                ]
-                times = [times[j] for j in idx]
-        frames = []
-        for when in times:
-            cap.set(cv2.CAP_PROP_POS_MSEC, when * 1000.0)
-            ok, frame = cap.read()
-            if ok and frame is not None:
-                frames.append((when, frame))
-        if not frames:
+                yield (float(yielded), frame)
+                yielded += 1
+        elif interval_s > 0:
+            # One sample in the middle of each interval slice, so the
+            # samples stay evenly spread and a short bad clip cannot
+            # hide exactly between two sampled instants.
+            times = []
+            t = interval_s / 2.0
+            while t < duration:
+                times.append(round(t, 2))
+                t += interval_s
+            if not times:
+                times = [round(duration / 2.0, 2)]
+            if len(times) > max_frames:
+                if max_frames <= 1:
+                    times = times[:1]
+                else:
+                    # Thin evenly, keeping the first and last instant.
+                    # The step is > 1 here (len(times) > max_frames),
+                    # so the rounded indices are strictly increasing.
+                    idx = [
+                        round(i * (len(times) - 1) / (max_frames - 1))
+                        for i in range(max_frames)
+                    ]
+                    times = [times[j] for j in idx]
+            for when in times:
+                cap.set(cv2.CAP_PROP_POS_MSEC, when * 1000.0)
+                ok, frame = cap.read()
+                if ok and frame is not None:
+                    yield (when, frame)
+                    yielded += 1
+        elif total <= max_frames:
+            # Every frame, read sequentially -- no seeking, so the
+            # video is decoded once, front to back.
+            index = 0
+            while True:
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    break
+                yield (round(index / fps, 2), frame)
+                yielded += 1
+                index += 1
+        else:
+            # Too many frames for the cap: spread max_frames reads
+            # evenly across the video, first and last frame kept.
+            indices = [
+                round(i * (total - 1) / (max_frames - 1))
+                for i in range(max_frames)
+            ]
+            for index in indices:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+                ok, frame = cap.read()
+                if ok and frame is not None:
+                    yield (round(index / fps, 2), frame)
+                    yielded += 1
+        if yielded == 0:
             raise UnreadableVideo()
-        return frames, round(duration, 2), total
     finally:
         cap.release()
 
@@ -394,145 +416,6 @@ class NsfwDetectorBackend:
             os.unlink(tmp.name)
 
 
-class VisionAPIError(ModerationError):
-    status = 503
-
-    def __init__(self, detail: str = "AI Vision API unavailable") -> None:
-        super().__init__(detail)
-
-
-# Google Vision SafeSearch likelihood -> unsafe score (0..1).
-# Only LIKELY / VERY_LIKELY cross the strict >0.70 gate; POSSIBLE
-# (0.5) and below pass.
-_VISION_LIKELIHOOD_SCORE = {
-    "UNKNOWN": 0.0,
-    "VERY_UNLIKELY": 0.05,
-    "UNLIKELY": 0.2,
-    "POSSIBLE": 0.5,
-    "LIKELY": 0.9,
-    "VERY_LIKELY": 1.0,
-}
-
-
-class VisionBackend:
-    """AI Vision API (Google Cloud Vision SafeSearch by default).
-
-    The API key comes ONLY from the AI_VISION_API_KEY environment
-    variable -- never hardcoded, never logged, never returned in any
-    response. Frames are sent in ONE batched request (up to
-    AI_VISION_BATCH_SIZE images) instead of one call per frame, so a
-    long video costs a couple of API calls, not one per second.
-    """
-
-    name = "ai-vision"
-
-    def __init__(self, api_key=None, api_url=None, timeout_s=None,
-                 batch_size=None, flag_violence=None) -> None:
-        import httpx
-
-        self._httpx = httpx
-        key = api_key if api_key is not None else os.environ.get("AI_VISION_API_KEY", "")
-        if not key:
-            raise DetectorUnavailable(
-                "AI_VISION_API_KEY is not set -- set it in the environment "
-                "(never in the repo or in chat)"
-            )
-        self.api_key = key
-        self.api_url = api_url or os.environ.get(
-            "AI_VISION_API_URL",
-            "https://vision.googleapis.com/v1/images:annotate",
-        )
-        self.timeout_s = float(
-            os.environ.get("AI_VISION_TIMEOUT_S", timeout_s if timeout_s is not None else 30.0)
-        )
-        self.batch_size = max(
-            1, int(os.environ.get("AI_VISION_BATCH_SIZE", batch_size if batch_size is not None else 16))
-        )
-        self.flag_violence = (
-            flag_violence if flag_violence is not None
-            else os.environ.get("AI_VISION_FLAG_VIOLENCE", "0") == "1"
-        )
-
-    def _encode_frame(self, frame: np.ndarray) -> str:
-        import base64
-
-        h, w = frame.shape[:2]
-        scale = min(1.0, 1024.0 / max(h, w))
-        if scale < 1.0:
-            frame = cv2.resize(
-                frame, (int(w * scale), int(h * scale)),
-                interpolation=cv2.INTER_AREA,
-            )
-        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        if not ok:
-            raise VisionAPIError("Could not encode a frame for the AI Vision API")
-        return base64.b64encode(buf.tobytes()).decode("ascii")
-
-    def _annotate(self, b64_images):
-        payload = {
-            "requests": [
-                {
-                    "image": {"content": img},
-                    "features": [{"type": "SAFE_SEARCH_DETECTION"}],
-                }
-                for img in b64_images
-            ]
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": self.api_key,
-            "Authorization": f"Bearer {self.api_key}",
-        }
-        try:
-            # trust_env=False: never inherit stray HTTP(S)_PROXY variables
-            # from the host -- the service talks to the API directly.
-            with self._httpx.Client(trust_env=False, timeout=self.timeout_s) as client:
-                resp = client.post(self.api_url, json=payload, headers=headers)
-        except Exception as exc:  # noqa: BLE001 -- network failure
-            raise VisionAPIError(f"AI Vision API request failed: {exc}") from exc
-        if resp.status_code >= 400:
-            raise VisionAPIError(
-                f"AI Vision API rejected the request ({resp.status_code})"
-            )
-        try:
-            data = resp.json()
-        except Exception as exc:  # noqa: BLE001
-            raise VisionAPIError("AI Vision API returned invalid JSON") from exc
-        responses = data.get("responses") or []
-        if len(responses) != len(b64_images):
-            raise VisionAPIError("AI Vision API returned a mismatched response")
-        return responses
-
-    def _score_safe_search(self, annotation):
-        ann = annotation or {}
-        fields = ("adult", "racy")
-        if self.flag_violence:
-            fields = fields + ("violence",)
-        best_label, best_score = None, 0.0
-        for field in fields:
-            likelihood = str(ann.get(field, "UNKNOWN")).upper()
-            score = _VISION_LIKELIHOOD_SCORE.get(likelihood, 0.0)
-            if score > best_score:
-                best_score, best_label = score, f"{field}:{likelihood}"
-        detections = []
-        if best_label:
-            detections.append({"label": best_label, "score": round(best_score, 3)})
-        return best_score, detections
-
-    def score_batch(self, frames):
-        """Score a chunk of (time_s, frame) pairs in ONE API call.
-
-        Returns a list of (top_score, detections) in the same order.
-        """
-        b64 = [self._encode_frame(frame) for _, frame in frames]
-        responses = self._annotate(b64)
-        return [
-            self._score_safe_search(resp.get("safeSearchAnnotation") or {})
-            for resp in responses
-        ]
-
-    def score_frame(self, frame: np.ndarray):
-        return self.score_batch([(0.0, frame)])[0]
 
 
 _DETECTOR = None
@@ -540,40 +423,23 @@ _DETECTOR_LOCK = threading.Lock()
 
 
 def load_detector(name: str = "auto"):
-    """Load (once per mode, cached) the detector for `name`.
+    """Load (once per mode, cached) the first available LOCAL detector.
 
-    Modes: "vision" (AI Vision API only -- raises when the key is not
-    set), "nudenet" / "nsfw-detector" (local models only), "auto"
-    (the AI Vision API when AI_VISION_API_KEY is set, otherwise the
-    local model -- never an unchecked pass).
-    Raises DetectorUnavailable when nothing can be loaded -- the caller
-    must refuse the upload instead of passing it through.
+    Modes: "auto" (first working local model), "nudenet",
+    "nsfw-detector". There is NO external API backend: every check
+    runs on this server. Raises DetectorUnavailable when nothing can
+    be loaded -- the caller must refuse the upload instead of passing
+    it through.
     """
     global _DETECTOR
     with _DETECTOR_LOCK:
         if _DETECTOR is not None and getattr(_DETECTOR, "_loaded_for", None) == name:
-            return _DETECTOR
-        if name == "vision":
-            try:
-                _DETECTOR = VisionBackend()
-            except DetectorUnavailable:
-                raise
-            except Exception as exc:  # noqa: BLE001
-                raise DetectorUnavailable(
-                    f"AI Vision backend failed to start: {exc}"
-                ) from exc
-            _DETECTOR._loaded_for = name
-            print("[moderation] detector ready: ai-vision", flush=True)
             return _DETECTOR
         candidates = []
         if name in ("auto", "nudenet"):
             candidates.append(("nudenet", lambda: NudeNetBackend(CONFIG.model_path)))
         if name in ("auto", "nsfw-detector"):
             candidates.append(("nsfw-detector", NsfwDetectorBackend))
-        # "auto" prefers the AI Vision API when a key is configured --
-        # it is tried first, before the local models.
-        if name == "auto" and os.environ.get("AI_VISION_API_KEY"):
-            candidates.insert(0, ("ai-vision", VisionBackend))
         last_error = None
         for label, make in candidates:
             try:
@@ -631,54 +497,46 @@ def moderate_file(
             "ms": int((time.monotonic() - started) * 1000),
         }
 
-    frames, duration, _total = extract_frames(path, max_frames, interval_s)
+    duration, _total, _fps = _probe_video(path)
     if detector is None:
         detector = load_detector(CONFIG.detector_name)
 
     per_frame = []
     max_score = 0.0
-
-    def _score_all():
-        # Batched backends (AI Vision) score a chunk per API call, but
-        # the verdict still checks each frame in order -- so a flagged
-        # frame in an early chunk means later chunks are never sent.
-        if hasattr(detector, "score_batch"):
-            chunk_size = getattr(detector, "batch_size", 16) or 16
-            for start in range(0, len(frames), chunk_size):
-                chunk = frames[start:start + chunk_size]
-                for (when, _frame), (top, sensitive) in zip(
-                    chunk, detector.score_batch(chunk)
-                ):
-                    yield when, top, sensitive
-        else:
-            for when, frame in frames:
-                top, sensitive = detector.score_frame(frame)
-                yield when, top, sensitive
-
-    for when, top, sensitive in _score_all():
-        max_score = max(max_score, top)
-        entry = {"t": when, "max_score": round(top, 3), "detections": sensitive}
-        per_frame.append(entry)
-        # Strict gate: only a score STRICTLY above the threshold flags
-        # the video, and the first flagged frame ends the check at once.
-        if top > min_score:
-            return {
-                "verdict": "unsafe",
-                "reason": "model",
-                "frames_checked": len(per_frame),
-                "duration_s": duration,
-                "max_score": round(top, 3),
-                "flagged_at": when,
-                "flagged_detections": sensitive,
-                "per_frame": per_frame,
-                "detector": getattr(detector, "name", "unknown"),
-                "ms": int((time.monotonic() - started) * 1000),
-            }
+    # Frames stream in one at a time and are scored as they arrive --
+    # a flagged frame stops the scan at once, so the rest of the video
+    # is never even decoded. The generator is closed explicitly so the
+    # capture is released on an early return too.
+    frames_iter = iter_frames(path, max_frames, interval_s)
+    try:
+        for when, frame in frames_iter:
+            top, sensitive = detector.score_frame(frame)
+            max_score = max(max_score, top)
+            entry = {"t": when, "max_score": round(top, 3), "detections": sensitive}
+            per_frame.append(entry)
+            # Strict gate: only a score STRICTLY above the threshold
+            # flags the video, and the first flagged frame ends the
+            # check at once.
+            if top > min_score:
+                return {
+                    "verdict": "unsafe",
+                    "reason": "model",
+                    "frames_checked": len(per_frame),
+                    "duration_s": duration,
+                    "max_score": round(top, 3),
+                    "flagged_at": when,
+                    "flagged_detections": sensitive,
+                    "per_frame": per_frame,
+                    "detector": getattr(detector, "name", "unknown"),
+                    "ms": int((time.monotonic() - started) * 1000),
+                }
+    finally:
+        frames_iter.close()
 
     return {
         "verdict": "safe",
         "reason": None,
-        "frames_checked": len(frames),
+        "frames_checked": len(per_frame),
         "duration_s": duration,
         "max_score": round(max_score, 3),
         "flagged_at": None,
@@ -890,60 +748,6 @@ class _FakeCloudinary(BaseHTTPRequestHandler):
         pass
 
 
-class _FakeVision(BaseHTTPRequestHandler):
-    # mode: "clean" | "flag_second" | "possible" | "likely" | "error"
-    mode = "clean"
-    requests_seen = []
-
-    def do_POST(self):
-        length = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(length)
-        data = json.loads(body.decode("utf-8"))
-        _FakeVision.requests_seen.append({
-            "headers": dict(self.headers),
-            "count": len(data.get("requests", [])),
-            "images": [r.get("image", {}).get("content", "")
-                       for r in data.get("requests", [])],
-            "features": [r.get("features")
-                         for r in data.get("requests", [])],
-        })
-        if self.mode == "error":
-            payload = json.dumps({"error": {"message": "boom"}}).encode()
-            self.send_response(500)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
-            return
-
-        def _ann(level):
-            return {"adult": level, "racy": level, "violence": "VERY_UNLIKELY",
-                    "spoof": "VERY_UNLIKELY", "medical": "VERY_UNLIKELY"}
-
-        n = len(data.get("requests", []))
-        anns = []
-        for i in range(n):
-            if self.mode == "flag_second" and i == 1:
-                anns.append(_ann("VERY_LIKELY"))
-            elif self.mode == "possible":
-                anns.append(_ann("POSSIBLE"))
-            elif self.mode == "likely":
-                anns.append(_ann("LIKELY"))
-            else:
-                anns.append(_ann("VERY_UNLIKELY"))
-        payload = json.dumps(
-            {"responses": [{"safeSearchAnnotation": a} for a in anns]}
-        ).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def log_message(self, *args):  # keep the test output clean
-        pass
-
-
 def _make_test_clip(path: str, seconds: int = 4) -> str:
     """A small real H.264 clip (test pattern) via ffmpeg, or reuse it."""
     import shutil
@@ -994,7 +798,8 @@ def self_test() -> int:
           "flagged frame rejects the upload")
     check(r["max_score"] == 0.95, "max score is reported")
     check(r["frames_checked"] == 1, "scoring stops at the first flagged frame")
-    check(r["flagged_at"] == 0.5, "flagged frame timestamp reported (t=0.5 s)")
+    check(r["flagged_at"] == 0.0,
+          "flagged frame timestamp reported (t=0.0 s, the very first frame)")
 
     print("[self-test] 2b. strict >70% boundary")
     class _BoundaryDetector:
@@ -1011,6 +816,7 @@ def self_test() -> int:
     r = moderate_file(clip, filename="ok.mp4", caption="",
                       detector=_BoundaryDetector(0.70))
     check(r["verdict"] == "safe", "exactly 70% does NOT flag (strictly above only)")
+    check(r["frames_checked"] == 40, "every frame checked (4 s x 10 fps = 40)")
     r = moderate_file(clip, filename="ok.mp4", caption="",
                       detector=_BoundaryDetector(0.71))
     check(r["verdict"] == "unsafe" and r["frames_checked"] == 1,
@@ -1031,23 +837,35 @@ def self_test() -> int:
         r = moderate_file(clip, filename="beach.mp4", caption="beach day")
         dt = time.monotonic() - t0
         check(r["verdict"] == "safe", f"safe clip passes ({r})")
-        check(r["frames_checked"] == 4,
-              f"4 s clip samples every 1 s: {r['frames_checked']} frames")
+        check(r["frames_checked"] == 40,
+              f"4 s clip checks EVERY frame: {r['frames_checked']} frames")
         check(r["detector"] == "nudenet", "detector is nudenet")
         print(f"      real check took {dt:.2f}s for {r['frames_checked']} frames")
     except DetectorUnavailable as exc:
         check(False, f"real detector must load in this environment: {exc}")
 
-    print("[self-test] 4b. interval sampling + thinning")
+    print("[self-test] 4b. every frame + interval sampling + thinning")
+    every = list(iter_frames(clip, 1800, 0.0))
+    check(len(every) == 40, f"4 s clip yields every frame: {len(every)}")
+    check(abs(every[0][0] - 0.0) < 0.01 and abs(every[-1][0] - 3.9) < 0.01,
+          "every-frame times run 0.0 s to 3.9 s")
+    check(all(every[i][0] < every[i + 1][0] for i in range(len(every) - 1)),
+          "frames arrive in ascending time order")
     long_clip = _make_test_clip("/tmp/moderation_selftest_long.mp4", seconds=12)
-    frames12, dur12, _ = extract_frames(long_clip, 30, 1.0)
+    frames12 = list(iter_frames(long_clip, 30, 1.0))
     check(len(frames12) == 12,
           f"12 s clip samples 12 frames at 1 s ({len(frames12)})")
     check(abs(frames12[0][0] - 0.5) < 0.01 and abs(frames12[-1][0] - 11.5) < 0.01,
           "samples are the middles of 1 s slices")
-    thin, _, _ = extract_frames(clip, 3, 1.0)
+    thin = list(iter_frames(clip, 3, 1.0))
     check([t for t, _ in thin] == [0.5, 2.5, 3.5],
-          f"long video thins evenly, first+last kept ({[t for t, _ in thin]})")
+          f"interval mode thins evenly, first+last kept ({[t for t, _ in thin]})")
+    strided = list(iter_frames(long_clip, 30, 0.0))
+    check(len(strided) == 30, f"120-frame video strides to the cap: {len(strided)}")
+    check(abs(strided[0][0] - 0.0) < 0.01 and abs(strided[-1][0] - 11.9) < 0.01,
+          "strided frames still cover first to last")
+    check(all(strided[i][0] < strided[i + 1][0] for i in range(len(strided) - 1)),
+          "strided frames stay in order")
 
     print("[self-test] 5. forward to a fake Cloudinary (no real upload)")
     # The fake server stays up through step 6: the HTTP end-to-end test
@@ -1092,8 +910,8 @@ def self_test() -> int:
             check(health.status_code == 200, "GET /health works")
             check(health.json().get("min_score") == 0.7,
                   "health reports the 0.70 threshold")
-            check(health.json().get("frame_interval_s") == 1.0,
-                  "health reports the 1 s sampling interval")
+            check(health.json().get("frame_interval_s") == 0.0,
+                  "health reports the every-frame mode (interval 0.0)")
             with open(clip, "rb") as fh:
                 resp = client.post(
                     "/moderate-upload",
@@ -1128,83 +946,6 @@ def self_test() -> int:
         server.shutdown()
         server.server_close()
 
-    print("[self-test] 7. AI Vision API backend (fake Vision server)")
-    vision_server = ThreadingHTTPServer(("127.0.0.1", 0), _FakeVision)
-    vport = vision_server.server_address[1]
-    vthread = threading.Thread(target=vision_server.serve_forever, daemon=True)
-    vthread.start()
-    _old_key = os.environ.get("AI_VISION_API_KEY")
-    os.environ["AI_VISION_API_KEY"] = "test-key-123"
-    try:
-        vurl = f"http://127.0.0.1:{vport}/v1/images:annotate"
-        _FakeVision.requests_seen.clear()
-        _FakeVision.mode = "clean"
-        backend = VisionBackend(api_url=vurl)
-        r = moderate_file(clip, filename="beach.mp4", caption="",
-                          detector=backend)
-        check(r["verdict"] == "safe" and r["detector"] == "ai-vision",
-              "Vision: all-clean frames pass")
-        check(len(_FakeVision.requests_seen) == 1,
-              f"4 frames sent in ONE batched request ({len(_FakeVision.requests_seen)})")
-        req = _FakeVision.requests_seen[0]
-        check(req["count"] == 4, "batch carries all 4 frames")
-        check(all(f == [{"type": "SAFE_SEARCH_DETECTION"}] for f in req["features"]),
-              "each image asks for SafeSearch")
-        import base64
-        check(all(base64.b64decode(c)[:2] == b"\xff\xd8" for c in req["images"]),
-              "frames sent as JPEG")
-        check(req["headers"].get("X-Goog-Api-Key") == "test-key-123",
-              "API key sent in the header (never in the repo)")
-        check(req["headers"].get("Authorization") == "Bearer test-key-123",
-              "API key also sent as Bearer")
-        _FakeVision.requests_seen.clear()
-        _FakeVision.mode = "flag_second"
-        r = moderate_file(clip, filename="beach.mp4", caption="",
-                          detector=backend)
-        check(r["verdict"] == "unsafe" and r["flagged_at"] == 1.5,
-              "Vision: flagged frame stops the check")
-        check(r["frames_checked"] == 2,
-              "only the frames up to the flagged one counted")
-        _FakeVision.mode = "possible"
-        r = moderate_file(clip, filename="beach.mp4", caption="",
-                          detector=backend)
-        check(r["verdict"] == "safe", "POSSIBLE (0.5) does not flag")
-        _FakeVision.mode = "likely"
-        r = moderate_file(clip, filename="beach.mp4", caption="",
-                          detector=backend)
-        check(r["verdict"] == "unsafe", "LIKELY (0.9) flags")
-        long20 = _make_test_clip("/tmp/moderation_selftest_20s.mp4", seconds=20)
-        _FakeVision.requests_seen.clear()
-        _FakeVision.mode = "clean"
-        r = moderate_file(long20, filename="long.mp4", caption="",
-                          detector=backend)
-        check(r["frames_checked"] == 20,
-              f"20 s clip checks 20 frames ({r['frames_checked']})")
-        check(len(_FakeVision.requests_seen) == 2,
-              f"20 frames chunked into 2 requests ({len(_FakeVision.requests_seen)})")
-        check([x["count"] for x in _FakeVision.requests_seen] == [16, 4],
-              "chunks are 16 + 4")
-        _FakeVision.mode = "error"
-        try:
-            moderate_file(clip, filename="beach.mp4", caption="",
-                          detector=backend)
-            check(False, "Vision API error must raise")
-        except VisionAPIError as exc:
-            check(getattr(exc, "status", None) == 503,
-                  "Vision API error fails closed with 503")
-    finally:
-        if _old_key is None:
-            os.environ.pop("AI_VISION_API_KEY", None)
-        else:
-            os.environ["AI_VISION_API_KEY"] = _old_key
-        vision_server.shutdown()
-        vision_server.server_close()
-    os.environ.pop("AI_VISION_API_KEY", None)
-    try:
-        load_detector("vision")
-        check(False, "vision mode without a key must raise")
-    except DetectorUnavailable:
-        check(True, "vision mode without AI_VISION_API_KEY fails closed")
 
     print()
     if failures:
