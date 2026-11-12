@@ -2186,37 +2186,9 @@
     }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-    /* Loading Overlay */
-    #db-loading {
-      position: fixed;
-      inset: 0;
-      background: var(--bg);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 14px;
-      z-index: 600;
-      transition: opacity .3s;
-    }
-    #db-loading.hidden { opacity: 0; pointer-events: none; }
-    .loading-ring {
-      width: 44px;
-      height: 44px;
-      border: 3px solid rgba(255,255,255,0.1);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin .8s linear infinite;
-    }
   </style>
 </head>
 <body>
-
-<!-- Loading Overlay -->
-<div id="db-loading">
-  <div class="loading-ring"></div>
-  <span style="font-size:13px;color:var(--fg2);">Loading ReelFlow…</span>
-</div>
 
 <!-- TOP BAR (Feed only) -->
 <div id="topbar">
@@ -3213,6 +3185,12 @@ pruneAllExpiredChatMessages();
     videos = defaultSeedVideos.slice();
   }
 
+  // No loading screen: render the feed straight from the local videos
+  // (seed videos + IndexedDB uploads) so the app opens on the feed
+  // immediately. The database refresh below rebuilds it with live posts.
+  applyForYouRanking();
+  buildFeed();
+
   await initSupabase();
   switchChatThreadsForCurrentUser();
   applyProfile();
@@ -3230,7 +3208,6 @@ pruneAllExpiredChatMessages();
   loadUserChatThreadsFromSupabase();
   subscribeToRealtimeChat();
   startChatPolling();
-  document.getElementById('db-loading').classList.add('hidden');
 })();
 
 // ═══════════════════════════════════════════════════════
