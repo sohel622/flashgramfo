@@ -4023,12 +4023,14 @@ function openAuthPage() {
   }
   const page = document.getElementById('page-auth');
   if (page) page.style.display = 'flex';
+  pauseAllFeedVideos();
 }
 const openAuthModal = openAuthPage;
 
 function closeAuthPage() {
   const page = document.getElementById('page-auth');
   if (page) page.style.display = 'none';
+  resumeActiveFeedVideo();
 }
 
 // Seamless in-app OAuth callback processor
@@ -8179,6 +8181,13 @@ async function loadUserChatThreadsFromSupabase() {
 //  NAVIGATION & PAGES
 // ═══════════════════════════════════════════════════════
 // ── Feed playback lifecycle (TikTok-style) ──
+// The feed page is showing when its top bar is visible (goPage hides it
+// on every other page). Any playback started while another page is
+// showing would be background audio.
+function isFeedPageVisible() {
+  const topbar = document.getElementById('topbar');
+  return !topbar || topbar.style.display !== 'none';
+}
 // Pause every feed video and silence it: only the video in view ever
 // has sound. Used when leaving the feed or when a full-screen overlay
 // (chat, comments, share, upload, more) covers it.
@@ -8189,8 +8198,7 @@ function pauseAllFeedVideos() {
 // Restores the user's own mute choice (window._muted): a video the user
 // muted stays muted, anything else comes back with sound.
 function resumeActiveFeedVideo() {
-  const topbar = document.getElementById('topbar');
-  if (topbar && topbar.style.display === 'none') return; // not on the feed page
+  if (!isFeedPageVisible()) return; // not on the feed page
   const slides = feedEl.querySelectorAll('.video-slide');
   const slide = slides[activeIdx];
   const vid = slide && slide.querySelector('video');
@@ -8303,6 +8311,7 @@ function scrollPrevVideo() {
   }
 }
 function togglePlayPauseActive() {
+  if (!isFeedPageVisible()) return; // space on another page must not start the hidden feed video
   const slides = feedEl.querySelectorAll('.video-slide');
   const slide = slides[activeIdx];
   if (slide) {
@@ -8364,21 +8373,30 @@ function setActive(idx) {
       s.classList.add('is-active');
       const pi = s.querySelector('.pause-icon');
       if (pi) pi.className = 'pause-icon';
-      vid.autoplay = true;
-      vid.muted = false;
-      window._muted = false;
-      const playPromise = vid.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {
-          vid.muted = true;
-          vid.play().catch(()=>{});
-          const unlock = () => {
-            vid.muted = false;
-            window._muted = false;
-            ['click','touchstart','pointerdown','keydown'].forEach(evt => document.removeEventListener(evt, unlock));
-          };
-          ['click','touchstart','pointerdown','keydown'].forEach(evt => document.addEventListener(evt, unlock, { once: true, passive: true }));
-        });
+      if (!isFeedPageVisible()) {
+        // Background rebuild while another page is showing: pick the
+        // active slide but never start its sound here. The video stays
+        // muted, autoplay off and paused until the user comes back.
+        vid.autoplay = false;
+        vid.muted = true;
+        vid.pause();
+      } else {
+        vid.autoplay = true;
+        vid.muted = false;
+        window._muted = false;
+        const playPromise = vid.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            vid.muted = true;
+            vid.play().catch(()=>{});
+            const unlock = () => {
+              vid.muted = false;
+              window._muted = false;
+              ['click','touchstart','pointerdown','keydown'].forEach(evt => document.removeEventListener(evt, unlock));
+            };
+            ['click','touchstart','pointerdown','keydown'].forEach(evt => document.addEventListener(evt, unlock, { once: true, passive: true }));
+          });
+        }
       }
     } else {
       s.classList.remove('is-active');
