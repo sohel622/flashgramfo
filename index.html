@@ -2246,7 +2246,9 @@
     <div class="topbar-tab" id="tab-following" onclick="switchFeedTab('following')">Following</div>
     <div class="topbar-tab active" id="tab-foryou" onclick="switchFeedTab('foryou')">For You</div>
   </div>
-  <div style="width:40px;height:40px;" aria-hidden="true"></div>
+  <div class="topbar-search-btn" onclick="toggleMute()" title="Sound">
+    <span class="material-symbols-rounded" id="top-sound-icon">volume_off</span>
+  </div>
 </div>
 
 <!-- 1. FEED PAGE -->
@@ -2908,7 +2910,9 @@ let activeIdx = -1;
 // back into full view resumes exactly that video, from the same spot.
 let midScrollPaused = false;
 let currentFeedTab = 'foryou';
-window._muted = false; // Enabled sound automatically by default (unmuted)
+window._muted = true; // Muted by default: a video plays silent until
+// the user turns sound on (top-bar button, more menu, or M key).
+// The song never starts on its own — not on open, not on scroll.
 let customUploadedThumbBlob = null;
 
 // Dynamic creators list fetched from Supabase profiles table
@@ -6095,7 +6099,9 @@ function doSingleTap(slide, vid) {
   clearTimeout(pi._t);
   midScrollPaused = false; // the user took manual control of playback
   if (vid.paused) {
-    vid.muted = false;
+    // Resume with the user's mute choice, never force the song back
+    // on: a tap to play must not unmute a video that is meant silent.
+    vid.muted = !!window._muted;
     vid.play().catch(()=>{});
     ic.textContent = 'play_arrow';
   } else {
@@ -6238,6 +6244,8 @@ function toggleMute() {
   document.querySelectorAll('video').forEach(v => { v.muted = window._muted; });
   const icon = document.getElementById('top-sound-icon');
   if (icon) icon.textContent = window._muted ? 'volume_off' : 'volume_up';
+  const mi = document.getElementById('more-mute-ic');
+  if (mi) mi.textContent = window._muted ? 'volume_off' : 'volume_up';
   showToast(window._muted ? 'Sound Muted 🔇' : 'Sound On 🔊');
 }
 
