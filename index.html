@@ -244,12 +244,18 @@
     /* Video Slide */
     .video-slide {
       width: 100%;
-      height: 100%;
+      height: 100dvh;
       scroll-snap-align: start;
       scroll-snap-stop: always;
       position: relative;
       background: #000;
       overflow: hidden;
+      /* 9:16 frame: the container is the full screen (width 100%,
+         viewport height) and centres its content with Flexbox, so the
+         video fills it the same way on every Android screen. */
+      display: flex;
+      justify-content: center;
+      align-items: center;
       /* Skip layout/paint for off-screen slides (the web equivalent of
          removeClippedSubviews). The intrinsic size keeps the scrollbar
          stable while a slide is skipped. */
@@ -270,13 +276,6 @@
       transform: translateZ(0);
       will-change: transform;
     }
-    /* 9:16 in the app: a portrait video (taller than wide) shows its
-       full frame with object-fit: contain, so the video keeps its
-       9:16 size instead of being cropped on the sides by cover on a
-       taller phone screen. A landscape video keeps cover (full-bleed,
-       centre-cropped, TikTok-style). The class is set in fillSlide
-       when the video's own dimensions load. */
-    .slide-video.is-portrait { object-fit: contain; }
     /* Loading spinner: a ring over the video while it buffers (the web
        equivalent of ActivityIndicator). It only appears on the slide
        being watched (is-active) while its video is still loading
@@ -6090,19 +6089,12 @@ function fillSlide(slide, v, i) {
   vid.addEventListener('playing', () => setSlideLoading(slide, false));
   vid.addEventListener('waiting', () => setSlideLoading(slide, true));
 
-  // 9:16 in the app: when this video's own dimensions load, a portrait
-  // video (taller than wide — the 9:16 anime video) gets is-portrait,
-  // so it shows its full frame (contain) instead of being cropped on
-  // the sides by cover on a taller phone screen. A landscape video
-  // keeps cover (full-bleed, centre-cropped, TikTok-style). This fires
-  // while the video is still loading — before setActive() starts
-  // playback and while the spinner covers the slide — so the framing
-  // is settled before the first frame is watched, never mid-playback.
-  const applyPortraitFraming = () => {
-    if (vid.videoHeight > vid.videoWidth) vid.classList.add('is-portrait');
-  };
-  vid.addEventListener('loadedmetadata', applyPortraitFraming);
-  if (vid.readyState >= 1) applyPortraitFraming(); // metadata already in
+  // Framing is always cover (see .slide-video): the video fills the
+  // 9:16 frame with no black bars and no distortion. A 9:16 video on
+  // a taller phone screen is centre-cropped at the sides, and a wide
+  // video is centre-cropped top and bottom — TikTok-style full-bleed.
+  // (The earlier is-portrait/contain letterbox is gone on purpose:
+  // it left black bars top and bottom.)
 
   vid.addEventListener('timeupdate', () => {
     if (scrubState && scrubState.vid === vid) return; // scrub owns the bar right now
