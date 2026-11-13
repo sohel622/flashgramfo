@@ -2906,66 +2906,7 @@ let creators = [];
 let isLoadingCreators = false;
 
 // Seed Videos for rich out-of-the-box experience
-const defaultSeedVideos = [
-  {
-    id: 'seed-1',
-    ts: Date.now() - 3600000 * 2,
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-    caption: 'Nature blooming in stunning detail 🌸 Stop and appreciate the details today #nature #bloom #vibes #fyp',
-    hashtags: ['#nature', '#bloom', '#vibes', '#fyp'],
-    music: 'Nature Vibes - Original Sound',
-    username: 'earth_moments',
-    userDisplayName: 'Earth Moments',
-    likes: 14200,
-    comments: 382,
-    shares: 890,
-    views: 64200,
-    isSeed: true,
-    userComments: [
-      { user: '@sarah_m', text: 'This looks so peaceful! 😍', time: '1h ago' },
-      { user: '@david_k', text: 'Where was this recorded?', time: '45m ago' },
-      { user: '@tiktok_fan', text: 'Colors are incredible ✨', time: '10m ago' }
-    ]
-  },
-  {
-    id: 'seed-2',
-    ts: Date.now() - 3600000 * 6,
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-    caption: 'Big Buck Bunny adventures never get old 🐰 A masterpiece of open source animation! #animation #classic #cinema #cartoon',
-    hashtags: ['#animation', '#classic', '#cinema', '#cartoon'],
-    music: 'Peach Open Movie - Fun Beats',
-    username: 'anim_daily',
-    userDisplayName: 'Animation Daily',
-    likes: 38900,
-    comments: 1240,
-    shares: 2450,
-    views: 142000,
-    isSeed: true,
-    userComments: [
-      { user: '@retro_fan', text: 'Childhood memories right here! 🐰', time: '3h ago' },
-      { user: '@cameron', text: 'Still holds up so well in 2026 🔥', time: '1h ago' }
-    ]
-  },
-  {
-    id: 'seed-3',
-    ts: Date.now() - 3600000 * 12,
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
-    caption: 'Deep blue ocean currents and marine life wonders 🌊 Protect our marine ecosystem! #ocean #nature #blue #wildlife',
-    hashtags: ['#ocean', '#nature', '#blue', '#wildlife'],
-    music: 'Calm Waves Studio - Ocean Sounds',
-    username: 'ocean_depths',
-    userDisplayName: 'Ocean Depths',
-    likes: 21400,
-    comments: 670,
-    shares: 1120,
-    views: 89000,
-    isSeed: true,
-    userComments: [
-      { user: '@marine_biologist', text: 'Incredible underwater footage 🐋', time: '5h ago' },
-      { user: '@elena', text: 'So soothing to watch on repeat 🌊', time: '2h ago' }
-    ]
-  }
-];
+
 
 // Direct messages conversations
 // ── Chat rules (fix #3): messages live 48 hours, then they are gone ──
@@ -3208,24 +3149,22 @@ pruneAllExpiredChatMessages();
     // Blob URLs are created lazily (see getBlobUrl/getThumbUrl): making
     // one for every upload at boot kept every video file in memory.
 
-    if (rows.length === 0) {
-      videos = defaultSeedVideos.slice();
-    } else {
-      // Merge user uploads with seed videos
-      videos = rows.concat(defaultSeedVideos);
-    }
+    // The feed shows only real videos: this device's uploads plus
+    // posts from Supabase (merged in below). No hardcoded, demo or
+    // placeholder videos are ever added here.
+    videos = dedupeVideosByUrl(rows);
 
     // Load profile
     const prows = await dbGetAll('profile');
     prows.forEach(r => { if (r.key in profile) profile[r.key] = r.val; });
   } catch(e) {
     console.warn('DB initialization error', e);
-    videos = defaultSeedVideos.slice();
+    videos = [];
   }
 
   // No loading screen: render the feed straight from the local videos
-  // (seed videos + IndexedDB uploads) so the app opens on the feed
-  // immediately. The database refresh below rebuilds it with live posts.
+  // (IndexedDB uploads) so the app opens on the feed immediately.
+  // The database refresh below rebuilds it with live posts.
   applyForYouRanking();
   buildFeed();
 
@@ -5671,6 +5610,7 @@ function rankFeedVideos(list, taste) {
 // Re-rank the feed for the For You tab. Videos already watched stay in
 // place; the videos still ahead are re-ordered by the algorithm.
 function applyForYouRanking() {
+  videos = dedupeVideosByUrl(videos);
   const taste = buildFeedTaste(loadFeedEvents());
   if (activeIdx >= 0 && videos[activeIdx]) {
     const current = videos[activeIdx];
@@ -5749,6 +5689,10 @@ function renderFeedWindow(centerIdx) {
 function buildFeed(startIdx) {
   feedEl.innerHTML = '';
   if (feedObserver) feedObserver.disconnect();
+  // Final guarantee: one slide per video, even if a duplicate slipped
+  // into the list through another path. The list itself is cleaned
+  // (not just the view), so every index below stays aligned with it.
+  videos = dedupeVideosByUrl(videos);
 
   if (videos.length === 0) {
     emptyEl.hidden = false;
@@ -5941,6 +5885,7 @@ function isMyVideo(v) {
 // BEFORE the reorder — reading videos[activeIdx] after the reorder
 // would point at a different video, since the indices have shifted.
 function rebuildFeedPreservingPosition(keepId) {
+  videos = dedupeVideosByUrl(videos);
   const currentId = keepId || (activeIdx >= 0 && videos[activeIdx] ? videos[activeIdx].id : null);
   if (!currentId) { buildFeed(0); return; }
   const idx = videos.findIndex(v => v.id === currentId);
@@ -6429,7 +6374,9 @@ function subscribeToPostsRealtime() {
 function handleIncomingPost(p) {
   if (!p || !p.video_url) return;
   // Skip our own upload echo (it was already added locally on submit).
-  if (videos.some(v => v.videoUrl === p.video_url)) return;
+  // Canonical comparison: the echo's URL may be spelled differently
+  // (http vs https, with or without a transform) than the local copy.
+  if (videos.some(v => sameVideoUrl(v.videoUrl, p.video_url))) return;
   if (p.id && videos.some(v => String(v.id) === String(p.id))) return;
   const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : (profile.id ? String(profile.id).toLowerCase() : null);
   // Capture the video being watched before the unshift moves it.
@@ -6443,21 +6390,71 @@ function handleIncomingPost(p) {
 // Merge freshly loaded DB videos into the local feed list, deduped by
 // video URL and by post id (a URL and an id each count as the same
 // video). Pure list logic, easy to test.
+// ── One video, one entry: canonical URLs and dedupe ──
+// Two spellings of the same file must count as ONE video when
+// deduping: http vs https, and a Cloudinary URL carrying a transform
+// segment (w_360,q_auto,f_mp4) vs the raw upload URL are the same
+// video. Canonical form is https with no transform segment (and no
+// tracking query). Without this, the same upload stored under two
+// spellings slipped past the exact-string dedupe and showed twice.
+function canonicalVideoUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  let u = url.trim();
+  if (u.indexOf('http://') === 0) u = 'https://' + u.slice(7);
+  const marker = '/video/upload/';
+  const ci = u.indexOf('res.cloudinary.com');
+  const mi = u.indexOf(marker);
+  if (ci !== -1 && mi !== -1) {
+    const head = u.slice(0, mi + marker.length);
+    const tailParts = u.slice(mi + marker.length).split(/[?#]/)[0].split('/');
+    // Drop transform segments up to the version folder (v123...) or
+    // the file name itself.
+    while (tailParts.length > 1 && !/^v\d+$/.test(tailParts[0]) && tailParts[0].indexOf('.') === -1) tailParts.shift();
+    u = head + tailParts.join('/');
+  }
+  return u;
+}
+function sameVideoUrl(a, b) {
+  const ka = canonicalVideoUrl(a), kb = canonicalVideoUrl(b);
+  return !!ka && ka === kb;
+}
+// Keep the first entry per video (canonical URL; entries with no URL
+// fall back to their id), dropping later copies. Order is preserved.
+// Used everywhere a video list is built or rendered, so one upload
+// can never show twice even if it entered the list through two
+// paths at once (e.g. a realtime echo plus the local unshift).
+function dedupeVideosByUrl(list) {
+  const seenUrl = new Set(), seenId = new Set(), out = [];
+  (list || []).forEach(v => {
+    if (!v) return;
+    const key = canonicalVideoUrl(v.videoUrl);
+    if (key) { if (seenUrl.has(key)) return; seenUrl.add(key); }
+    if (v.id) { const id = String(v.id); if (seenId.has(id)) return; seenId.add(id); }
+    out.push(v);
+  });
+  return out;
+}
+
 function mergeDbVideosInto(existing, fresh) {
-  const seen = new Set();
-  (existing || []).forEach(v => {
-    if (v && v.videoUrl) seen.add(v.videoUrl);
-    if (v && v.id) seen.add(String(v.id));
+  // Clean the existing list too: a duplicate already sitting in it
+  // is never removed by only checking fresh rows against it.
+  const base = dedupeVideosByUrl(existing);
+  const seenUrl = new Set(), seenId = new Set();
+  base.forEach(v => {
+    const key = canonicalVideoUrl(v.videoUrl);
+    if (key) seenUrl.add(key);
+    if (v && v.id) seenId.add(String(v.id));
   });
   const add = [];
   (fresh || []).forEach(v => {
     if (!v || !v.videoUrl) return;
-    if (seen.has(v.videoUrl) || seen.has(String(v.id))) return;
-    seen.add(v.videoUrl);
-    seen.add(String(v.id));
+    const key = canonicalVideoUrl(v.videoUrl);
+    if ((key && seenUrl.has(key)) || (v.id && seenId.has(String(v.id)))) return;
+    if (key) seenUrl.add(key);
+    if (v.id) seenId.add(String(v.id));
     add.push(v);
   });
-  return add.concat(existing || []);
+  return add.concat(base);
 }
 
 // Refresh MY videos from the database: my posts rows, and only those.
@@ -6833,7 +6830,7 @@ async function retryPendingPostUploads() {
       continue;
     }
     // Converge the local copy: same URL, now a real DB post.
-    const local = videos.find(v => v.videoUrl === item.video_url);
+    const local = videos.find(v => sameVideoUrl(v.videoUrl, item.video_url));
     if (local) {
       local.isDatabasePost = true;
       if (result.row && result.row.id) local.id = String(result.row.id);
@@ -7065,6 +7062,11 @@ async function submitUpload() {
     }
 
     videos.unshift(newVid);
+    // The realtime echo may already have added this upload (the
+    // local adapter broadcasts the insert synchronously, before this
+    // unshift runs): drop the extra copy so one upload is one slide.
+    // The new entry stays first, so it keeps its on-device file.
+    videos = dedupeVideosByUrl(videos);
 
     // Keep the upload on this device even when the database save
     // failed: the file is stored with the video, so it still plays
@@ -7365,7 +7367,7 @@ function renderDiscover() {
     empty.innerHTML = `
       <span class="material-symbols-rounded">search_off</span>
       <div class="profile-empty-title">No results found</div>
-      <div class="profile-empty-sub">Try searching for #nature, #animation, #fyp or creator handles</div>
+      <div class="profile-empty-sub">Try searching for a caption, #hashtag or creator handle</div>
     `;
     body.appendChild(empty);
     return;
