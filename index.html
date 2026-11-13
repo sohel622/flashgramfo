@@ -5826,6 +5826,10 @@ function videoPosterFor(v) {
 // frames always decode.
 function playableVideoUrl(url) {
   if (!url || typeof url !== 'string') return url;
+  // An http:// Cloudinary link is blocked as mixed content on the
+  // https site, so the video never loads (black slide). Serve the
+  // same file over https instead.
+  if (url.indexOf('http://res.cloudinary.com/') === 0) url = 'https://' + url.slice(7);
   if (url.indexOf('res.cloudinary.com') !== -1 && url.indexOf('/video/upload/') !== -1) {
     // Already transformed (e.g. f_mp4 from the server or an earlier
     // version): leave it alone.
@@ -5859,13 +5863,46 @@ function configureVideoEl(vid, opts) {
 // the file in its ORIGINAL format, and a .mov blob plays audio-only
 // with a BLACK picture on Android. A local path or a dead blob is never
 // preferred over a live cloud URL.
-function bestVideoSrc(v) {
-  if (!v) return '';
-  const cloud = playableVideoUrl(v.videoUrl);
-  if (isCloudVideoUrl(cloud)) return cloud;
+// Every URL a video could play from, best first: the Cloudinary 360p
+// mp4 rendition, then the original https URL (in case the rendition
+// fails), then the on-device file (blob) for uploads that never
+// reached Cloudinary, and finally the raw URL as a last resort.
+// A video whose first source is dead used to stay a black slide; now
+// the player walks this list on error instead of giving up.
+function videoSrcCandidates(v) {
+  if (!v) return [];
+  const out = [];
+  const raw = v.videoUrl || '';
+  const cloud = playableVideoUrl(raw);
+  if (isCloudVideoUrl(cloud)) out.push(cloud);
+  if (typeof raw === 'string' && raw.indexOf('https://') === 0 && out.indexOf(raw) === -1) out.push(raw);
   const blob = getBlobUrl(v);
-  if (blob) return blob;
-  return cloud || '';
+  if (blob && out.indexOf(blob) === -1) out.push(blob);
+  // A dead blob: URL from an earlier session can never play again, so
+  // it is not a candidate. A local path may still resolve on this
+  // device's own server, so it stays as the last resort.
+  if (raw && out.indexOf(raw) === -1 && raw.indexOf('blob:') !== 0) out.push(raw);
+  return out;
+}
+function bestVideoSrc(v) {
+  const cands = videoSrcCandidates(v);
+  return cands.length ? cands[0] : '';
+}
+// Point a video element at its first candidate and remember the rest
+// for the error handler to try.
+function setVideoSrcWithFallbacks(vid, v) {
+  const cands = videoSrcCandidates(v);
+  vid._srcFallbacks = cands.slice(1);
+  if (cands.length) { vid.src = cands[0]; return true; }
+  return false;
+}
+// The current source failed: try the next one. Returns false when
+// every candidate is exhausted.
+function tryNextVideoSrc(vid) {
+  const next = (vid._srcFallbacks || []).shift();
+  if (!next) return false;
+  try { vid.src = next; vid.load(); } catch (_) {}
+  return true;
 }
 
 // Grid thumbnail for one video: a real image when one exists, else a
@@ -6004,13 +6041,17 @@ function fillSlide(slide, v, i) {
   // A mounted slide is always inside the window (active ± 2), so its
   // src is set at mount time. Slides outside the window are never
   // filled, so no video element — and no download — exists for them.
-  const src = bestVideoSrc(v);
-  if (src) vid.src = src;
+  setVideoSrcWithFallbacks(vid, v);
 
-  // A src the browser cannot decode must not stay a silent black box:
-  // keep the poster visible and say why, so the failure is diagnosable
-  // instead of looking like a broken player.
+  // A src the browser cannot load must not stay a silent black box:
+  // walk the fallback list (rendition → original URL → on-device
+  // file) and replay if this is the slide being watched. Only when
+  // every candidate fails is the poster left visible, with a warning.
   vid.addEventListener('error', () => {
+    if (tryNextVideoSrc(vid)) {
+      if (slide.classList.contains('is-active') && isFeedPageVisible()) vid.play().catch(()=>{});
+      return;
+    }
     console.warn('Video failed to load (poster left visible):', vid.getAttribute('src') || v.videoUrl);
   });
 
@@ -7000,6 +7041,11 @@ async function submitUpload() {
       ts: dbCreatedAt ? new Date(dbCreatedAt).getTime() : Date.now(),
       created_at: dbCreatedAt || null,
       videoUrl: videoUrl,
+      // Keep the uploaded file with the video: if this upload never
+      // reached Cloudinary (local path only) or its link later dies,
+      // the player falls back to this on-device file instead of
+      // showing a black slide.
+      blob: file,
       thumbnail_url: thumbnailUrl,
       caption: caption,
       hashtags: hashtags,
@@ -7019,6 +7065,13 @@ async function submitUpload() {
     }
 
     videos.unshift(newVid);
+
+    // Keep the upload on this device even when the database save
+    // failed: the file is stored with the video, so it still plays
+    // (from its blob) and stays in the feed after a reload instead
+    // of vanishing. On the next load the posts row (same URL) is
+    // deduped against this local copy, so it never shows twice.
+    try { if (!newVid.isSeed) dbPut('videos', newVid); } catch (e) {}
 
     // Hit 100% on the progress bar — but only claim "published" when
     // the database save actually succeeded.
@@ -8534,9 +8587,7 @@ function ensureSrc(s) {
     if (p) vid.poster = p;
   }
   if (vid && !vid.getAttribute('src')) {
-    const src = bestVideoSrc(vidObj);
-    if (src) {
-      vid.src = src;
+    if (setVideoSrcWithFallbacks(vid, vidObj)) {
       vid.preload = 'auto';
       vid.load();
     }
