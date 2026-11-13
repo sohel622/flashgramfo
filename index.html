@@ -252,10 +252,13 @@
       overflow: hidden;
       /* 9:16 frame: the container is the full screen (width 100%,
          viewport height) and centres its content with Flexbox, so the
-         video fills it the same way on every Android screen. */
+         video fills it the same way on every Android screen without
+         cropping or bottom-bar overlap. */
       display: flex;
       justify-content: center;
       align-items: center;
+      padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+      box-sizing: border-box;
       /* Skip layout/paint for off-screen slides (the web equivalent of
          removeClippedSubviews). The intrinsic size keeps the scrollbar
          stable while a slide is skipped. */
@@ -263,23 +266,21 @@
       contain-intrinsic-size: 100dvh;
     }
     .slide-video {
-      position: absolute;
-      inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      object-position: center;
       background: #000;
+      display: block;
       /* Own compositor layer (the web equivalent of the Android
-         hardware surface flag): the GPU composites the video instead
-         of repainting it with the page on every scroll frame, so
-         frames stop tearing on low-end Android. */
+         hardware surface flag) without scaling or zooming the frame. */
       transform: translateZ(0);
       will-change: transform;
     }
-    /* Full frame (resizeMode CONTAIN): a portrait video shows its
-       whole 9:16 frame — no cropping, zooming, or edge clipping.
-       A landscape video keeps cover (full-bleed). The class is set
-       in fillSlide when the video's own dimensions load. */
+    /* Full frame (resizeMode CONTAIN): every video fits inside the 9:16
+       container cleanly — no unwanted cropping, zooming, or edge clipping. */
     .slide-video.is-portrait { object-fit: contain; }
     /* Loading spinner: a ring over the video while it buffers (the web
        equivalent of ActivityIndicator). It only appears on the slide
@@ -6094,18 +6095,16 @@ function fillSlide(slide, v, i) {
   vid.addEventListener('playing', () => setSlideLoading(slide, false));
   vid.addEventListener('waiting', () => setSlideLoading(slide, true));
 
-  // Resize mode: a portrait video (taller than wide — the 9:16 anime
-  // video) shows its whole frame (contain), so nothing is cropped,
-  // zoomed, or clipped at the edges. A landscape video keeps cover
-  // (full-bleed, centre-cropped). The class is set when the video's
-  // own dimensions load — while it is still loading, before setActive()
-  // starts playback — so the framing is settled before the first
-  // frame is watched, never mid-playback.
-  const applyPortraitFraming = () => {
+  // Resize mode: enforce contain and center alignment for every video
+  // (portrait, square, or landscape) so the full frame fits cleanly
+  // inside the 9:16 container with no cropping, zooming, or edge clipping.
+  const applyVideoFraming = () => {
+    vid.style.objectFit = 'contain';
+    vid.style.objectPosition = 'center';
     if (vid.videoHeight > vid.videoWidth) vid.classList.add('is-portrait');
   };
-  vid.addEventListener('loadedmetadata', applyPortraitFraming);
-  if (vid.readyState >= 1) applyPortraitFraming(); // metadata already in
+  vid.addEventListener('loadedmetadata', applyVideoFraming);
+  if (vid.readyState >= 1) applyVideoFraming(); // metadata already in
 
   vid.addEventListener('timeupdate', () => {
     if (scrubState && scrubState.vid === vid) return; // scrub owns the bar right now
