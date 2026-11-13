@@ -270,6 +270,33 @@
       transform: translateZ(0);
       will-change: transform;
     }
+    /* Loading spinner: a ring over the video while it buffers (the web
+       equivalent of ActivityIndicator). It only appears on the slide
+       being watched (is-active) while its video is still loading
+       (is-loading) — a neighbour preloading in the background never
+       shows one. pointer-events:none so it never blocks taps, and the
+       poster underneath keeps raw frames off screen while it loads. */
+    .video-loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 3;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .2s;
+    }
+    .video-slide.is-active.is-loading .video-loading { opacity: 1; }
+    .video-loading-ring {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,.25);
+      border-top-color: #fff;
+      animation: feed-spin .8s linear infinite;
+    }
+    @keyframes feed-spin { to { transform: rotate(360deg); } }
     .tap-overlay {
       position: absolute;
       inset: 0;
@@ -5679,6 +5706,9 @@ function unmountSlide(slide) {
     vid.removeAttribute('src');
     try { vid.load(); } catch (_) {}
   }
+  // Drop the loading state with the video: a slide that remounts
+  // later starts clean instead of showing a stale spinner.
+  slide.classList.remove('is-loading');
   slide.innerHTML = '';
   delete slide.dataset.mounted;
 }
@@ -5999,11 +6029,23 @@ function makeSlide(v, i) {
   return slide;
 }
 
+// Loading state for one slide: toggles the is-loading class the
+// spinner CSS reads. The spinner only shows on the active slide
+// (see .video-slide.is-active.is-loading), so a neighbour that is
+// preloading its video in the background never flashes a spinner.
+function setSlideLoading(slide, on) {
+  if (!slide) return;
+  if (on) slide.classList.add('is-loading');
+  else slide.classList.remove('is-loading');
+}
+
 function fillSlide(slide, v, i) {
-  // Video element — muted autoplay so the first frames decode at once
-  // (an unmuted play() is blocked until the user taps); setActive()
-  // unmutes the slide the viewer is actually watching.
-  const vid = configureVideoEl(document.createElement('video'), { autoplay: true, muted: true, loop: true, preload: 'auto', className: 'slide-video' });
+  // Video element — paused while it loads (autoplay off): playback is
+  // only ever started by setActive() / resume / tap, never by the
+  // element itself, so a video that is still buffering never starts
+  // on its own in the background. preload auto still fetches and
+  // buffers it, and the poster below covers the first paint.
+  const vid = configureVideoEl(document.createElement('video'), { autoplay: false, muted: true, loop: true, preload: 'auto', className: 'slide-video' });
   // Android multitasking: let Chrome pop this video into picture-in-picture
   // automatically when the user switches apps (tab hidden).
   vid.setAttribute('autopictureinpicture', '');
@@ -6024,12 +6066,22 @@ function fillSlide(slide, v, i) {
   // file) and replay if this is the slide being watched. Only when
   // every candidate fails is the poster left visible, with a warning.
   vid.addEventListener('error', () => {
+    setSlideLoading(slide, false); // a failed src is not buffering
     if (tryNextVideoSrc(vid)) {
       if (slide.classList.contains('is-active') && isFeedPageVisible()) vid.play().catch(()=>{});
       return;
     }
     console.warn('Video failed to load (poster left visible):', vid.getAttribute('src') || v.videoUrl);
   });
+
+  // Buffering state (onLoadStart / onLoad / onReadyForDisplay /
+  // onBuffer equivalents): show the spinner while the video loads or
+  // stalls mid-play, hide it the moment it can play. The video stays
+  // paused until setActive() plays it — loading never starts playback.
+  vid.addEventListener('loadstart', () => setSlideLoading(slide, true));
+  vid.addEventListener('canplay', () => setSlideLoading(slide, false));
+  vid.addEventListener('playing', () => setSlideLoading(slide, false));
+  vid.addEventListener('waiting', () => setSlideLoading(slide, true));
 
   // Framing stays on cover (see .slide-video) for every video: the
   // old code flipped to contain after metadata loaded, which snapped
@@ -6044,6 +6096,17 @@ function fillSlide(slide, v, i) {
   });
 
   slide.appendChild(vid);
+  // Loading spinner element (ActivityIndicator equivalent): a ring
+  // over the video while it buffers. Created per slide so unmounting
+  // drops it with the video; the CSS shows it only on the active
+  // slide while its video is loading.
+  const spin = document.createElement('div');
+  spin.className = 'video-loading';
+  spin.setAttribute('aria-hidden', 'true');
+  const ring = document.createElement('div');
+  ring.className = 'video-loading-ring';
+  spin.appendChild(ring);
+  slide.appendChild(spin);
   slide.insertAdjacentHTML('beforeend',
     '<div class="progress-bar-wrap"><div class="progress-track"><div class="progress-bar"></div></div><div class="progress-time">00:00 / 00:00</div></div>'
   );
@@ -8723,14 +8786,24 @@ function setActive(idx) {
         vid.muted = true;
         vid.pause();
       } else {
-        vid.autoplay = true;
-        // Respect the user's own mute choice: scrolling to the next
-        // video must never switch the sound back on after they muted
-        // it (the old code forced muted=false here on every scroll).
+        // Playback is driven by play() only, never by autoplay: the
+        // video stays paused while it loads and starts the moment it
+        // is ready (play() itself waits for data; the spinner covers
+        // that wait). Respect the user's own mute choice: scrolling
+        // to the next video must never switch the sound back on after
+        // they muted it (the old code forced muted=false here on
+        // every scroll).
         vid.muted = !!window._muted;
         const playPromise = vid.play();
         if (playPromise !== undefined) {
-          playPromise.catch(() => {
+          playPromise.catch((err) => {
+            // A play() interrupted by scrolling away (AbortError) must
+            // NOT be retried: the video was paused on purpose, and
+            // retrying would restart it behind the video being watched
+            // (muted background playback + stray unlock listeners).
+            // Only an autoplay block (NotAllowedError) gets the muted
+            // retry + the tap-to-unmute listeners.
+            if (err && err.name === 'AbortError') return;
             vid.muted = true;
             vid.play().catch(()=>{});
             const unlock = () => {
