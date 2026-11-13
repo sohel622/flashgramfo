@@ -276,6 +276,11 @@
       transform: translateZ(0);
       will-change: transform;
     }
+    /* Full frame (resizeMode CONTAIN): a portrait video shows its
+       whole 9:16 frame — no cropping, zooming, or edge clipping.
+       A landscape video keeps cover (full-bleed). The class is set
+       in fillSlide when the video's own dimensions load. */
+    .slide-video.is-portrait { object-fit: contain; }
     /* Loading spinner: a ring over the video while it buffers (the web
        equivalent of ActivityIndicator). It only appears on the slide
        being watched (is-active) while its video is still loading
@@ -6089,12 +6094,18 @@ function fillSlide(slide, v, i) {
   vid.addEventListener('playing', () => setSlideLoading(slide, false));
   vid.addEventListener('waiting', () => setSlideLoading(slide, true));
 
-  // Framing is always cover (see .slide-video): the video fills the
-  // 9:16 frame with no black bars and no distortion. A 9:16 video on
-  // a taller phone screen is centre-cropped at the sides, and a wide
-  // video is centre-cropped top and bottom — TikTok-style full-bleed.
-  // (The earlier is-portrait/contain letterbox is gone on purpose:
-  // it left black bars top and bottom.)
+  // Resize mode: a portrait video (taller than wide — the 9:16 anime
+  // video) shows its whole frame (contain), so nothing is cropped,
+  // zoomed, or clipped at the edges. A landscape video keeps cover
+  // (full-bleed, centre-cropped). The class is set when the video's
+  // own dimensions load — while it is still loading, before setActive()
+  // starts playback — so the framing is settled before the first
+  // frame is watched, never mid-playback.
+  const applyPortraitFraming = () => {
+    if (vid.videoHeight > vid.videoWidth) vid.classList.add('is-portrait');
+  };
+  vid.addEventListener('loadedmetadata', applyPortraitFraming);
+  if (vid.readyState >= 1) applyPortraitFraming(); // metadata already in
 
   vid.addEventListener('timeupdate', () => {
     if (scrubState && scrubState.vid === vid) return; // scrub owns the bar right now
