@@ -2903,6 +2903,10 @@ let feedObserver = null;
 let toastTimer = null;
 let currentProfileTab = 'videos';
 let activeIdx = -1;
+// True only when the active video was paused by the mid-scroll audio
+// cut below (never by a user tap or by leaving the feed): scrolling
+// back into full view resumes exactly that video, from the same spot.
+let midScrollPaused = false;
 let currentFeedTab = 'foryou';
 window._muted = false; // Enabled sound automatically by default (unmuted)
 let customUploadedThumbBlob = null;
@@ -5716,11 +5720,16 @@ function buildFeed(startIdx) {
   // so the switch is unambiguous while scrolling.
   feedObserver = new IntersectionObserver(entries => {
     entries.forEach(e => {
+      const idx = +e.target.dataset.idx;
       if (e.isIntersecting && e.intersectionRatio >= 0.8) {
-        setActive(+e.target.dataset.idx);
+        setActive(idx);
+      } else if (idx === activeIdx && e.intersectionRatio < 0.5) {
+        // The active video is now less than half visible: cut its
+        // audio immediately. The next video takes over at 80%.
+        pauseActiveVideoMidScroll();
       }
     });
-  }, { threshold: [0.8] });
+  }, { threshold: [0.5, 0.8] });
 
   feedEl.querySelectorAll('.video-slide').forEach(s => feedObserver.observe(s));
   activeIdx = -1;
@@ -6084,6 +6093,7 @@ function doSingleTap(slide, vid) {
   const pi = slide.querySelector('.pause-icon');
   const ic = pi.querySelector('.material-symbols-rounded');
   clearTimeout(pi._t);
+  midScrollPaused = false; // the user took manual control of playback
   if (vid.paused) {
     vid.muted = false;
     vid.play().catch(()=>{});
@@ -8466,6 +8476,7 @@ function isFeedPageVisible() {
 // has sound. Used when leaving the feed or when a full-screen overlay
 // (chat, comments, share, upload, more) covers it.
 function pauseAllFeedVideos() {
+  midScrollPaused = false; // navigation owns the pause from here
   feedEl.querySelectorAll('video').forEach(x => { x.pause(); x.muted = true; });
 }
 // Resume the active feed video, only when the feed page is showing.
@@ -8477,6 +8488,7 @@ function resumeActiveFeedVideo() {
   const slide = slides[activeIdx];
   const vid = slide && slide.querySelector('video');
   if (!vid) return;
+  midScrollPaused = false; // playing again: no mid-scroll pause pending
   vid.muted = !!window._muted;
   const playPromise = vid.play();
   if (playPromise !== undefined) {
@@ -8622,9 +8634,45 @@ function ensureSrc(s) {
   }
 }
 
+// Mid-scroll audio cut: the active video has scrolled past halfway,
+// so its sound stops NOW instead of waiting for the next video to
+// reach 80% and take over. Only pauses (no reset, no rewind): if the
+// user scrolls back, setActive's same-slide path resumes it from the
+// same spot. A video the user paused themselves is never touched
+// (it is already paused) and is never resumed by this flag.
+function pauseActiveVideoMidScroll() {
+  if (activeIdx < 0 || !isFeedPageVisible()) return;
+  const slides = feedEl.querySelectorAll('.video-slide');
+  const s = slides[activeIdx];
+  const vid = s && s.querySelector('video');
+  if (vid && !vid.paused) {
+    vid.pause();
+    vid.muted = true;
+    midScrollPaused = true;
+  }
+}
+
 function setActive(idx) {
   const slides = feedEl.querySelectorAll('.video-slide');
-  if (!slides.length || idx < 0 || idx >= slides.length || idx === activeIdx) return;
+  if (!slides.length || idx < 0 || idx >= slides.length) return;
+  if (idx === activeIdx) {
+    // Same slide, scrolled back into full view after a mid-scroll
+    // pause: resume it from where it stopped (no restart, no window
+    // rebuild). Only for a pause this code made — a video the user
+    // paused with a tap stays paused.
+    if (midScrollPaused && isFeedPageVisible()) {
+      const s = slides[idx];
+      const vid = s && s.querySelector('video');
+      if (vid && vid.paused) {
+        ensureSrc(s);
+        vid.muted = !!window._muted;
+        vid.play().catch(()=>{});
+      }
+      midScrollPaused = false;
+    }
+    return;
+  }
+  midScrollPaused = false;
   // Scrolling moves the mount window first: the new active slide and
   // its neighbours mount, slides that fell out unmount (their videos
   // are paused and their src released there). Only then does playback
