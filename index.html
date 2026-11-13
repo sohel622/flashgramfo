@@ -5678,16 +5678,75 @@ function applyForYouRanking() {
     const rest = rankFeedVideos(videos.slice(activeIdx + 1), taste);
     videos = prefix.concat(rest);
     const idx = videos.indexOf(current);
-    buildFeed();
-    const slide = feedEl.children[idx];
-    if (slide) slide.scrollIntoView({ behavior: 'auto' });
-    setActive(idx);
+    buildFeed(idx >= 0 ? idx : 0);
   } else {
     videos = rankFeedVideos(videos, taste);
   }
 }
 
-function buildFeed() {
+// ── Feed windowing (the web equivalent of FlatList virtualization) ──
+// Only the slides in a small window around the active video are ever
+// mounted: the active slide plus FEED_WINDOW_RADIUS neighbours on each
+// side. Every other video stays a lightweight empty placeholder slide
+// (same full-height size, so scroll position and snap points never
+// move) with no <video> element, no actions/info DOM and no listeners
+// in memory. That is windowSize / maxToRenderPerBatch /
+// removeClippedSubviews in web form: initial render mounts the first
+// 3 slides (initialNumToRender={3}), scrolling mounts the window
+// around the new active slide and unmounts the slides that fell out.
+const FEED_WINDOW_RADIUS = 2;
+function makeSlidePlaceholder(v, i) {
+  const slide = document.createElement('div');
+  slide.className = 'video-slide';
+  slide.dataset.idx = i;
+  slide.dataset.id = v.id;
+  return slide;
+}
+// Fill a placeholder slide with its video, tap overlay, actions and
+// info (the old makeSlide body). Mounting only happens for slides
+// inside the window, so a mounted slide always gets its src at once.
+function mountSlide(slide) {
+  if (!slide || slide.dataset.mounted) return;
+  const idx = +slide.dataset.idx;
+  const v = videos[idx];
+  if (!v) return;
+  slide.dataset.mounted = '1';
+  fillSlide(slide, v, idx);
+}
+// Unmount a slide that scrolled out of the window: pause first (never
+// leave a detached video playing), release its src so the decoder is
+// freed, then drop all of its DOM. The placeholder shell stays, so
+// the feed keeps its height and scroll position.
+function unmountSlide(slide) {
+  if (!slide || !slide.dataset.mounted) return;
+  const vid = slide.querySelector('video');
+  if (vid) {
+    try { vid.pause(); } catch (_) {}
+    vid.removeAttribute('src');
+    try { vid.load(); } catch (_) {}
+  }
+  slide.innerHTML = '';
+  delete slide.dataset.mounted;
+}
+// Mount the window around centerIdx, unmount everything outside it.
+// The active slide mounts first so it can start playing immediately.
+function renderFeedWindow(centerIdx) {
+  const slides = feedEl.querySelectorAll('.video-slide');
+  if (!slides.length) return;
+  const order = [];
+  for (let d = 0; d <= FEED_WINDOW_RADIUS; d++) {
+    if (d === 0) order.push(centerIdx);
+    else { order.push(centerIdx - d); order.push(centerIdx + d); }
+  }
+  order.forEach(i => {
+    if (i >= 0 && i < slides.length) mountSlide(slides[i]);
+  });
+  slides.forEach((s, i) => {
+    if (Math.abs(i - centerIdx) > FEED_WINDOW_RADIUS) unmountSlide(s);
+  });
+}
+
+function buildFeed(startIdx) {
   feedEl.innerHTML = '';
   if (feedObserver) feedObserver.disconnect();
 
@@ -5697,7 +5756,9 @@ function buildFeed() {
   }
   emptyEl.hidden = true;
 
-  videos.forEach((v, i) => feedEl.appendChild(makeSlide(v, i)));
+  // Placeholders for every video (cheap divs, no video elements),
+  // then mount only the first window: slides 0..2.
+  videos.forEach((v, i) => feedEl.appendChild(makeSlidePlaceholder(v, i)));
 
   // Viewability: a slide becomes the active video only once ~80% of it
   // is visible (the web equivalent of FlatList's viewabilityConfig).
@@ -5713,7 +5774,17 @@ function buildFeed() {
 
   feedEl.querySelectorAll('.video-slide').forEach(s => feedObserver.observe(s));
   activeIdx = -1;
-  setActive(0);
+  const target = Math.max(0, Math.min(startIdx || 0, videos.length - 1));
+  renderFeedWindow(target);
+  // Rebuilding to a saved position (e.g. a new post arrived while the
+  // user was watching video 5) jumps straight there and activates it
+  // once — the old code activated video 0 first, so it briefly played
+  // with sound before the jump.
+  if (target > 0) {
+    const slide = feedEl.children[target];
+    if (slide) slide.scrollIntoView({ behavior: 'auto' });
+  }
+  setActive(target);
 }
 
 // ── Video playback helpers ──────────────────────────────────────────
@@ -5828,17 +5899,16 @@ function isMyVideo(v) {
 }
 
 // Rebuild the feed without yanking the viewer back to the first video.
-function rebuildFeedPreservingPosition() {
-  const currentId = activeIdx >= 0 && videos[activeIdx] ? videos[activeIdx].id : null;
-  buildFeed();
-  if (currentId) {
-    const idx = videos.findIndex(v => v.id === currentId);
-    if (idx > 0) {
-      const slide = feedEl.children[idx];
-      if (slide) slide.scrollIntoView({ behavior: 'auto' });
-      setActive(idx);
-    }
-  }
+// keepId: the video to stay on. Callers that reorder `videos` first
+// (a new post arriving, a DB refresh) must pass the id they captured
+// BEFORE the reorder — reading videos[activeIdx] after the reorder
+// would point at a different video, since the indices have shifted.
+function rebuildFeedPreservingPosition(keepId) {
+  const currentId = keepId || (activeIdx >= 0 && videos[activeIdx] ? videos[activeIdx].id : null);
+  if (!currentId) { buildFeed(0); return; }
+  const idx = videos.findIndex(v => v.id === currentId);
+  // buildFeed mounts the window around idx and activates it once.
+  buildFeed(idx >= 0 ? idx : 0);
 }
 
 // ── TikTok-style progress scrubber ──
@@ -5913,7 +5983,11 @@ function makeSlide(v, i) {
   slide.className = 'video-slide';
   slide.dataset.idx = i;
   slide.dataset.id = v.id;
+  fillSlide(slide, v, i);
+  return slide;
+}
 
+function fillSlide(slide, v, i) {
   // Video element — muted autoplay so the first frames decode at once
   // (an unmuted play() is blocked until the user taps); setActive()
   // unmutes the slide the viewer is actually watching.
@@ -5927,8 +6001,11 @@ function makeSlide(v, i) {
   const poster = videoPosterFor(v);
   if (poster) vid.poster = poster;
 
+  // A mounted slide is always inside the window (active ± 2), so its
+  // src is set at mount time. Slides outside the window are never
+  // filled, so no video element — and no download — exists for them.
   const src = bestVideoSrc(v);
-  if (src && i <= 1) vid.src = src;
+  if (src) vid.src = src;
 
   // A src the browser cannot decode must not stay a silent black box:
   // keep the poster visible and say why, so the failure is diagnosable
@@ -6314,8 +6391,10 @@ function handleIncomingPost(p) {
   if (videos.some(v => v.videoUrl === p.video_url)) return;
   if (p.id && videos.some(v => String(v.id) === String(p.id))) return;
   const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : (profile.id ? String(profile.id).toLowerCase() : null);
+  // Capture the video being watched before the unshift moves it.
+  const currentId = activeIdx >= 0 && videos[activeIdx] ? videos[activeIdx].id : null;
   videos.unshift(mapPostToVideo(p, myId));
-  rebuildFeedPreservingPosition();
+  rebuildFeedPreservingPosition(currentId);
   renderProfileGrid();
 }
 
@@ -6390,11 +6469,18 @@ async function loadPostsFromSupabase() {
       const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : (profile.id ? String(profile.id).toLowerCase() : null);
       const dbVids = data.filter(p => p.video_url).map(p => mapPostToVideo(p, myId));
 
-      const existingUrls = new Set(videos.map(v => v.videoUrl).filter(Boolean));
-      const freshVids = dbVids.filter(v => !existingUrls.has(v.videoUrl));
-      if (freshVids.length > 0) {
-        videos = freshVids.concat(videos.filter(v => !v.isDatabasePost));
-        rebuildFeedPreservingPosition();
+      // Merge cleanly: new posts prepend, already-loaded posts stay
+      // exactly once (deduped by URL and by post id). The old code
+      // rebuilt the list as fresh + non-DB locals, so the moment one
+      // new post arrived every previously loaded DB post fell out
+      // of the feed. Rebuild only when something actually arrived.
+      const merged = mergeDbVideosInto(videos, dbVids);
+      if (merged.length !== videos.length) {
+        // Capture the video being watched BEFORE the list is
+        // replaced: after the merge its index has shifted.
+        const currentId = activeIdx >= 0 && videos[activeIdx] ? videos[activeIdx].id : null;
+        videos = merged;
+        rebuildFeedPreservingPosition(currentId);
         renderProfileGrid();
       }
     }
@@ -6680,6 +6766,9 @@ async function retryPendingPostUploads() {
   if (!supabaseClient || !currentAuthUser) return 0;
   let list = loadPendingUploads();
   if (!list.length) return 0;
+  // A republished post unshifts to the top, moving the video being
+  // watched down one slot — capture it before the loop.
+  const currentId = activeIdx >= 0 && videos[activeIdx] ? videos[activeIdx].id : null;
   let done = 0;
   for (const item of list.slice()) {
     if (!isCloudVideoUrl(item.video_url)) { list = list.filter(p => p !== item); continue; }
@@ -6720,7 +6809,7 @@ async function retryPendingPostUploads() {
   }
   savePendingUploads(list);
   if (done > 0) {
-    rebuildFeedPreservingPosition();
+    rebuildFeedPreservingPosition(currentId);
     renderProfileGrid();
     showToast(done + (done === 1 ? ' video' : ' videos') + ' published from the retry queue 🎉');
   }
@@ -8457,6 +8546,11 @@ function ensureSrc(s) {
 function setActive(idx) {
   const slides = feedEl.querySelectorAll('.video-slide');
   if (!slides.length || idx < 0 || idx >= slides.length || idx === activeIdx) return;
+  // Scrolling moves the mount window first: the new active slide and
+  // its neighbours mount, slides that fell out unmount (their videos
+  // are paused and their src released there). Only then does playback
+  // switch, so the old video's sound is cut before the new one starts.
+  renderFeedWindow(idx);
   // For You signal: record how much of the previous video was watched.
   // (Recorded BEFORE the loop below pauses it and resets currentTime.)
   const prevIdx = activeIdx;
@@ -8495,14 +8589,17 @@ function setActive(idx) {
         vid.pause();
       } else {
         vid.autoplay = true;
-        vid.muted = false;
-        window._muted = false;
+        // Respect the user's own mute choice: scrolling to the next
+        // video must never switch the sound back on after they muted
+        // it (the old code forced muted=false here on every scroll).
+        vid.muted = !!window._muted;
         const playPromise = vid.play();
         if (playPromise !== undefined) {
           playPromise.catch(() => {
             vid.muted = true;
             vid.play().catch(()=>{});
             const unlock = () => {
+              if (window._muted) return; // user muted: stay muted
               vid.muted = false;
               window._muted = false;
               ['click','touchstart','pointerdown','keydown'].forEach(evt => document.removeEventListener(evt, unlock));
