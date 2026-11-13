@@ -591,10 +591,77 @@
        - 3-column video gallery grid with proper alignment & views/likes
     ═══════════════════════════════════════════════════════ */
     #page-profile {
-      background: #000;
+      background: var(--profile-color, #000);
       padding-bottom: calc(75px + env(safe-area-inset-bottom, 0px));
       min-height: 100vh;
+      transition: background-color .35s ease;
     }
+    /* Readable text on a light profile color: switch the profile
+       page's text from white to dark. Only the text changes; the
+       layout and everything else stay the same. */
+    #page-profile.profile-color-light .profile-hero-name,
+    #page-profile.profile-color-light .profile-stat-num,
+    #page-profile.profile-color-light .profile-topbar-title,
+    #page-profile.profile-color-light .profile-tab.active { color: #111; }
+    #page-profile.profile-color-light .profile-hero-handle,
+    #page-profile.profile-color-light .profile-stat-label,
+    #page-profile.profile-color-light .profile-bio,
+    #page-profile.profile-color-light .profile-tab { color: rgba(0, 0, 0, 0.6); }
+    #page-profile.profile-color-light .profile-tab.active { border-bottom-color: #111; }
+    #page-profile.profile-color-light .profile-topbar-icon { color: #111; background: rgba(0, 0, 0, 0.08); }
+    #page-profile.profile-color-light .profile-btn-edit-main { color: #111; background: rgba(0, 0, 0, 0.08); border-color: rgba(0, 0, 0, 0.15); }
+    /* Profile Color picker (bottom sheet): a live preview of the
+       selected color plus a grid of the 10 preset swatches. Large
+       tap targets, so it works on mobile and desktop alike. */
+    .color-preview {
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 16px;
+      text-align: left;
+      background: #000;
+      transition: background-color .3s ease;
+    }
+    .color-preview-name { font-size: 18px; font-weight: 800; color: #fff; }
+    .color-preview-handle { font-size: 13px; color: rgba(255, 255, 255, 0.6); margin-top: 2px; }
+    .color-preview-hex { font-size: 12px; color: rgba(255, 255, 255, 0.6); margin-top: 8px; font-family: monospace; }
+    .color-preview.light .color-preview-name { color: #111; }
+    .color-preview.light .color-preview-handle,
+    .color-preview.light .color-preview-hex { color: rgba(0, 0, 0, 0.6); }
+    .color-swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+    .color-swatch {
+      aspect-ratio: 1;
+      min-height: 44px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.15);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: transform .12s, border-color .15s, box-shadow .15s;
+    }
+    .color-swatch:active { transform: scale(0.94); }
+    .color-swatch.selected { border-color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.45); }
+    .color-swatch .material-symbols-rounded { font-size: 22px; }
+    /* "Profile Color" row inside the Edit Profile sheet. */
+    .ep-color-btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font);
+      margin-bottom: 14px;
+      text-align: left;
+    }
+    .ep-color-swatch { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); flex-shrink: 0; }
     .profile-header {
       padding: calc(env(safe-area-inset-top, 0px) + 16px) max(20px, env(safe-area-inset-right, 0px)) 16px max(20px, env(safe-area-inset-left, 0px));
     }
@@ -1189,7 +1256,8 @@
     .profile-tabs {
       display: flex;
       border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-      background: #000;
+      background: var(--profile-color, #000);
+      transition: background-color .35s ease;
       position: sticky;
       top: 0;
       z-index: 20;
@@ -1219,7 +1287,8 @@
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 2px;
-      background: #000;
+      background: var(--profile-color, #000);
+      transition: background-color .35s ease;
       padding: 2px 0;
     }
     .grid-item {
@@ -1381,7 +1450,11 @@
       align-items: center;
       text-align: center;
       gap: 6px;
+      transition: background-color .35s ease;
     }
+    .creator-card.creator-color-light .creator-card-name { color: #111; }
+    .creator-card.creator-color-light .creator-card-handle { color: rgba(0, 0, 0, 0.6); }
+    .creator-card.creator-color-light .creator-card-followers { color: rgba(0, 0, 0, 0.55); }
     .creator-card-av {
       width: 52px;
       height: 52px;
@@ -2646,6 +2719,15 @@
     </div>
     <textarea id="ep-bio" class="text-input" rows="3" placeholder="Tell the world about yourself…" style="margin-bottom:18px;resize:none;"></textarea>
 
+    <div class="ep-label-row">
+      <span class="ep-label-text">Profile Color</span>
+    </div>
+    <button type="button" id="ep-color-btn" class="ep-color-btn" onclick="openColorPicker()">
+      <span class="ep-color-swatch" id="ep-color-swatch" style="background:#000000"></span>
+      <span id="ep-color-name">Black</span>
+      <span class="material-symbols-rounded" style="margin-left:auto;font-size:20px;color:var(--fg2);">chevron_right</span>
+    </button>
+
     <button id="ep-save-btn" class="upload-btn" onclick="saveProfile()">
       <span class="material-symbols-rounded">check</span>
       Save Changes
@@ -2654,6 +2736,25 @@
     <button id="ep-logout-btn" class="auth-btn-secondary" style="margin-top:10px;color:#fe2c55;border-color:rgba(254,44,85,0.25);display:none;" onclick="handleSignOut()">
       <span class="material-symbols-rounded" style="font-size:18px;">logout</span>
       Log Out of Account
+    </button>
+  </div>
+</div>
+
+<!-- PROFILE COLOR PICKER -->
+<div id="color-picker-modal" onclick="closeOnBackdrop(event,'color-picker-modal')">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Profile Color</div>
+    <div class="modal-sub">Choose a background color for your profile</div>
+    <div id="color-preview" class="color-preview">
+      <div class="color-preview-name" id="color-preview-name">Your Name</div>
+      <div class="color-preview-handle" id="color-preview-handle">@user</div>
+      <div class="color-preview-hex" id="color-preview-hex">#000000 · Black</div>
+    </div>
+    <div id="color-swatches" class="color-swatches"></div>
+    <button class="upload-btn" style="margin-top:16px;" onclick="closeColorPicker()">
+      <span class="material-symbols-rounded">check</span>
+      Done
     </button>
   </div>
 </div>
@@ -2941,6 +3042,7 @@ let profile = {
   name: 'Sign In',
   handle: 'user',
   is_verified: false,
+  profile_color: '#000000',
   bio: '',
   avatar_url: null,
   following: 0,
@@ -4007,6 +4109,7 @@ async function loadUserProfileFromSupabase(userId) {
       profile.username_updated_at = data.username_updated_at || data.updated_at || null;
       profile.bio_updated_at = data.bio_updated_at || data.updated_at || null;
       profile.is_verified = data.is_verified === true;
+      profile.profile_color = normalizeProfileColor(data.profile_color);
       cacheVerified(profile.id, profile.is_verified);
 
       // Cache locally in IndexedDB
@@ -4020,6 +4123,7 @@ async function loadUserProfileFromSupabase(userId) {
         if (profile.avatar_updated_at) await dbPut('profile', { key: 'avatar_updated_at', val: profile.avatar_updated_at });
         if (profile.username_updated_at) await dbPut('profile', { key: 'username_updated_at', val: profile.username_updated_at });
         if (profile.bio_updated_at) await dbPut('profile', { key: 'bio_updated_at', val: profile.bio_updated_at });
+        await dbPut('profile', { key: 'profile_color', val: profile.profile_color });
       } catch(_) {}
 
       applyProfile();
@@ -4570,6 +4674,7 @@ async function handlePasswordSignIn() {
       profile.bio = existingProfile.bio || '';
       profile.avatar_url = existingProfile.avatar_url || null;
       profile.is_verified = existingProfile.is_verified === true;
+      profile.profile_color = normalizeProfileColor(existingProfile.profile_color);
       cacheVerified(profile.id, profile.is_verified);
       applyProfile();
       renderProfileGrid();
@@ -5013,6 +5118,7 @@ async function saveProfileSetup() {
 // ═══════════════════════════════════════════════════════
 function applyProfile() {
   document.getElementById('profile-display-name').textContent = profile.name || (currentAuthUser ? 'Creator' : 'Sign In');
+  applyProfileColor(profile.profile_color);
   const nameBadgeSlot = document.getElementById('profile-name-badge');
   if (nameBadgeSlot) {
     nameBadgeSlot.setAttribute('data-uid', profile.id || '');
@@ -5263,6 +5369,7 @@ function openEditProfile() {
   const logoutBtn = document.getElementById('ep-logout-btn');
   if (logoutBtn) logoutBtn.style.display = currentAuthUser ? 'flex' : 'none';
 
+  syncEditColorRow();
   renderProfileCooldownUI();
   document.getElementById('edit-profile-modal').classList.add('open');
 }
@@ -6359,6 +6466,22 @@ function handleProfilesRealtimeUpdate(row) {
     const c = creators.find(x => verifiedCacheKey(x.user_id) === verifiedCacheKey(row.user_id) || verifiedCacheKey(x.id) === verifiedCacheKey(row.user_id));
     if (c) c.is_verified = isV;
   }
+  // Profile color: the same live update — the changed user's own color.
+  if (row.profile_color !== undefined && row.profile_color !== null) {
+    const pc = normalizeProfileColor(row.profile_color);
+    if (profile && profile.id && verifiedCacheKey(profile.id) === verifiedCacheKey(row.user_id)) {
+      profile.profile_color = pc;
+      applyProfileColor(pc);
+      try { const p = dbPut('profile', { key: 'profile_color', val: pc }); if (p && p.catch) p.catch(function(){}); } catch (_) {}
+    }
+    if (typeof creators !== 'undefined' && creators) {
+      const cc2 = creators.find(x => verifiedCacheKey(x.user_id) === verifiedCacheKey(row.user_id) || verifiedCacheKey(x.id) === verifiedCacheKey(row.user_id));
+      if (cc2 && cc2.profile_color !== pc) {
+        cc2.profile_color = pc;
+        renderCreators();
+      }
+    }
+  }
   refreshAllVerifiedBadgeSlots();
 }
 let profilesRealtimeChannel = null;
@@ -6383,6 +6506,142 @@ function subscribeToProfilesRealtime() {
     console.warn('Profiles realtime setup warning:', err);
     profilesRealtimeChannel = null;
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PROFILE COLOR (Supabase public.profiles.profile_color)
+//  The column already exists (text, default '#000000') — the app only
+//  reads it and writes it on the user's OWN row (RLS: auth.uid() =
+//  user_id, so a user can never change another user's color). One
+//  color per user, loaded from Supabase on sign-in and cached in
+//  IndexedDB so it survives refresh / logout / login. The profile
+//  page background is the color; a light color switches the profile
+//  text to dark so it stays readable. Creator cards show each
+//  creator's own color the same way.
+// ═══════════════════════════════════════════════════════════════
+const PROFILE_COLORS = [
+  { hex: '#000000', name: 'Black' },
+  { hex: '#7C3AED', name: 'Violet' },
+  { hex: '#2563EB', name: 'Blue' },
+  { hex: '#0891B2', name: 'Cyan' },
+  { hex: '#16A34A', name: 'Green' },
+  { hex: '#CA8A04', name: 'Amber' },
+  { hex: '#EA580C', name: 'Orange' },
+  { hex: '#DC2626', name: 'Red' },
+  { hex: '#DB2777', name: 'Pink' },
+  { hex: '#64748B', name: 'Slate' }
+];
+function normalizeProfileColor(c) {
+  if (typeof c !== 'string') return '#000000';
+  const t = c.trim().toUpperCase();
+  if (/^#[0-9A-F]{6}$/.test(t)) return t;
+  return '#000000';
+}
+function profileColorName(hex) {
+  const f = PROFILE_COLORS.find(x => x.hex === normalizeProfileColor(hex));
+  return f ? f.name : 'Custom';
+}
+// Relative luminance (WCAG), 0 = black, 1 = white.
+function profileColorLuminance(hex) {
+  const c = normalizeProfileColor(hex);
+  const r = parseInt(c.slice(1, 3), 16) / 255;
+  const g = parseInt(c.slice(3, 5), 16) / 255;
+  const b = parseInt(c.slice(5, 7), 16) / 255;
+  const lin = v => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+// True when dark text reads better than white text on this color
+// (e.g. Amber, Orange, Green, Cyan) — used to keep text readable.
+function isLightProfileColor(hex) {
+  const l = profileColorLuminance(hex);
+  const whiteContrast = 1.05 / (l + 0.05);
+  const blackContrast = (l + 0.05) / 0.05;
+  return blackContrast > whiteContrast;
+}
+// Paint the own profile page in the color (background via the
+// --profile-color variable, which the page, tabs and grid all use;
+// text switches to dark on light colors). Display only — saving is
+// saveProfileColor().
+function applyProfileColor(color) {
+  const c = normalizeProfileColor(color);
+  profile.profile_color = c;
+  const page = document.getElementById('page-profile');
+  if (page) {
+    page.style.setProperty('--profile-color', c);
+    page.classList.toggle('profile-color-light', isLightProfileColor(c));
+  }
+}
+// Keep the "Profile Color" row in the Edit Profile sheet in sync.
+function syncEditColorRow() {
+  const sw = document.getElementById('ep-color-swatch');
+  const nm = document.getElementById('ep-color-name');
+  const c = normalizeProfileColor(profile.profile_color);
+  if (sw) sw.style.background = c;
+  if (nm) nm.textContent = profileColorName(c);
+}
+// Pick a color: live preview on the profile page at once, then save
+// it to the user's own profile_color in Supabase (and IndexedDB).
+// On a save failure the preview rolls back to the previous color.
+async function saveProfileColor(hex) {
+  const color = normalizeProfileColor(hex);
+  const prev = normalizeProfileColor(profile.profile_color);
+  applyProfileColor(color);
+  syncEditColorRow();
+  renderColorPicker();
+  try { await dbPut('profile', { key: 'profile_color', val: color }); } catch (_) {}
+  if (!supabaseClient || !profile.id) {
+    if (!supabaseClient) showToast('Color saved on this device');
+    return { ok: true };
+  }
+  try {
+    const { error } = await supabaseClient
+      .from('profiles')
+      .update({ profile_color: color, updated_at: new Date().toISOString() })
+      .eq('user_id', profile.id);
+    if (error) throw new Error(error.message);
+    showToast('Profile color saved');
+    return { ok: true };
+  } catch (err) {
+    applyProfileColor(prev);
+    syncEditColorRow();
+    renderColorPicker();
+    showToast('Could not save color: ' + (err.message || 'try again'));
+    return { ok: false, error: err };
+  }
+}
+function openColorPicker() {
+  renderColorPicker();
+  document.getElementById('color-picker-modal').classList.add('open');
+}
+function closeColorPicker() {
+  document.getElementById('color-picker-modal').classList.remove('open');
+}
+function renderColorPicker() {
+  const box = document.getElementById('color-swatches');
+  const preview = document.getElementById('color-preview');
+  const current = normalizeProfileColor(profile.profile_color);
+  if (box) {
+    box.innerHTML = PROFILE_COLORS.map(c => {
+      const sel = c.hex === current;
+      const light = isLightProfileColor(c.hex);
+      return '<button type="button" class="color-swatch' + (sel ? ' selected' : '') + '" style="background:' + c.hex + '" title="' + c.name + ' (' + c.hex + ')" onclick="selectProfileColor(\'' + c.hex + '\')">' +
+        (sel ? '<span class="material-symbols-rounded" style="color:' + (light ? '#111' : '#fff') + ';">check</span>' : '') +
+        '</button>';
+    }).join('');
+  }
+  if (preview) {
+    preview.style.background = current;
+    preview.classList.toggle('light', isLightProfileColor(current));
+    const nm = document.getElementById('color-preview-name');
+    const hd = document.getElementById('color-preview-handle');
+    const hx = document.getElementById('color-preview-hex');
+    if (nm) nm.textContent = profile.name || 'Your Name';
+    if (hd) hd.textContent = '@' + (profile.handle || 'user');
+    if (hx) hx.textContent = current + ' · ' + profileColorName(current);
+  }
+}
+function selectProfileColor(hex) {
+  saveProfileColor(hex);
 }
 
 function makeInfo(v) {
@@ -7506,7 +7765,7 @@ async function loadCreatorsFromSupabase() {
   try {
     const { data, error } = await supabaseClient
       .from('profiles')
-      .select('user_id, id, display_name, full_name, username, avatar_url, bio, email, updated_at, is_verified')
+      .select('user_id, id, display_name, full_name, username, avatar_url, bio, email, updated_at, is_verified, profile_color')
       .order('updated_at', { ascending: false });
 
     if (error) {
@@ -7552,6 +7811,7 @@ async function loadCreatorsFromSupabase() {
           avatar_url: p.avatar_url || '',
           bio: p.bio || '',
           is_verified: p.is_verified === true,
+          profile_color: normalizeProfileColor(p.profile_color),
           followers: 'Creator'
         });
       });
@@ -7595,6 +7855,13 @@ function renderCreators() {
   creators.forEach(c => {
     const card = document.createElement('div');
     card.className = 'creator-card';
+    // Each creator's own profile color (black by default, so the card
+    // keeps its usual look until they pick one).
+    const cc = normalizeProfileColor(c.profile_color);
+    if (cc !== '#000000') {
+      card.style.backgroundColor = cc;
+      card.classList.toggle('creator-color-light', isLightProfileColor(cc));
+    }
     const initial = (c.name || c.handle || 'C')[0].toUpperCase();
     const handleClean = (c.handle || '').replace(/^@/, '');
 
