@@ -263,6 +263,12 @@
       height: 100%;
       object-fit: cover;
       background: #000;
+      /* Own compositor layer (the web equivalent of the Android
+         hardware surface flag): the GPU composites the video instead
+         of repainting it with the page on every scroll frame, so
+         frames stop tearing on low-end Android. */
+      transform: translateZ(0);
+      will-change: transform;
     }
     .tap-overlay {
       position: absolute;
@@ -5768,6 +5774,15 @@ function videoPosterFor(v) {
 // the audio of a .mov but show a BLACK screen for its video track, which
 // is exactly the reported bug. Ask Cloudinary for mp4 delivery so the
 // frames always decode.
+// Capable-device check for the video rendition: 4GB+ RAM or 6+ CPU
+// cores. A device that does not report its specs counts as low-end.
+function isCapableDevice() {
+  try {
+    const mem = (typeof navigator !== 'undefined' && navigator.deviceMemory) || 0;
+    const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 0;
+    return mem >= 4 || cores >= 6;
+  } catch (_) { return false; }
+}
 function playableVideoUrl(url) {
   if (!url || typeof url !== 'string') return url;
   // An http:// Cloudinary link is blocked as mixed content on the
@@ -5777,11 +5792,13 @@ function playableVideoUrl(url) {
   if (url.indexOf('res.cloudinary.com') !== -1 && url.indexOf('/video/upload/') !== -1) {
     // Already transformed (e.g. f_mp4 from the server or an earlier
     // version): leave it alone.
-    if (url.indexOf('f_mp4') !== -1 || url.indexOf('f_auto') !== -1 || url.indexOf('w_360') !== -1) return url;
-    // Mobile rendition for low-end phones: 360p + auto quality + mp4
-    // delivery, so a budget device decodes a small stream instead of
-    // the full-size upload.
-    return url.replace('/video/upload/', '/video/upload/w_360,q_auto,f_mp4/');
+    if (url.indexOf('f_mp4') !== -1 || url.indexOf('f_auto') !== -1 || url.indexOf('w_360') !== -1 || url.indexOf('w_720') !== -1) return url;
+    // Rendition by device: capable phones get 720p, because 360p
+    // upscaled to a 1080p screen looked soft and jagged. Low-end
+    // phones — and any device that does not report its specs — keep
+    // the 360p rendition, so decoding never stalls there.
+    const rendition = isCapableDevice() ? 'w_720,q_auto,f_mp4' : 'w_360,q_auto,f_mp4';
+    return url.replace('/video/upload/', '/video/upload/' + rendition + '/');
   }
   return url;
 }
@@ -5983,10 +6000,11 @@ function fillSlide(slide, v, i) {
   const poster = videoPosterFor(v);
   if (poster) vid.poster = poster;
 
-  // A mounted slide is always inside the window (active ± 2), so its
-  // src is set at mount time. Slides outside the window are never
-  // filled, so no video element — and no download — exists for them.
-  setVideoSrcWithFallbacks(vid, v);
+  // Only the active slide and its immediate neighbours get a source
+  // at mount time; a slide two away mounts with its poster only and
+  // gets its source from ensureSrc() when it comes within one step.
+  // Five videos decoding at once stalled low-end phones.
+  if (Math.abs(i - activeIdx) <= 1) setVideoSrcWithFallbacks(vid, v);
 
   // A src the browser cannot load must not stay a silent black box:
   // walk the fallback list (rendition → original URL → on-device
@@ -6000,12 +6018,11 @@ function fillSlide(slide, v, i) {
     console.warn('Video failed to load (poster left visible):', vid.getAttribute('src') || v.videoUrl);
   });
 
-  vid.addEventListener('loadedmetadata', () => {
-    if (vid.videoWidth && vid.videoHeight) {
-      const ratio = vid.videoWidth / vid.videoHeight;
-      vid.style.objectFit = (ratio > 0.65) ? 'contain' : 'cover';
-    }
-  });
+  // Framing stays on cover (see .slide-video) for every video: the
+  // old code flipped to contain after metadata loaded, which snapped
+  // the picture's aspect mid-playback and read as warped/distorted
+  // frames. Full-bleed cover never distorts; a wide video is
+  // centre-cropped, TikTok-style.
 
   vid.addEventListener('timeupdate', () => {
     if (scrubState && scrubState.vid === vid) return; // scrub owns the bar right now
@@ -8532,8 +8549,17 @@ function switchFeedTab(tab) {
 function closeOnBackdrop(e, id) {
   if (e.target.id === id) {
     document.getElementById(id).classList.remove('open');
+    if (id === 'upload-modal') pauseUploadPreview();
     if (['chat-modal', 'comments-modal', 'share-modal', 'more-modal', 'upload-modal'].indexOf(id) !== -1) resumeActiveFeedVideo();
   }
+}
+
+// The upload preview loops muted while the modal is open. Pause it
+// when the modal closes so it stops decoding behind the feed —
+// otherwise two videos play at once on a low-end phone.
+function pauseUploadPreview() {
+  const pv = document.getElementById('uploadPreview');
+  if (pv) { try { pv.pause(); } catch (_) {} }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -8722,6 +8748,9 @@ function updateMediaSession(v) {
       album: 'Flashgram'
     });
     navigator.mediaSession.setActionHandler('play', () => {
+      // Never start the hidden feed video from the lock screen while
+      // the user is on another page.
+      if (!isFeedPageVisible()) return;
       const s = feedEl.querySelectorAll('.video-slide')[activeIdx];
       const vid = s && s.querySelector('video');
       if (vid) vid.play().catch(() => {});
