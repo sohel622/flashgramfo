@@ -471,6 +471,30 @@
       color: #fff;
       text-shadow: 0 1px 4px rgba(0,0,0,.8);
     }
+    /* Verified badge (Supabase profiles.is_verified): a pink circle
+       with a white check, shown next to a verified user's name. One
+       reusable component (verifiedBadgeHTML), used in the feed,
+       profile, Discover creators, comments and chat. The slot span is
+       empty (and hidden) when the user is not verified, so unverified
+       names render exactly as before. */
+    .verified-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #ff2d78;
+      color: #fff;
+      flex-shrink: 0;
+      vertical-align: -3px;
+      margin-left: 4px;
+    }
+    .verified-badge svg { width: 10px; height: 10px; display: block; }
+    .verified-badge.lg { width: 20px; height: 20px; margin-left: 5px; vertical-align: -4px; }
+    .verified-badge.lg svg { width: 13px; height: 13px; }
+    .verified-badge-slot { display: inline-flex; vertical-align: middle; }
+    .verified-badge-slot:empty { display: none; }
     .post-time {
       font-weight: 400;
       font-size: 13px;
@@ -2321,7 +2345,7 @@
     <!-- Big bold white Name and handle on left, Profile avatar/logo on top-right -->
     <div class="profile-hero">
       <div class="profile-hero-info">
-        <h1 class="profile-hero-name" id="profile-display-name">Sign In</h1>
+        <h1 class="profile-hero-name"><span id="profile-display-name">Sign In</span><span class="verified-badge-slot" id="profile-name-badge" data-uid="" data-handle="" data-large="1"></span></h1>
         <div class="profile-hero-handle" id="profile-handle">@user</div>
       </div>
       <div class="profile-hero-avatar-wrap" id="profile-avatar-wrap" onclick="openEditProfile()" title="Profile picture">
@@ -2747,7 +2771,7 @@
           <div id="chat-header-initial" class="chat-header-initial"></div>
         </div>
         <div class="chat-header-info">
-          <div class="chat-header-name" id="chat-user-name">Earth Moments</div>
+          <div class="chat-header-name"><span id="chat-user-name">Earth Moments</span><span class="verified-badge-slot" id="chat-name-badge" data-uid="" data-handle=""></span></div>
           <div class="chat-header-handle" id="chat-user-handle">@earth_moments</div>
         </div>
       </div>
@@ -2916,6 +2940,7 @@ let profile = {
   saved: [],
   name: 'Sign In',
   handle: 'user',
+  is_verified: false,
   bio: '',
   avatar_url: null,
   following: 0,
@@ -2927,6 +2952,10 @@ let profile = {
   username_updated_at: null,
   bio_updated_at: null
 };
+// Verified-badge cache: user_id (lowercased) -> is_verified. Filled
+// from the own profile and the Discover creators list; updated live
+// by the profiles Realtime subscription.
+let verifiedCache = {};
 let supabaseClient = null;
 let currentAuthUser = null;
 let currentPendingEmail = '';
@@ -3227,6 +3256,7 @@ pruneAllExpiredChatMessages();
   await loadPostsFromSupabase();
   await retryPendingPostUploads();
   subscribeToPostsRealtime();
+  subscribeToProfilesRealtime();
   applyForYouRanking();
   buildFeed();
   await loadCreatorsFromSupabase();
@@ -3793,6 +3823,7 @@ async function initSupabase() {
         await loadPostsFromSupabase();
         await retryPendingPostUploads();
         subscribeToPostsRealtime();
+        subscribeToProfilesRealtime();
       } else {
         // Only clear the inbox if a real account was active. Anonymous /
         // demo mode keeps the shared key untouched.
@@ -3975,6 +4006,8 @@ async function loadUserProfileFromSupabase(userId) {
       profile.avatar_updated_at = data.avatar_updated_at || data.updated_at || null;
       profile.username_updated_at = data.username_updated_at || data.updated_at || null;
       profile.bio_updated_at = data.bio_updated_at || data.updated_at || null;
+      profile.is_verified = data.is_verified === true;
+      cacheVerified(profile.id, profile.is_verified);
 
       // Cache locally in IndexedDB
       try {
@@ -3991,6 +4024,7 @@ async function loadUserProfileFromSupabase(userId) {
 
       applyProfile();
       renderProfileGrid();
+      refreshAllVerifiedBadgeSlots();
 
       // For new signups, open the pre-filled Profile Setup screen once so they can review their details
       if (syncResult && syncResult.isNew && !localStorage.getItem('reelflow_setup_done_' + userId)) {
@@ -4535,8 +4569,11 @@ async function handlePasswordSignIn() {
       profile.handle = (existingProfile.username || profile.handle).replace(/^@/, '');
       profile.bio = existingProfile.bio || '';
       profile.avatar_url = existingProfile.avatar_url || null;
+      profile.is_verified = existingProfile.is_verified === true;
+      cacheVerified(profile.id, profile.is_verified);
       applyProfile();
       renderProfileGrid();
+      refreshAllVerifiedBadgeSlots();
       showToast('Welcome back, ' + (profile.name || '@' + profile.handle) + ' 👋');
     } else {
       // Direct user to profile setup if no profile record exists yet
@@ -4976,6 +5013,12 @@ async function saveProfileSetup() {
 // ═══════════════════════════════════════════════════════
 function applyProfile() {
   document.getElementById('profile-display-name').textContent = profile.name || (currentAuthUser ? 'Creator' : 'Sign In');
+  const nameBadgeSlot = document.getElementById('profile-name-badge');
+  if (nameBadgeSlot) {
+    nameBadgeSlot.setAttribute('data-uid', profile.id || '');
+    nameBadgeSlot.setAttribute('data-handle', profile.handle || '');
+    syncVerifiedBadgeSlot(nameBadgeSlot);
+  }
   document.getElementById('profile-handle').textContent = '@' + (profile.handle || 'user');
   document.getElementById('profile-bio').textContent = profile.bio || '';
   document.getElementById('stat-following').textContent = fmtN(profile.following || 0);
@@ -6235,6 +6278,113 @@ function makeActions(v, i) {
   return wrap;
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  VERIFIED BADGE (Supabase public.profiles.is_verified)
+//  One reusable component, used everywhere a username appears: the
+//  feed, the own profile page, Discover Popular Creators, comments
+//  and chat. The column already exists in Supabase (boolean, default
+//  false) — the app only READS it, never writes it. Only an admin
+//  (dashboard / service_role / profiles.role = 'admin') can change it;
+//  see the protect_verified_status trigger in supabase-setup.sql.
+//  A badge slot is an empty span when the user is not verified, so
+//  unverified names render exactly as before; a Realtime profiles
+//  update refills every slot in place, no refresh needed.
+// ═══════════════════════════════════════════════════════════════
+// Pink circle + white check. `large` is the bigger profile-page size.
+function verifiedBadgeHTML(large) {
+  return '<span class="verified-badge' + (large ? ' lg' : '') + '" title="Verified" aria-label="Verified account"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12.5l5 5L19.5 7"/></svg></span>';
+}
+// A slot next to a username: the badge when verified, empty when not.
+// It carries the user id (and handle as a fallback) so a Realtime
+// update can refresh it in place without re-rendering the list.
+function verifiedBadgeSlotHTML(userId, isVerified, handle, large) {
+  const uid = userId ? String(userId) : '';
+  const h = handle ? String(handle).replace(/^@/, '') : '';
+  return '<span class="verified-badge-slot" data-uid="' + escapeHtml(uid) + '" data-handle="' + escapeHtml(h) + '"' + (large ? ' data-large="1"' : '') + '>' + (isVerified ? verifiedBadgeHTML(large) : '') + '</span>';
+}
+function verifiedCacheKey(id) {
+  return id ? String(id).toLowerCase() : '';
+}
+function cacheVerified(userId, isVerified) {
+  const k = verifiedCacheKey(userId);
+  if (!k) return;
+  verifiedCache[k] = isVerified === true;
+}
+function isUserVerified(userId) {
+  const k = verifiedCacheKey(userId);
+  if (!k) return false;
+  // The local profile is the freshest copy for the current user.
+  if (profile && profile.id && verifiedCacheKey(profile.id) === k) return profile.is_verified === true;
+  return verifiedCache[k] === true;
+}
+function isHandleVerified(handle) {
+  if (!handle) return false;
+  const h = String(handle).replace(/^@/, '').toLowerCase();
+  if (profile && profile.handle && String(profile.handle).replace(/^@/, '').toLowerCase() === h) return profile.is_verified === true;
+  if (typeof creators !== 'undefined' && creators) {
+    const c = creators.find(x => (x.handle || '').toLowerCase() === h);
+    if (c) return c.is_verified === true;
+  }
+  return false;
+}
+// Fill one slot from the cache (reads its own data-uid / data-handle).
+function syncVerifiedBadgeSlot(slotEl) {
+  if (!slotEl) return;
+  const uid = slotEl.getAttribute('data-uid');
+  const handle = slotEl.getAttribute('data-handle');
+  const large = slotEl.getAttribute('data-large') === '1';
+  let v = false;
+  if (uid) v = isUserVerified(uid);
+  else if (handle) v = isHandleVerified(handle);
+  slotEl.innerHTML = v ? verifiedBadgeHTML(large) : '';
+}
+// Re-sync every badge slot on the page from the cache — after the
+// creators list loads, after the own profile loads, and on a Realtime
+// profiles update. No list is re-rendered, so playback never restarts.
+function refreshAllVerifiedBadgeSlots() {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  document.querySelectorAll('.verified-badge-slot').forEach(syncVerifiedBadgeSlot);
+}
+// A profile row changed in Supabase (dashboard flip of is_verified):
+// update the cache, the local profile and the creators list, then
+// refill every visible badge in place.
+function handleProfilesRealtimeUpdate(row) {
+  if (!row || !row.user_id) return;
+  const isV = row.is_verified === true;
+  cacheVerified(row.user_id, isV);
+  if (profile && profile.id && verifiedCacheKey(profile.id) === verifiedCacheKey(row.user_id)) {
+    profile.is_verified = isV;
+  }
+  if (typeof creators !== 'undefined' && creators) {
+    const c = creators.find(x => verifiedCacheKey(x.user_id) === verifiedCacheKey(row.user_id) || verifiedCacheKey(x.id) === verifiedCacheKey(row.user_id));
+    if (c) c.is_verified = isV;
+  }
+  refreshAllVerifiedBadgeSlots();
+}
+let profilesRealtimeChannel = null;
+function subscribeToProfilesRealtime() {
+  if (!supabaseClient || profilesRealtimeChannel) return;
+  try {
+    profilesRealtimeChannel = supabaseClient.channel('realtime_profiles')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, payload => {
+        if (payload && payload.new) handleProfilesRealtimeUpdate(payload.new);
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'profiles' }, payload => {
+        if (payload && payload.new) handleProfilesRealtimeUpdate(payload.new);
+      })
+      .subscribe((status, err) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn('Profiles realtime lost:', status, err || '');
+          profilesRealtimeChannel = null;
+          setTimeout(subscribeToProfilesRealtime, 5000);
+        }
+      });
+  } catch (err) {
+    console.warn('Profiles realtime setup warning:', err);
+    profilesRealtimeChannel = null;
+  }
+}
+
 function makeInfo(v) {
   const wrap = document.createElement('div');
   wrap.className = 'bottom-info';
@@ -6242,7 +6392,7 @@ function makeInfo(v) {
 
   wrap.innerHTML = `
     <div class="author-row">
-      <span class="author-name">@${v.username || 'user'}</span>
+      <span class="author-name">@${v.username || 'user'}</span>${verifiedBadgeSlotHTML(v.user_id, isUserVerified(v.user_id) || isHandleVerified(v.username), v.username)}
       ${(v.created_at || v.ts) ? `<span class="post-time">· ${formatRelativeTime(v.created_at || v.ts)}</span>` : ''}
     </div>
     <div class="caption">${v.caption || ''}</div>
@@ -7284,7 +7434,7 @@ function addCommentEl(list, user, text, time) {
   item.innerHTML = `
     <div class="comment-avatar"><span style="font-weight:700;font-size:12px;color:#fff;">${initial}</span></div>
     <div class="comment-body">
-      <div class="comment-user">${user}</div>
+      <div class="comment-user">${user}${verifiedBadgeSlotHTML('', isHandleVerified(user), user)}</div>
       <div class="comment-text">${text}</div>
       <div class="comment-time">${time}</div>
     </div>
@@ -7356,7 +7506,7 @@ async function loadCreatorsFromSupabase() {
   try {
     const { data, error } = await supabaseClient
       .from('profiles')
-      .select('user_id, id, display_name, full_name, username, avatar_url, bio, email, updated_at')
+      .select('user_id, id, display_name, full_name, username, avatar_url, bio, email, updated_at, is_verified')
       .order('updated_at', { ascending: false });
 
     if (error) {
@@ -7401,17 +7551,20 @@ async function loadCreatorsFromSupabase() {
           handle: displayHandle,
           avatar_url: p.avatar_url || '',
           bio: p.bio || '',
+          is_verified: p.is_verified === true,
           followers: 'Creator'
         });
       });
 
       creators = realCreators;
+      creators.forEach(c => cacheVerified(c.user_id || c.id, c.is_verified === true));
     }
   } catch(err) {
     console.error('loadCreatorsFromSupabase exception:', err);
   } finally {
     isLoadingCreators = false;
     renderCreators();
+    refreshAllVerifiedBadgeSlots();
   }
 }
 
@@ -7451,7 +7604,7 @@ function renderCreators() {
           <img class="creator-card-av-img" src="${c.avatar_url}" alt="${escapeHtml(c.name)}" onerror="this.style.display='none';this.parentElement.innerHTML='<span style=\\'font-weight:700;font-size:18px;color:#fff;\\'>${initial}</span>';">
         ` : `<span style="font-weight:700;font-size:18px;color:#fff;">${initial}</span>`}
       </div>
-      <div class="creator-card-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</div>
+      <div class="creator-card-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}${verifiedBadgeSlotHTML(c.user_id || c.id, c.is_verified === true, c.handle)}</div>
       <div class="creator-card-handle" title="@${escapeHtml(handleClean)}">@${escapeHtml(handleClean)}</div>
       <div class="creator-card-followers">${escapeHtml(c.followers || 'Creator')}</div>
       <button class="creator-message-btn" onclick="openDirectMessageWithCreator('${escapeHtml(c.id)}')" title="Direct Message with ${escapeHtml(c.name)}">
@@ -7773,7 +7926,7 @@ function renderChatThreads() {
       </div>
       <div class="chat-thread-body">
         <div class="chat-thread-top">
-          <span class="chat-thread-name">${escapeHtml(t.user)}</span>
+          <span class="chat-thread-name">${escapeHtml(t.user)}</span>${verifiedBadgeSlotHTML(t.user_id || t.creatorId, isUserVerified(t.user_id || t.creatorId) || isHandleVerified(t.handle), t.handle)}
           <span class="chat-thread-time">${escapeHtml(displayTime)}</span>
         </div>
         <div class="chat-thread-msg">${escapeHtml(lastText)}</div>
@@ -7828,6 +7981,12 @@ function openDirectMessageWithCreator(creatorId) {
 
   // Populate Chat Header with creator avatar and handle
   document.getElementById('chat-user-name').textContent = creator.name;
+  const chatNameBadge = document.getElementById('chat-name-badge');
+  if (chatNameBadge) {
+    chatNameBadge.setAttribute('data-uid', creator.user_id || creator.id || '');
+    chatNameBadge.setAttribute('data-handle', creator.handle || '');
+    syncVerifiedBadgeSlot(chatNameBadge);
+  }
   document.getElementById('chat-user-handle').textContent = '@' + (creator.handle || '').replace(/^@/, '');
   const avImg = document.getElementById('chat-user-avatar');
   const avInit = document.getElementById('chat-header-initial');
@@ -7874,6 +8033,12 @@ function openChat(threadId) {
   activeChatRecipient = creator;
 
   document.getElementById('chat-user-name').textContent = thread.user;
+  const chatNameBadge2 = document.getElementById('chat-name-badge');
+  if (chatNameBadge2) {
+    chatNameBadge2.setAttribute('data-uid', thread.user_id || thread.creatorId || creator.user_id || creator.id || '');
+    chatNameBadge2.setAttribute('data-handle', thread.handle || creator.handle || '');
+    syncVerifiedBadgeSlot(chatNameBadge2);
+  }
   document.getElementById('chat-user-handle').textContent = '@' + (thread.handle || '').replace(/^@/, '');
   const avImg = document.getElementById('chat-user-avatar');
   const avInit = document.getElementById('chat-header-initial');

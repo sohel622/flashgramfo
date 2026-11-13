@@ -227,6 +227,56 @@ CREATE TRIGGER trg_check_profile_cooldown
   FOR EACH ROW
   EXECUTE FUNCTION public.check_profile_update_cooldown();
 
+-- 6b. Verified badge protection: only an administrator may change
+-- profiles.is_verified. The column already exists (boolean, default
+-- false) — this trigger does NOT create or change any column, and it
+-- never touches other profile data. A normal user who tries to verify
+-- themself (or anyone else) from the app gets an error; the change is
+-- allowed only from the Supabase Dashboard / service_role key / direct
+-- SQL (no end-user JWT) or by an in-app admin (profiles.role = 'admin').
+-- The app itself never writes is_verified (it only reads it).
+CREATE OR REPLACE FUNCTION public.protect_verified_status()
+RETURNS trigger AS $$
+DECLARE
+  v_actor_role text;
+  v_new_verified boolean;
+  v_old_verified boolean;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    v_new_verified := COALESCE(NEW.is_verified, false);
+    v_old_verified := false;
+  ELSE
+    v_new_verified := COALESCE(NEW.is_verified, false);
+    v_old_verified := COALESCE(OLD.is_verified, false);
+  END IF;
+
+  IF v_new_verified IS DISTINCT FROM v_old_verified THEN
+    -- Supabase Dashboard / service_role key: no end-user JWT.
+    IF auth.role() = 'service_role' THEN
+      RETURN NEW;
+    END IF;
+    -- Direct SQL (SQL Editor / psql): no JWT at all.
+    IF auth.uid() IS NULL AND auth.role() IS NULL THEN
+      RETURN NEW;
+    END IF;
+    -- An in-app admin (profiles.role = 'admin') may change it.
+    SELECT role INTO v_actor_role FROM public.profiles WHERE user_id = auth.uid();
+    IF v_actor_role = 'admin' THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'Only an administrator can change verification status.';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_protect_verified_status ON public.profiles;
+CREATE TRIGGER trg_protect_verified_status
+  BEFORE INSERT OR UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.protect_verified_status();
+
 -- ========================================================
 -- 7. Realtime Chat Messages Table & Realtime Publication
 -- ========================================================
@@ -303,6 +353,21 @@ BEGIN
   END IF;
 EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'Could not add messages to the realtime publication: %', SQLERRM;
+END $$;
+
+-- Add public.profiles to the Supabase Realtime publication, so the
+-- app's verified-badge subscription sees is_verified flips live.
+-- (Without this, the dashboard change would not reach the app.)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'profiles'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'Could not add profiles to the realtime publication: %', SQLERRM;
 END $$;
 
 -- ========================================================
