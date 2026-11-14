@@ -610,58 +610,6 @@
     #page-profile.profile-color-light .profile-tab.active { border-bottom-color: #111; }
     #page-profile.profile-color-light .profile-topbar-icon { color: #111; background: rgba(0, 0, 0, 0.08); }
     #page-profile.profile-color-light .profile-btn-edit-main { color: #111; background: rgba(0, 0, 0, 0.08); border-color: rgba(0, 0, 0, 0.15); }
-    /* Profile Color picker (bottom sheet): a live preview of the
-       selected color plus a grid of the 10 preset swatches. Large
-       tap targets, so it works on mobile and desktop alike. */
-    .color-preview {
-      border-radius: 14px;
-      padding: 18px;
-      margin-bottom: 16px;
-      text-align: left;
-      background: #000;
-      transition: background-color .3s ease;
-    }
-    .color-preview-name { font-size: 18px; font-weight: 800; color: #fff; }
-    .color-preview-handle { font-size: 13px; color: rgba(255, 255, 255, 0.6); margin-top: 2px; }
-    .color-preview-hex { font-size: 12px; color: rgba(255, 255, 255, 0.6); margin-top: 8px; font-family: monospace; }
-    .color-preview.light .color-preview-name { color: #111; }
-    .color-preview.light .color-preview-handle,
-    .color-preview.light .color-preview-hex { color: rgba(0, 0, 0, 0.6); }
-    .color-swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
-    .color-swatch {
-      aspect-ratio: 1;
-      min-height: 44px;
-      border-radius: 50%;
-      border: 2px solid rgba(255, 255, 255, 0.15);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-      transition: transform .12s, border-color .15s, box-shadow .15s;
-    }
-    .color-swatch:active { transform: scale(0.94); }
-    .color-swatch.selected { border-color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.45); }
-    .color-swatch .material-symbols-rounded { font-size: 22px; }
-    /* "Profile Color" row inside the Edit Profile sheet. */
-    .ep-color-btn {
-      width: 100%;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px;
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      color: #fff;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      font-family: var(--font);
-      margin-bottom: 14px;
-      text-align: left;
-    }
-    .ep-color-swatch { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); flex-shrink: 0; }
     .profile-header {
       padding: calc(env(safe-area-inset-top, 0px) + 16px) max(20px, env(safe-area-inset-right, 0px)) 16px max(20px, env(safe-area-inset-left, 0px));
     }
@@ -2719,15 +2667,6 @@
     </div>
     <textarea id="ep-bio" class="text-input" rows="3" placeholder="Tell the world about yourself…" style="margin-bottom:18px;resize:none;"></textarea>
 
-    <div class="ep-label-row">
-      <span class="ep-label-text">Profile Color</span>
-    </div>
-    <button type="button" id="ep-color-btn" class="ep-color-btn" onclick="openColorPicker()">
-      <span class="ep-color-swatch" id="ep-color-swatch" style="background:#000000"></span>
-      <span id="ep-color-name">Black</span>
-      <span class="material-symbols-rounded" style="margin-left:auto;font-size:20px;color:var(--fg2);">chevron_right</span>
-    </button>
-
     <button id="ep-save-btn" class="upload-btn" onclick="saveProfile()">
       <span class="material-symbols-rounded">check</span>
       Save Changes
@@ -2736,25 +2675,6 @@
     <button id="ep-logout-btn" class="auth-btn-secondary" style="margin-top:10px;color:#fe2c55;border-color:rgba(254,44,85,0.25);display:none;" onclick="handleSignOut()">
       <span class="material-symbols-rounded" style="font-size:18px;">logout</span>
       Log Out of Account
-    </button>
-  </div>
-</div>
-
-<!-- PROFILE COLOR PICKER -->
-<div id="color-picker-modal" onclick="closeOnBackdrop(event,'color-picker-modal')">
-  <div class="modal-sheet" onclick="event.stopPropagation()">
-    <div class="modal-handle"></div>
-    <div class="modal-title">Profile Color</div>
-    <div class="modal-sub">Choose a background color for your profile</div>
-    <div id="color-preview" class="color-preview">
-      <div class="color-preview-name" id="color-preview-name">Your Name</div>
-      <div class="color-preview-handle" id="color-preview-handle">@user</div>
-      <div class="color-preview-hex" id="color-preview-hex">#000000 · Black</div>
-    </div>
-    <div id="color-swatches" class="color-swatches"></div>
-    <button class="upload-btn" style="margin-top:16px;" onclick="closeColorPicker()">
-      <span class="material-symbols-rounded">check</span>
-      Done
     </button>
   </div>
 </div>
@@ -5369,7 +5289,6 @@ function openEditProfile() {
   const logoutBtn = document.getElementById('ep-logout-btn');
   if (logoutBtn) logoutBtn.style.display = currentAuthUser ? 'flex' : 'none';
 
-  syncEditColorRow();
   renderProfileCooldownUI();
   document.getElementById('edit-profile-modal').classList.add('open');
 }
@@ -6509,15 +6428,19 @@ function subscribeToProfilesRealtime() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  PROFILE COLOR (Supabase public.profiles.profile_color)
-//  The column already exists (text, default '#000000') — the app only
-//  reads it and writes it on the user's OWN row (RLS: auth.uid() =
-//  user_id, so a user can never change another user's color). One
-//  color per user, loaded from Supabase on sign-in and cached in
+//  PROFILE COLOR — ADMIN-ONLY (Supabase public.profiles.profile_color)
+//  The column already exists (text, default '#000000'). The app only
+//  READS it and displays it; there is no user-facing way to change
+//  it (no picker, no settings row, no save path). Colors are assigned
+//  by the admin in the Supabase dashboard, and a database trigger
+//  (protect_profile_color) blocks any profile_color change from the
+//  app for non-admins — so hiding the UI is not the only protection.
+//  One color per user, loaded from Supabase on sign-in and cached in
 //  IndexedDB so it survives refresh / logout / login. The profile
 //  page background is the color; a light color switches the profile
 //  text to dark so it stays readable. Creator cards show each
-//  creator's own color the same way.
+//  creator's own color the same way. A Realtime profiles update
+//  repaints the color live when the admin changes it.
 // ═══════════════════════════════════════════════════════════════
 const PROFILE_COLORS = [
   { hex: '#000000', name: 'Black' },
@@ -6536,10 +6459,6 @@ function normalizeProfileColor(c) {
   const t = c.trim().toUpperCase();
   if (/^#[0-9A-F]{6}$/.test(t)) return t;
   return '#000000';
-}
-function profileColorName(hex) {
-  const f = PROFILE_COLORS.find(x => x.hex === normalizeProfileColor(hex));
-  return f ? f.name : 'Custom';
 }
 // Relative luminance (WCAG), 0 = black, 1 = white.
 function profileColorLuminance(hex) {
@@ -6560,8 +6479,8 @@ function isLightProfileColor(hex) {
 }
 // Paint the own profile page in the color (background via the
 // --profile-color variable, which the page, tabs and grid all use;
-// text switches to dark on light colors). Display only — saving is
-// saveProfileColor().
+// text switches to dark on light colors). Display only — the app
+// never writes profile_color; only the admin sets it in Supabase.
 function applyProfileColor(color) {
   const c = normalizeProfileColor(color);
   profile.profile_color = c;
@@ -6570,78 +6489,6 @@ function applyProfileColor(color) {
     page.style.setProperty('--profile-color', c);
     page.classList.toggle('profile-color-light', isLightProfileColor(c));
   }
-}
-// Keep the "Profile Color" row in the Edit Profile sheet in sync.
-function syncEditColorRow() {
-  const sw = document.getElementById('ep-color-swatch');
-  const nm = document.getElementById('ep-color-name');
-  const c = normalizeProfileColor(profile.profile_color);
-  if (sw) sw.style.background = c;
-  if (nm) nm.textContent = profileColorName(c);
-}
-// Pick a color: live preview on the profile page at once, then save
-// it to the user's own profile_color in Supabase (and IndexedDB).
-// On a save failure the preview rolls back to the previous color.
-async function saveProfileColor(hex) {
-  const color = normalizeProfileColor(hex);
-  const prev = normalizeProfileColor(profile.profile_color);
-  applyProfileColor(color);
-  syncEditColorRow();
-  renderColorPicker();
-  try { await dbPut('profile', { key: 'profile_color', val: color }); } catch (_) {}
-  if (!supabaseClient || !profile.id) {
-    if (!supabaseClient) showToast('Color saved on this device');
-    return { ok: true };
-  }
-  try {
-    const { error } = await supabaseClient
-      .from('profiles')
-      .update({ profile_color: color, updated_at: new Date().toISOString() })
-      .eq('user_id', profile.id);
-    if (error) throw new Error(error.message);
-    showToast('Profile color saved');
-    return { ok: true };
-  } catch (err) {
-    applyProfileColor(prev);
-    syncEditColorRow();
-    renderColorPicker();
-    showToast('Could not save color: ' + (err.message || 'try again'));
-    return { ok: false, error: err };
-  }
-}
-function openColorPicker() {
-  renderColorPicker();
-  document.getElementById('color-picker-modal').classList.add('open');
-}
-function closeColorPicker() {
-  document.getElementById('color-picker-modal').classList.remove('open');
-}
-function renderColorPicker() {
-  const box = document.getElementById('color-swatches');
-  const preview = document.getElementById('color-preview');
-  const current = normalizeProfileColor(profile.profile_color);
-  if (box) {
-    box.innerHTML = PROFILE_COLORS.map(c => {
-      const sel = c.hex === current;
-      const light = isLightProfileColor(c.hex);
-      return '<button type="button" class="color-swatch' + (sel ? ' selected' : '') + '" style="background:' + c.hex + '" title="' + c.name + ' (' + c.hex + ')" onclick="selectProfileColor(\'' + c.hex + '\')">' +
-        (sel ? '<span class="material-symbols-rounded" style="color:' + (light ? '#111' : '#fff') + ';">check</span>' : '') +
-        '</button>';
-    }).join('');
-  }
-  if (preview) {
-    preview.style.background = current;
-    preview.classList.toggle('light', isLightProfileColor(current));
-    const nm = document.getElementById('color-preview-name');
-    const hd = document.getElementById('color-preview-handle');
-    const hx = document.getElementById('color-preview-hex');
-    if (nm) nm.textContent = profile.name || 'Your Name';
-    if (hd) hd.textContent = '@' + (profile.handle || 'user');
-    if (hx) hx.textContent = current + ' · ' + profileColorName(current);
-  }
-}
-function selectProfileColor(hex) {
-  saveProfileColor(hex);
 }
 
 function makeInfo(v) {

@@ -277,6 +277,59 @@ CREATE TRIGGER trg_protect_verified_status
   FOR EACH ROW
   EXECUTE FUNCTION public.protect_verified_status();
 
+-- 6c. Admin-only profile color (public.profiles.profile_color).
+-- Colors are assigned by the admin in the Supabase dashboard only.
+-- This trigger blocks any profile_color change that comes from the
+-- app for a normal user — hiding the picker UI is not the only
+-- protection. It does NOT create or change any column, and it never
+-- touches other profile data: a user updating their name, bio or
+-- avatar (with profile_color unchanged) passes straight through.
+-- A profile_color change is allowed only from the Supabase Dashboard
+-- / service_role key / direct SQL (no end-user JWT) or by an in-app
+-- admin (profiles.role = 'admin'). The app itself never writes
+-- profile_color (it only reads it and displays it).
+CREATE OR REPLACE FUNCTION public.protect_profile_color()
+RETURNS trigger AS $$
+DECLARE
+  v_actor_role text;
+  v_new_color text;
+  v_old_color text;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    v_new_color := COALESCE(NEW.profile_color, '#000000');
+    v_old_color := '#000000';
+  ELSE
+    v_new_color := COALESCE(NEW.profile_color, '#000000');
+    v_old_color := COALESCE(OLD.profile_color, '#000000');
+  END IF;
+
+  IF v_new_color IS DISTINCT FROM v_old_color THEN
+    -- Supabase Dashboard / service_role key: no end-user JWT.
+    IF auth.role() = 'service_role' THEN
+      RETURN NEW;
+    END IF;
+    -- Direct SQL (SQL Editor / psql): no JWT at all.
+    IF auth.uid() IS NULL AND auth.role() IS NULL THEN
+      RETURN NEW;
+    END IF;
+    -- An in-app admin (profiles.role = 'admin') may change it.
+    SELECT role INTO v_actor_role FROM public.profiles WHERE user_id = auth.uid();
+    IF v_actor_role = 'admin' THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'Only an administrator can change profile color.';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_protect_profile_color ON public.profiles;
+CREATE TRIGGER trg_protect_profile_color
+  BEFORE INSERT OR UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.protect_profile_color();
+
 -- ========================================================
 -- 7. Realtime Chat Messages Table & Realtime Publication
 -- ========================================================
