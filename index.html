@@ -419,8 +419,15 @@
       filter: drop-shadow(0 2px 6px rgba(0,0,0,0.85));
     }
     .action-count {
-      display: none !important;
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      text-align: center;
+      margin-top: 2px;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.85);
     }
+    .action-count:empty { display: none; }
     .liked .like-icon { color: var(--accent) !important; animation: heartPop .35s cubic-bezier(.4,0,.2,1); }
     .liked .like-icon svg { fill: var(--accent) !important; }
     .saved .save-icon { color: #f59e0b !important; }
@@ -6287,9 +6294,11 @@ function makeActions(v, i) {
       <div class="action-icon-wrap">
         <span class="material-symbols-rounded like-icon">favorite</span>
       </div>
+      <div class="action-count" id="lc-${v.id}">${fmtC(v.likes)}</div>
     </div>
     <div class="action-btn" onclick="openComments('${v.id}')" title="Comments">
       <div class="action-icon-wrap"><span class="material-symbols-rounded fi">chat_bubble</span></div>
+      <div class="action-count" id="cc-${v.id}">${fmtC(cmCount(v))}</div>
     </div>
     <div class="action-btn${isSaved ? ' saved' : ''}" id="save-${v.id}" onclick="toggleSave('${v.id}')" title="Save">
       <div class="action-icon-wrap"><span class="material-symbols-rounded save-icon">bookmark</span></div>
@@ -6514,6 +6523,142 @@ function makeInfo(v) {
 // ═══════════════════════════════════════════════════════
 //  INTERACTIONS
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  LIKES & COMMENTS (Supabase public.likes / public.comments)
+//  The tables already exist. A like inserts {post_id, user_id} and a
+//  comment inserts {post_id, user_id, content} — post_owner_id is
+//  filled by a database trigger from the posts table, and a unique
+//  index on (post_id, user_id) stops duplicate likes. RLS makes sure
+//  a user can only ever write their own user_id, so nobody can like
+//  or comment as someone else. Only real Supabase posts (UUID ids)
+//  sync to the database; local-only videos stay local-only.
+// ═══════════════════════════════════════════════════════════════
+function isSupabasePostId(id) {
+  return typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+// Write one like / unlike to Supabase, after the optimistic local
+// update. On failure the UI rolls back so the screen never shows a
+// like that did not save (or an unlike that did not delete).
+async function syncLikeToSupabase(v, isLiked, btn) {
+  if (!supabaseClient || !currentAuthUser || !isSupabasePostId(v.id)) return { ok: false, skipped: true };
+  const postId = v.id;
+  const userId = String(currentAuthUser.id);
+  try {
+    if (isLiked) {
+      const { error } = await supabaseClient.from('likes').insert({ post_id: postId, user_id: userId });
+      if (error) {
+        // 23505 / 409 = already liked (unique index) — treat as liked.
+        if (String(error.code) === '23505' || String(error.code) === '409' || /duplicate/i.test(error.message || '')) {
+          return { ok: true, duplicate: true };
+        }
+        throw new Error(error.message);
+      }
+      return { ok: true };
+    }
+    const { error } = await supabaseClient.from('likes').delete().eq('post_id', postId).eq('user_id', userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  } catch (err) {
+    const revert = !isLiked;
+    v.liked = revert;
+    v.likes = Math.max(0, (v.likes || 0) + (revert ? 1 : -1));
+    if (btn) btn.classList.toggle('liked', revert);
+    const countEl = document.getElementById('lc-' + v.id);
+    if (countEl) countEl.textContent = fmtC(v.likes);
+    try { if (!v.isSeed) await dbPut('videos', v); } catch(_) {}
+    showToast('Could not save like: ' + (err.message || 'try again'));
+    return { ok: false, error: err };
+  }
+}
+// Load the real like counts, comment counts and this user's liked
+// state for every loaded post, then repaint the counts and buttons.
+async function loadEngagementForVideos() {
+  if (!supabaseClient) return;
+  const postIds = videos.filter(v => v && isSupabasePostId(v.id)).map(v => v.id);
+  if (postIds.length === 0) return;
+  const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : null;
+  try {
+    const { data: likeRows, error: likeErr } = await supabaseClient
+      .from('likes').select('post_id, user_id').in('post_id', postIds);
+    if (!likeErr && Array.isArray(likeRows)) {
+      const counts = {};
+      const likedByMe = {};
+      likeRows.forEach(r => {
+        counts[r.post_id] = (counts[r.post_id] || 0) + 1;
+        if (myId && String(r.user_id).toLowerCase() === myId) likedByMe[r.post_id] = true;
+      });
+      videos.forEach(v => {
+        if (isSupabasePostId(v.id)) {
+          v.likes = counts[v.id] || 0;
+          v.liked = !!likedByMe[v.id];
+        }
+      });
+    }
+    const { data: commentRows, error: commentErr } = await supabaseClient
+      .from('comments').select('post_id').in('post_id', postIds);
+    if (!commentErr && Array.isArray(commentRows)) {
+      const counts = {};
+      commentRows.forEach(r => { counts[r.post_id] = (counts[r.post_id] || 0) + 1; });
+      videos.forEach(v => {
+        if (isSupabasePostId(v.id)) v.comments = counts[v.id] || 0;
+      });
+    }
+  } catch (err) {
+    console.warn('loadEngagementForVideos error:', err);
+  }
+  refreshEngagementCounts();
+}
+function refreshEngagementCounts() {
+  videos.forEach(v => {
+    if (!v) return;
+    const lc = document.getElementById('lc-' + v.id);
+    if (lc) lc.textContent = fmtC(v.likes);
+    const cc = document.getElementById('cc-' + v.id);
+    if (cc) cc.textContent = fmtC(cmCount(v));
+    const likeBtn = document.getElementById('like-' + v.id);
+    if (likeBtn) likeBtn.classList.toggle('liked', !!v.liked);
+  });
+}
+// Load a video's comments from Supabase (oldest first) and resolve
+// each commenter's handle from profiles (comments only carry
+// user_id). Local-only comments (no id, e.g. written while signed
+// out or when the save failed) are kept after the loaded ones.
+async function loadCommentsForVideo(v) {
+  if (!v) return [];
+  if (!supabaseClient || !isSupabasePostId(v.id)) return v.userComments || [];
+  try {
+    const { data, error } = await supabaseClient
+      .from('comments').select('*').eq('post_id', v.id).order('created_at', { ascending: true });
+    if (error) throw new Error(error.message);
+    const rows = Array.isArray(data) ? data : [];
+    const ids = [...new Set(rows.map(r => String(r.user_id)).filter(Boolean))];
+    const handles = {};
+    if (ids.length > 0) {
+      const { data: profs } = await supabaseClient
+        .from('profiles').select('user_id, username, display_name').in('user_id', ids);
+      (Array.isArray(profs) ? profs : []).forEach(p => {
+        handles[String(p.user_id)] = p.username || p.display_name || 'user';
+      });
+    }
+    const list = rows.map(r => ({
+      user: '@' + (handles[String(r.user_id)] || 'user'),
+      user_id: r.user_id,
+      text: r.content || '',
+      time: r.created_at ? formatRelativeTime(r.created_at) : '',
+      created_at: r.created_at || null,
+      id: r.id
+    }));
+    const localOnly = (v.userComments || []).filter(c => !c.id);
+    v.userComments = list.concat(localOnly);
+    v.commentsLoaded = true;
+    v.comments = list.length;
+    return v.userComments;
+  } catch (err) {
+    console.warn('loadCommentsForVideo error:', err);
+    return v.userComments || [];
+  }
+}
+
 async function toggleLike(btn, id, idx) {
   const v = videos[idx];
   if (!v) return;
@@ -6541,6 +6686,9 @@ async function toggleLike(btn, id, idx) {
   if (countEl) countEl.textContent = fmtC(v.likes);
   applyProfile();
   try { if (!v.isSeed) await dbPut('videos', v); } catch(e){}
+
+  // Sync the like / unlike to Supabase (real posts, signed in only).
+  await syncLikeToSupabase(v, isLiked, btn);
 }
 
 function toggleFollow(e, id) {
@@ -6893,6 +7041,8 @@ async function loadPostsFromSupabase() {
         renderProfileGrid();
       }
     }
+    // Real like / comment counts and this user's liked state.
+    await loadEngagementForVideos();
   } catch(err) {
     console.warn('loadPostsFromSupabase error:', err);
   }
@@ -7522,15 +7672,23 @@ async function submitUpload() {
 // ═══════════════════════════════════════════════════════
 let activeCommentsId = null;
 
-function openComments(id) {
+async function openComments(id) {
   activeCommentsId = id;
   const v = videos.find(x => x.id === id);
-  document.getElementById('commentsTitle').textContent = fmtN(cmCount(v)) + ' Comments';
   const list = document.getElementById('commentsList');
-  list.innerHTML = '';
-  (v?.userComments || []).forEach(c => addCommentEl(list, c.user, c.text, c.time));
+  const render = () => {
+    document.getElementById('commentsTitle').textContent = fmtN(cmCount(v)) + ' Comments';
+    list.innerHTML = '';
+    (v?.userComments || []).forEach(c => addCommentEl(list, c.user, c.text, c.time));
+    const ccEl = document.getElementById('cc-' + id);
+    if (ccEl) ccEl.textContent = fmtC(cmCount(v));
+  };
+  render();
   document.getElementById('comments-modal').classList.add('open');
   pauseAllFeedVideos();
+  // Load the real comments from Supabase and re-render.
+  await loadCommentsForVideo(v);
+  render();
 }
 
 function addCommentEl(list, user, text, time) {
@@ -7567,6 +7725,27 @@ async function postComment() {
   const ccEl = document.getElementById('cc-' + v.id);
   if (ccEl) ccEl.textContent = fmtC(cmCount(v));
   try { if (!v.isSeed) await dbPut('videos', v); } catch(e){}
+
+  // Save to Supabase (real post, signed in only). The trigger fills
+  // post_owner_id from the posts table. On failure the comment stays
+  // on this device only (it is already on screen and in IndexedDB).
+  if (supabaseClient && currentAuthUser && isSupabasePostId(v.id)) {
+    try {
+      const { data, error } = await supabaseClient
+        .from('comments')
+        .insert({ post_id: v.id, user_id: String(currentAuthUser.id), content: text })
+        .select('id, created_at')
+        .single();
+      if (error) throw new Error(error.message);
+      if (data) {
+        c.id = data.id;
+        if (data.created_at) c.created_at = data.created_at;
+      }
+    } catch (err) {
+      console.warn('postComment Supabase error:', err);
+      showToast('Comment saved on this device only');
+    }
+  }
 }
 
 function openShare(id) {
@@ -9231,7 +9410,14 @@ async function deleteVideo(id) {
 //  HELPERS & FORMATTING
 // ═══════════════════════════════════════════════════════
 function fmtC(n) { return n > 0 ? fmtN(n) : ''; }
-function cmCount(v) { return (v.comments || 0) + ((v.userComments || []).length); }
+function cmCount(v) {
+  if (!v) return 0;
+  // Once the comments were loaded from Supabase, userComments IS the
+  // list (Supabase comments + any local-only ones), so its length is
+  // the total. Before that, the base count plus local comments.
+  if (v.commentsLoaded) return (v.userComments || []).length;
+  return (v.comments || 0) + ((v.userComments || []).length);
+}
 function fmtN(n) {
   if (!n) return '0';
   if (n >= 1e6) return (n / 1e6).toFixed(n >= 10e6 ? 0 : 1).replace(/\.0$/, '') + 'M';

@@ -648,3 +648,95 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'Could not add posts to the realtime publication: %', SQLERRM;
 END $$;
+
+-- ========================================================
+-- 8. LIKES & COMMENTS (public.likes, public.comments)
+-- ========================================================
+-- The tables already exist in the live database; every statement
+-- here is idempotent (IF NOT EXISTS / DROP ... IF EXISTS), so
+-- running this file again never creates a duplicate table, column,
+-- index, trigger or policy. The app inserts {post_id, user_id} for
+-- a like and {post_id, user_id, content} for a comment; a trigger
+-- fills post_owner_id from the video's owner in the posts table,
+-- and a unique index stops the same user liking the same video
+-- twice. RLS makes sure a user can only ever write their own
+-- user_id, so nobody can like or comment as someone else.
+CREATE TABLE IF NOT EXISTS public.likes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  post_owner_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS public.comments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  post_owner_id TEXT,
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One like per user per video (duplicate likes are rejected by the
+-- database itself, not just by the app).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_likes_post_user_unique
+  ON public.likes (post_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_likes_post_id ON public.likes (post_id);
+CREATE INDEX IF NOT EXISTS idx_comments_post_id ON public.comments (post_id);
+
+-- Fill post_owner_id from the video's owner in the posts table.
+-- Type-agnostic: posts.id is a UUID while post_id may be stored as
+-- text, so both sides are compared as text.
+CREATE OR REPLACE FUNCTION public.fill_post_owner_id()
+RETURNS trigger AS $$
+BEGIN
+  SELECT user_id INTO NEW.post_owner_id
+    FROM public.posts WHERE id::text = NEW.post_id::text;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_likes_fill_owner ON public.likes;
+CREATE TRIGGER trg_likes_fill_owner
+  BEFORE INSERT ON public.likes
+  FOR EACH ROW
+  EXECUTE FUNCTION public.fill_post_owner_id();
+
+DROP TRIGGER IF EXISTS trg_comments_fill_owner ON public.comments;
+CREATE TRIGGER trg_comments_fill_owner
+  BEFORE INSERT ON public.comments
+  FOR EACH ROW
+  EXECUTE FUNCTION public.fill_post_owner_id();
+
+-- RLS: anyone can read likes and comments; only the signed-in user
+-- can write a row with their own user_id.
+ALTER TABLE public.likes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Likes are viewable by everyone" ON public.likes;
+CREATE POLICY "Likes are viewable by everyone"
+  ON public.likes FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Users can like as themselves" ON public.likes;
+CREATE POLICY "Users can like as themselves"
+  ON public.likes FOR INSERT
+  WITH CHECK (auth.uid()::text = user_id::text);
+
+DROP POLICY IF EXISTS "Users can unlike their own likes" ON public.likes;
+CREATE POLICY "Users can unlike their own likes"
+  ON public.likes FOR DELETE
+  USING (auth.uid()::text = user_id::text);
+
+DROP POLICY IF EXISTS "Comments are viewable by everyone" ON public.comments;
+CREATE POLICY "Comments are viewable by everyone"
+  ON public.comments FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Users can comment as themselves" ON public.comments;
+CREATE POLICY "Users can comment as themselves"
+  ON public.comments FOR INSERT
+  WITH CHECK (auth.uid()::text = user_id::text);
+
+DROP POLICY IF EXISTS "Users can delete their own comments" ON public.comments;
+CREATE POLICY "Users can delete their own comments"
+  ON public.comments FOR DELETE
+  USING (auth.uid()::text = user_id::text);
