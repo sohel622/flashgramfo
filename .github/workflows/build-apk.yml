@@ -33,6 +33,18 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
+      - name: Fix Kotlin Version Conflict
+        run: |
+          cd android/app
+          echo "" >> build.gradle
+          echo "configurations.all {" >> build.gradle
+          echo "    resolutionStrategy.eachDependency { details ->" >> build.gradle
+          echo "        if (details.requested.group == 'org.jetbrains.kotlin') {" >> build.gradle
+          echo "            details.useVersion '1.9.24'" >> build.gradle
+          echo "        }" >> build.gradle
+          echo "    }" >> build.gradle
+          echo "}" >> build.gradle
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
