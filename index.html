@@ -4304,6 +4304,134 @@ const getRedirectUrl = () => {
   return LIVE_REDIRECT_URL;
 };
 
+// ═══════════════════════════════════════════════════════════════
+//  GOOGLE SIGN-IN — GENUINE GOOGLE ACCOUNT CHOOSER, NO REDIRECT
+//  This app is a web app (served on Vercel) wrapped into an Android
+//  APK with Capacitor, so on the phone it runs in a WebView. The old
+//  flow (signInWithOAuth) redirects the whole page to Google in an
+//  external browser and shows the Supabase URL in the address bar.
+//  The new flow keeps the user inside the app:
+//  1) Native Android account picker — when a Capacitor Google
+//     Sign-In plugin is installed, it hands the web app an ID token
+//     from the native chooser (see tryNativeGoogleSignIn below).
+//  2) Google Identity Services (GIS) — Google's own account chooser
+//     as an in-app popup. It returns an ID token, which is exchanged
+//     for a Supabase session with signInWithIdToken. Same backend,
+//     same profiles, same everything — only the chooser differs, and
+//     there is no redirect and no Supabase URL in any address bar.
+//  3) Fallback — the existing OAuth redirect flow, unchanged, so
+//     sign-in never breaks if GIS cannot load or cannot show the
+//     chooser (for example, in a WebView that blocks popups).
+//  GOOGLE_CLIENT_ID is the OAuth 2.0 Web client ID from the SAME
+//  Google Cloud project that Supabase's Google provider uses. It is
+//  a public identifier, not a secret. The site origin (and
+//  https://localhost for the Capacitor app) must be added as an
+//  Authorized JavaScript origin for that client in Google Cloud
+//  Console, or Google refuses the popup.
+// ═══════════════════════════════════════════════════════════════
+const GOOGLE_CLIENT_ID = '480251116405-na67r6m4vfh18a5hfrqke6q9cehii0de.apps.googleusercontent.com';
+let googleGisLoading = null;
+function loadGoogleGis() {
+  if (window.google && window.google.accounts && window.google.accounts.id) return Promise.resolve(true);
+  if (googleGisLoading) return googleGisLoading;
+  googleGisLoading = new Promise((resolve) => {
+    try {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true; s.defer = true;
+      s.onload = () => resolve(!!(window.google && window.google.accounts && window.google.accounts.id));
+      s.onerror = () => resolve(false);
+      document.head.appendChild(s);
+    } catch (_) { resolve(false); }
+    setTimeout(() => resolve(!!(window.google && window.google.accounts && window.google.accounts.id)), 8000);
+  });
+  return googleGisLoading;
+}
+// Sign into Supabase with a Google ID token (from GIS or from a
+// native Google Sign-In plugin). Same backend, same session, same
+// profile sync as the OAuth redirect — only the chooser differs.
+async function signInWithGoogleIdToken(idToken) {
+  if (!supabaseClient || !idToken) throw new Error('Google sign-in is not available.');
+  const { data, error } = await supabaseClient.auth.signInWithIdToken({ provider: 'google', token: idToken });
+  if (error) throw error;
+  if (data && data.user) {
+    currentAuthUser = data.user;
+    closeAuthPage();
+    showToast('Signed in with Google 🎉');
+    await loadUserProfileFromSupabase(currentAuthUser.id);
+    applyProfile();
+    renderProfileGrid();
+  }
+  return data;
+}
+// Native bridge: a Capacitor Google Sign-In plugin (or any native
+// code) hands the ID token here after the user picks an account in
+// the native Android chooser. Exposed on window on purpose.
+window.ReelFlowGoogleSignIn = { signInWithIdToken: signInWithGoogleIdToken };
+// A native Capacitor Google Sign-In plugin, when installed, returns
+// an ID token from the native Android account picker
+// (window.Capacitor.Plugins.GoogleAuth is the
+// @codetrix-studio/capacitor-google-auth plugin). Returns true when
+// the user signed in that way, false when no plugin is present.
+async function tryNativeGoogleSignIn() {
+  try {
+    const plugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.GoogleAuth;
+    if (plugin && typeof plugin.signIn === 'function') {
+      const result = await plugin.signIn();
+      const idToken = result && result.authentication && result.authentication.idToken;
+      if (idToken) { await signInWithGoogleIdToken(idToken); return true; }
+    }
+  } catch (err) {
+    console.warn('Native Google sign-in unavailable:', err);
+  }
+  return false;
+}
+// The genuine Google account chooser as an in-app popup (Google
+// Identity Services One Tap). Returns 'signed-in' when the user
+// picked an account and the token was exchanged, 'cancelled' when
+// the user dismissed the chooser (do NOT redirect then), and
+// 'unavailable' when the chooser could not be shown at all (the
+// caller falls back to the redirect flow).
+async function signInWithGooglePopup() {
+  if (!GOOGLE_CLIENT_ID) return 'unavailable';
+  const ok = await loadGoogleGis();
+  if (!ok) return 'unavailable';
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    try {
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: async (resp) => {
+          if (resp && resp.credential) {
+            try { await signInWithGoogleIdToken(resp.credential); finish('signed-in'); }
+            catch (err) { console.error('Google ID token sign-in failed:', err); finish('unavailable'); }
+          } else {
+            finish('unavailable');
+          }
+        },
+        auto_select: false,
+        cancel_on_tap_outside: true
+      });
+      window.google.accounts.id.prompt((notification) => {
+        if (notification.isDismissed()) {
+          // The user closed the chooser on purpose — do not redirect.
+          finish('cancelled');
+        } else if (notification.isNotDisplayed() || notification.isSkipped()) {
+          // No account to show, or the WebView blocked the popup.
+          finish('unavailable');
+        }
+        // isDisplayed() → the chooser is showing; wait for the pick.
+      });
+      // Safety net: if the chooser never appears, do not hang.
+      setTimeout(() => finish('unavailable'), 30000);
+    } catch (err) {
+      console.error('Google popup sign-in failed:', err);
+      finish('unavailable');
+    }
+  });
+}
+
 async function handleGoogleSignIn() {
   const errBox = document.getElementById('auth-error');
   const googleBtn = document.getElementById('auth-google-btn');
@@ -4323,7 +4451,24 @@ async function handleGoogleSignIn() {
     <span class="auth-google-btn-text">Connecting to Google…</span>
   `;
 
+  const restoreBtn = () => { googleBtn.disabled = false; googleBtn.innerHTML = googleBtnDefaultHtml; };
+
   try {
+    // 1) Native Android account picker (Capacitor plugin), when installed.
+    if (await tryNativeGoogleSignIn()) return;
+
+    // 2) Genuine Google account chooser as an in-app popup (GIS).
+    //    Only with a real Supabase backend — the local demo adapter
+    //    has no signInWithIdToken, so it keeps the old flow.
+    const isRealSupabase = !supabaseClient.isLocalAdapter && supabaseClient.auth && typeof supabaseClient.auth.signInWithIdToken === 'function';
+    if (isRealSupabase) {
+      const popup = await signInWithGooglePopup();
+      if (popup === 'signed-in') return;
+      if (popup === 'cancelled') { restoreBtn(); return; }
+      // 'unavailable' → fall through to the redirect flow below.
+    }
+
+    // 3) Fallback: the existing OAuth redirect flow (unchanged).
     const isIframe = typeof window !== 'undefined' && window.self !== window.top;
 
     console.log('Initiating Google OAuth with strict production redirect URL:', LIVE_REDIRECT_URL, { isIframe });
