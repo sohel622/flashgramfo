@@ -20,18 +20,19 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build web assets
-        run: npm run build --if-present
+      - name: Prepare web assets directory
+        run: |
+          mkdir -p dist
+          # রুট ফোল্ডার থেকে index.html ফাইলটি dist ফোল্ডারে কপি করা হচ্ছে
+          cp index.html dist/
+          # যদি আপনার প্রজেক্টে অতিরিক্ত কোনো ফোল্ডার (যেমন css, js বা assets) থাকে, তবে নিচের লাইনে যোগ করতে পারেন
+          # cp -r assets dist/ || true
 
       - name: Install and Setup Capacitor
         run: |
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          if [ ! -f capacitor.config.json ] && [ ! -f capacitor.config.ts ]; then
-            npx cap init "Flashgram" "com.flashgram.app" --web-dir=dist
-          fi
-          if [ ! -d android ]; then
-            npx cap add android
-          fi
+          npx cap init "Flashgram" "com.flashgram.app" --web-dir=dist --force
+          npx cap add android
           npx cap sync android
 
       - name: Set up JDK 17
@@ -51,4 +52,3 @@ jobs:
         with:
           name: flashgram-app
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          
