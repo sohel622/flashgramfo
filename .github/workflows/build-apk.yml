@@ -23,16 +23,15 @@ jobs:
       - name: Prepare web assets directory
         run: |
           mkdir -p dist
-          # রুট ফোল্ডার থেকে index.html ফাইলটি dist ফোল্ডারে কপি করা হচ্ছে
           cp index.html dist/
-          # যদি আপনার প্রজেক্টে অতিরিক্ত কোনো ফোল্ডার (যেমন css, js বা assets) থাকে, তবে নিচের লাইনে যোগ করতে পারেন
-          # cp -r assets dist/ || true
 
       - name: Install and Setup Capacitor
         run: |
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init "Flashgram" "com.flashgram.app" --web-dir=dist --force
-          npx cap add android
+          # পুরনো কনফিগ ফাইল থাকলে মুছে ফেলবে
+          rm -f capacitor.config.json capacitor.config.ts
+          npx cap init "Flashgram" "com.flashgram.app" --web-dir=dist
+          npx cap add android || true
           npx cap sync android
 
       - name: Set up JDK 17
