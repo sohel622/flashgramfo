@@ -28,17 +28,16 @@ jobs:
       - name: Install and Setup Capacitor
         run: |
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          # পুরনো কনফিগ ফাইল থাকলে মুছে ফেলবে
           rm -f capacitor.config.json capacitor.config.ts
           npx cap init "Flashgram" "com.flashgram.app" --web-dir=dist
           npx cap add android || true
           npx cap sync android
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Build APK with Gradle
         run: |
