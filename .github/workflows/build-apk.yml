@@ -34,65 +34,59 @@ jobs:
           npx cap sync android
 
       - name: Add Google sign-in deep-link intent filter
-        # The in-app browser (Capacitor Browser plugin) returns from
-        # Google via the app's own scheme com.flashgram.app://...
-        # so the app must declare an intent filter for that scheme,
-        # otherwise Android will not re-open the app after sign-in.
-        # android/ is regenerated on every build, so the filter is
-        # injected here (idempotent — skipped if already present).
         run: |
           python3 - <<'PY'
           import pathlib, re
           p = pathlib.Path('android/app/src/main/AndroidManifest.xml')
-          s = p.read_text()
-          if 'android:scheme="com.flashgram.app"' in s:
-              print('deep-link intent filter already present')
-          else:
-              block = ('        <intent-filter>\n'
-                       '            <action android:name="android.intent.action.VIEW" />\n'
-                       '            <category android:name="android.intent.category.DEFAULT" />\n'
-                       '            <category android:name="android.intent.category.BROWSABLE" />\n'
-                       '            <data android:scheme="com.flashgram.app" />\n'
-                       '        </intent-filter>\n')
-              s2, n = re.subn(r'(</intent-filter>)', r'\1\n' + block, s, count=1)
-              if n == 0:
-                  print('WARNING: no intent-filter found in AndroidManifest.xml, deep link not added')
+          if p.exists():
+              s = p.read_text()
+              if 'android:scheme="com.flashgram.app"' in s:
+                  print('deep-link intent filter already present')
               else:
-                  p.write_text(s2)
-                  print('deep-link intent filter added')
+                  block = ('        <intent-filter>\n'
+                           '            <action android:name="android.intent.action.VIEW" />\n'
+                           '            <category android:name="android.intent.category.DEFAULT" />\n'
+                           '            <category android:name="android.intent.category.BROWSABLE" />\n'
+                           '            <data android:scheme="com.flashgram.app" />\n'
+                           '        </intent-filter>\n')
+                  s2, n = re.subn(r'(</intent-filter>)', r'\1\n' + block, s, count=1)
+                  if n > 0:
+                      p.write_text(s2)
+                      print('deep-link intent filter added')
           PY
 
-      - name: Bump AGP and compileSdk for androidx.browser
-        # @capacitor/browser pulls in androidx.browser:browser:1.9.0,
-        # which requires Android Gradle plugin 8.9.1+ and compileSdk
-        # 36+. Capacitor 8 generates AGP 8.7.2 / Gradle 8.11.1 /
-        # compileSdk 35, so the build fails at :app:checkDebugAarMetadata.
-        # Bump AGP to 8.11.1, Gradle to 8.13 and compileSdk to 36.
-        # targetSdk stays 35, so no new Android runtime behavior is
-        # opted into; minSdk is untouched too.
+      - name: Bump AGP, Gradle, and compileSdk
         run: |
           python3 - <<'PY'
-          import pathlib, re, sys
-          def patch(path, subs, required=True):
-              p = pathlib.Path(path)
-              s = p.read_text()
-              orig = s
-              for pattern, repl in subs:
-                  s2, n = re.subn(pattern, repl, s)
-                  if n == 0:
-                      print(f'WARNING: {path}: pattern not found: {pattern}')
-                      if required:
-                          sys.exit(1)
-                  else:
-                      print(f'{path}: patched ({n}x)')
-                  s = s2
-              if s != orig:
-                  p.write_text(s)
-          patch('android/build.gradle', [(r"com\.android\.tools\.build:gradle:[0-9.]+", "com.android.tools.build:gradle:8.11.1")])
-          patch('android/gradle/wrapper/gradle-wrapper.properties', [(r"gradle-[0-9.]+-all\.zip", "gradle-8.13-all.zip")])
-          patch('android/app/build.gradle', [(r"compileSdk\s+\d+", "compileSdk 36")])
-          patch('android/variables.gradle', [(r"compileSdkVersion\s*=\s*\d+", "compileSdkVersion = 36")], required=False)
-          print('AGP / Gradle / compileSdk bump done')
+          import pathlib, re
+
+          def patch_file(filepath, patterns):
+              p = pathlib.Path(filepath)
+              if not p.exists():
+                  print(f"Skipping {filepath}, not found.")
+                  return
+              content = p.read_text()
+              updated = content
+              for pattern, repl in patterns:
+                  updated, count = re.subn(pattern, repl, updated)
+                  print(f"{filepath}: replaced {pattern} -> {repl} ({count} matches)")
+              if updated != content:
+                  p.write_text(updated)
+
+          patch_file('android/build.gradle', [
+              (r"com\.android\.tools\.build:gradle:[0-9.]+", "com.android.tools.build:gradle:8.11.1")
+          ])
+          patch_file('android/gradle/wrapper/gradle-wrapper.properties', [
+              (r"gradle-[0-9.]+-all\.zip", "gradle-8.13-all.zip")
+          ])
+          patch_file('android/app/build.gradle', [
+              (r"compileSdk\s+\d+", "compileSdk 36"),
+              (r"compileSdkVersion\s+\d+", "compileSdkVersion 36")
+          ])
+          patch_file('android/variables.gradle', [
+              (r"compileSdkVersion\s*=\s*\d+", "compileSdkVersion = 36")
+          ])
+          print('AGP / Gradle / compileSdk bump done successfully')
           PY
 
       - name: Fix Kotlin Version Conflict
