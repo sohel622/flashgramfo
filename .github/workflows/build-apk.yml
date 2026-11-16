@@ -62,6 +62,39 @@ jobs:
                   print('deep-link intent filter added')
           PY
 
+      - name: Bump AGP and compileSdk for androidx.browser
+        # @capacitor/browser pulls in androidx.browser:browser:1.9.0,
+        # which requires Android Gradle plugin 8.9.1+ and compileSdk
+        # 36+. Capacitor 8 generates AGP 8.7.2 / Gradle 8.11.1 /
+        # compileSdk 35, so the build fails at :app:checkDebugAarMetadata.
+        # Bump AGP to 8.11.1, Gradle to 8.13 and compileSdk to 36.
+        # targetSdk stays 35, so no new Android runtime behavior is
+        # opted into; minSdk is untouched too.
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          def patch(path, subs, required=True):
+              p = pathlib.Path(path)
+              s = p.read_text()
+              orig = s
+              for pattern, repl in subs:
+                  s2, n = re.subn(pattern, repl, s)
+                  if n == 0:
+                      print(f'WARNING: {path}: pattern not found: {pattern}')
+                      if required:
+                          sys.exit(1)
+                  else:
+                      print(f'{path}: patched ({n}x)')
+                  s = s2
+              if s != orig:
+                  p.write_text(s)
+          patch('android/build.gradle', [(r"com\.android\.tools\.build:gradle:[0-9.]+", "com.android.tools.build:gradle:8.11.1")])
+          patch('android/gradle/wrapper/gradle-wrapper.properties', [(r"gradle-[0-9.]+-all\.zip", "gradle-8.13-all.zip")])
+          patch('android/app/build.gradle', [(r"compileSdk\s+\d+", "compileSdk 36")])
+          patch('android/variables.gradle', [(r"compileSdkVersion\s*=\s*\d+", "compileSdkVersion = 36")], required=False)
+          print('AGP / Gradle / compileSdk bump done')
+          PY
+
       - name: Fix Kotlin Version Conflict
         run: |
           cd android/app
