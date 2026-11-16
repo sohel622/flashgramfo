@@ -1962,7 +1962,7 @@
     }
 
     /* ── MODALS (Upload, Share, Comments, Edit Profile) ── */
-    #upload-modal, #share-modal, #comments-modal, #edit-profile-modal, #more-modal {
+    #upload-modal, #share-modal, #comments-modal, #edit-profile-modal, #more-modal, #admin-ban-modal {
       position: fixed;
       inset: 0;
       z-index: 200;
@@ -1974,7 +1974,7 @@
       pointer-events: none;
       transition: opacity .22s;
     }
-    #upload-modal.open, #share-modal.open, #comments-modal.open, #edit-profile-modal.open, #more-modal.open {
+    #upload-modal.open, #share-modal.open, #comments-modal.open, #edit-profile-modal.open, #more-modal.open, #admin-ban-modal.open {
       opacity: 1;
       pointer-events: auto;
     }
@@ -2286,6 +2286,27 @@
       font-family: var(--font);
     }
     .text-input::placeholder { color: var(--fg3); }
+    /* Field error highlight (admin ban form + any .text-input). */
+    .text-input.input-error {
+      border-color: rgba(239, 68, 68, 0.65);
+      background: rgba(239, 68, 68, 0.08);
+    }
+    /* Duration dropdown: same look as the text inputs, with a visible
+       chevron on the dark background and dark, readable options. */
+    select.text-input {
+      appearance: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+      padding-right: 38px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-opacity='0.65' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 13px center;
+      background-size: 16px 16px;
+    }
+    select.text-input option {
+      background: #1c1c1e;
+      color: #fff;
+    }
     .upload-btn {
       width: 100%;
       height: 46px;
@@ -2304,6 +2325,7 @@
       font-family: var(--font);
     }
     .upload-btn:active { opacity: 0.85; }
+    .upload-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
     /* Upload Progress Bar Component */
     .upload-progress-card {
@@ -2884,9 +2906,9 @@
     <div class="modal-sub">Only admins can ban, unban, or edit a ban reason.</div>
     <div id="ab-error" class="ep-error-box"></div>
     <div class="ep-label-row"><span class="ep-label-text">User ID (Supabase Auth UID)</span></div>
-    <input id="ab-user-id" type="text" class="text-input" placeholder="e.g. 1da05455-5cfc-4a9a-8037-6a60d7e91d46" style="margin-bottom:12px;">
+    <input id="ab-user-id" type="text" class="text-input" placeholder="e.g. 1da05455-5cfc-4a9a-8037-6a60d7e91d46" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" oninput="clearAdminBanFieldError('ab-user-id')" style="margin-bottom:12px;">
     <div class="ep-label-row"><span class="ep-label-text">Ban reason</span></div>
-    <input id="ab-reason" type="text" class="text-input" placeholder="e.g. Repeated spam" style="margin-bottom:12px;">
+    <input id="ab-reason" type="text" class="text-input" placeholder="e.g. Repeated spam" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" oninput="clearAdminBanFieldError('ab-reason')" style="margin-bottom:12px;">
     <div class="ep-label-row"><span class="ep-label-text">Duration</span></div>
     <select id="ab-duration" class="text-input" style="margin-bottom:14px;">
       <option value="3600">1 hour</option>
@@ -5958,6 +5980,27 @@ async function handleBannedLogout() {
 let adminBansShowHistory = false;
 let adminBansCache = [];
 
+function markAdminBanFieldError(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.add('input-error');
+}
+function clearAdminBanFieldError(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('input-error');
+}
+function clearAllAdminBanFieldErrors() {
+  clearAdminBanFieldError('ab-user-id');
+  clearAdminBanFieldError('ab-reason');
+}
+function resetAdminBanForm() {
+  document.getElementById('ab-user-id').value = '';
+  document.getElementById('ab-reason').value = '';
+  document.getElementById('ab-duration').value = '86400';
+  clearAllAdminBanFieldErrors();
+  const errBox = document.getElementById('ab-error');
+  if (errBox) { errBox.textContent = ''; errBox.style.display = 'none'; }
+}
+
 function openAdminBanPanel() {
   if (!isCurrentUserAdmin()) { showToast('Admin only.'); return; }
   adminBansShowHistory = false;
@@ -5965,6 +6008,7 @@ function openAdminBanPanel() {
   if (t) t.textContent = 'Show history';
   const errBox = document.getElementById('ab-error');
   if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+  clearAllAdminBanFieldErrors();
   document.getElementById('admin-ban-modal').classList.add('open');
   loadAdminBans();
 }
@@ -6050,10 +6094,10 @@ async function adminBanUser() {
   const targetUserId = (document.getElementById('ab-user-id').value || '').trim();
   const reason = (document.getElementById('ab-reason').value || '').trim();
   const dur = document.getElementById('ab-duration').value;
-  if (!targetUserId) { setErr('Enter the user ID (Supabase Auth UID).'); return; }
-  if (!isValidAuthUid(targetUserId)) { setErr('Invalid user ID: enter a valid Supabase Auth UID (a UUID).'); return; }
-  if (!reason) { setErr('Enter a ban reason.'); return; }
-  if (currentAuthUser && String(currentAuthUser.id) === targetUserId) { setErr('An admin cannot ban themself.'); return; }
+  if (!targetUserId) { setErr('Enter the user ID (Supabase Auth UID).'); markAdminBanFieldError('ab-user-id'); return; }
+  if (!isValidAuthUid(targetUserId)) { setErr('Invalid user ID: enter a valid Supabase Auth UID (a UUID).'); markAdminBanFieldError('ab-user-id'); return; }
+  if (!reason) { setErr('Enter a ban reason.'); markAdminBanFieldError('ab-reason'); return; }
+  if (currentAuthUser && String(currentAuthUser.id) === targetUserId) { setErr('An admin cannot ban themself.'); markAdminBanFieldError('ab-user-id'); return; }
   const btn = document.getElementById('ab-ban-btn');
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading-ring-sm"></span> Banning…'; }
   try {
@@ -6088,8 +6132,8 @@ async function adminBanUser() {
       }
     }
     showToast(isPermanent ? 'User banned permanently.' : 'User banned.');
-    document.getElementById('ab-user-id').value = '';
-    document.getElementById('ab-reason').value = '';
+    // Reset the whole form on success (UID, reason, and duration).
+    resetAdminBanForm();
     await loadAdminBans();
   } catch (e) {
     setErr(e.message || 'Ban failed.');
