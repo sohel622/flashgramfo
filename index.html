@@ -232,7 +232,11 @@
       padding: calc(env(safe-area-inset-top, 0px)) 14px 0;
       background: #fff;
       border-bottom: 1px solid rgba(0,0,0,0.08);
+      transition: transform .28s ease;
+      will-change: transform;
     }
+    /* Auto-hide on scroll down; shown again on scroll up / at top. */
+    .home-header.home-header-hidden { transform: translateY(-105%); }
     .home-logo {
       font-size: 26px;
       font-weight: 800;
@@ -359,6 +363,7 @@
       position: relative;
       width: 100%;
       aspect-ratio: 4 / 5;
+      max-height: 85vh;
       background: #000;
       overflow: hidden;
       cursor: pointer;
@@ -370,6 +375,70 @@
       display: block;
       background: #000;
     }
+    /* Loading spinner (shown until the first frame can play). */
+    .home-video-spinner {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .home-spinner-ring {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.35);
+      border-top-color: #fff;
+      animation: home-spin 0.8s linear infinite;
+    }
+    @keyframes home-spin { to { transform: rotate(360deg); } }
+    /* Error state (all URL candidates failed). */
+    .home-video-error {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: rgba(0,0,0,0.78);
+      color: #fff;
+      z-index: 4;
+      font-size: 13.5px;
+      text-align: center;
+      padding: 16px;
+    }
+    .home-video-error button {
+      background: #fff;
+      color: #111;
+      border: none;
+      border-radius: 999px;
+      padding: 8px 18px;
+      font-size: 13.5px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    /* Per-video mute/unmute button. */
+    .home-post-sound {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.55);
+      border: none;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 3;
+      padding: 0;
+    }
+    .home-post-sound svg { width: 20px; height: 20px; }
     .home-post-play {
       position: absolute;
       inset: 0;
@@ -3842,6 +3911,7 @@ pruneAllExpiredChatMessages();
   startChatPolling();
   // Land on the new Instagram-style Home page (the Reels feed stays
   // a separate tab under the bottom nav).
+  setupHomeHeaderScroll();
   goPage('home', document.getElementById('nav-home'));
 })();
 
@@ -10587,7 +10657,9 @@ const LUCIDE_ICONS = {
   bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>',
   'more-horizontal': '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
   play: '<polygon points="6 3 20 12 6 21 6 3"/>',
-  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>'
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  'volume-x': '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/>',
+  'volume-2': '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>'
 };
 function lucideIcon(name, size, filled) {
   const inner = LUCIDE_ICONS[name] || '';
@@ -10651,8 +10723,11 @@ function homePostCardHTML(v, idx) {
     + '<button class="home-post-more" onclick="openInFeed(' + idx + ')" title="Open in Reels">' + lucideIcon('more-horizontal', 20) + '</button>'
     + '</div>'
     + '<div class="home-post-media" onclick="toggleHomeVideo(this)">'
-    + '<video src="' + escapeHtml(src) + '" poster="' + escapeHtml(poster) + '" muted loop playsinline preload="metadata"></video>'
+    + '<video data-post-id="' + escapeHtml(String(v.id)) + '" src="' + escapeHtml(src) + '" poster="' + escapeHtml(poster) + '" muted loop playsinline preload="metadata"></video>'
+    + '<span class="home-video-spinner"><span class="home-spinner-ring"></span></span>'
     + '<span class="home-post-play">' + lucideIcon('play', 56, true) + '</span>'
+    + '<div class="home-video-error" style="display:none"><span>Video couldn&rsquo;t load.</span><button onclick="retryHomeVideo(event, this)">Retry</button></div>'
+    + '<button class="home-post-sound" onclick="toggleHomeSound(event, this)" title="Sound">' + lucideIcon('volume-x', 20) + '</button>'
     + '</div>'
     + '<div class="home-post-actions">'
     + '<button class="home-post-act' + (v.liked ? ' liked' : '') + '" id="hlike-' + escapeHtml(String(v.id)) + '" onclick="toggleHomeLike(this,\'' + escapeHtml(String(v.id)) + '\',' + idx + ')" title="Like">' + lucideIcon('heart', 26) + '</button>'
@@ -10671,6 +10746,8 @@ function renderHomeFeed() {
   if (!feed) return;
   const scrollTop = feed.parentElement ? feed.parentElement.scrollTop : 0;
   pauseAllHomeVideos();
+  // Old video elements are about to be discarded: stop observing them.
+  if (homeVideoObserver) { try { homeVideoObserver.disconnect(); } catch (_) {} homeVideoObserver = null; }
   const order = videos.map((v, i) => ({ v, i })).filter(o => o.v).sort((a, b) => (b.v.ts || 0) - (a.v.ts || 0));
   if (order.length === 0) {
     feed.innerHTML = '<div class="home-post-empty"><b>No posts yet</b>Be the first to share a video — tap the + at the top to upload.</div>';
@@ -10679,27 +10756,187 @@ function renderHomeFeed() {
   feed.innerHTML = order.map(o => homePostCardHTML(o.v, o.i)).join('');
   hydrateAvatars(feed);
   refreshAllVerifiedBadgeSlots();
+  setupHomeVideos();
   if (feed.parentElement) feed.parentElement.scrollTop = scrollTop;
+}
+
+// ── Home video playback: IntersectionObserver autoplay ──
+// One home video plays at a time, muted (Android autoplay policy).
+// A video starts when >= 50% visible and pauses when it leaves the
+// screen. A manual tap-pause is respected until the video scrolls
+// out and back in. Only the visible videos load beyond metadata,
+// so memory / network stay bounded on low-end phones.
+let homeVideoObserver = null;
+let currentHomeVideo = null;
+
+function ensureHomeVideoObserver() {
+  if (homeVideoObserver) return homeVideoObserver;
+  if (typeof IntersectionObserver === 'undefined') return null;
+  homeVideoObserver = new IntersectionObserver((entries) => {
+    // Pause anything that left the visible area.
+    entries.forEach(en => {
+      const vid = en.target;
+      if (!en.isIntersecting || en.intersectionRatio < 0.5) {
+        if (!vid.paused) { vid.pause(); updateHomePlayIcon(vid.parentElement); }
+        if (vid.dataset.homeManualPaused) delete vid.dataset.homeManualPaused;
+        if (currentHomeVideo === vid) currentHomeVideo = null;
+      }
+    });
+    // Play the most-visible video (only one at a time).
+    let best = null, bestRatio = 0;
+    entries.forEach(en => {
+      if (en.isIntersecting && en.intersectionRatio >= 0.5 && en.intersectionRatio > bestRatio) {
+        best = en.target; bestRatio = en.intersectionRatio;
+      }
+    });
+    if (best && best !== currentHomeVideo && !best.dataset.homeManualPaused) {
+      if (currentHomeVideo && !currentHomeVideo.paused) {
+        currentHomeVideo.pause();
+        updateHomePlayIcon(currentHomeVideo.parentElement);
+      }
+      currentHomeVideo = best;
+      best.play().catch(() => {});
+      updateHomePlayIcon(best.parentElement);
+    }
+  }, { root: document.getElementById('page-home'), threshold: [0, 0.5, 1] });
+  return homeVideoObserver;
+}
+
+function updateHomePlayIcon(mediaEl) {
+  if (!mediaEl) return;
+  const vid = mediaEl.querySelector('video');
+  const icon = mediaEl.querySelector('.home-post-play');
+  if (!vid || !icon) return;
+  icon.style.display = vid.paused ? 'flex' : 'none';
+}
+
+// Walk up to the enclosing .home-post-media (no .closest() so the
+// helper stays usable from plain DOM fragments too).
+function homeMediaOf(el) {
+  let n = el;
+  while (n) {
+    if (n.classList && n.classList.contains && n.classList.contains('home-post-media')) return n;
+    n = n.parentElement;
+  }
+  return null;
+}
+
+function showHomeVideoError(mediaEl) {
+  if (!mediaEl) return;
+  const spinner = mediaEl.querySelector('.home-video-spinner');
+  if (spinner) spinner.style.display = 'none';
+  const err = mediaEl.querySelector('.home-video-error');
+  if (err) err.style.display = 'flex';
+}
+
+function hideHomeVideoError(mediaEl) {
+  if (!mediaEl) return;
+  const err = mediaEl.querySelector('.home-video-error');
+  if (err) err.style.display = 'none';
+}
+
+function retryHomeVideo(ev, btn) {
+  if (ev) ev.stopPropagation();
+  const media = btn ? homeMediaOf(btn) : null;
+  if (!media) return;
+  const vid = media.querySelector('video');
+  if (!vid) return;
+  hideHomeVideoError(media);
+  const spinner = media.querySelector('.home-video-spinner');
+  if (spinner) spinner.style.display = 'flex';
+  const postId = vid.getAttribute('data-post-id') || '';
+  const v = postId ? videos.find(x => String(x.id) === String(postId)) : null;
+  const cands = v ? videoSrcCandidates(v) : [];
+  vid.src = cands.length ? cands[0] : (vid.getAttribute('src') || '');
+  vid.load();
+  vid.play().catch(() => {});
+}
+
+function tryNextHomeVideoSrc(vid, v) {
+  const cands = videoSrcCandidates(v);
+  const cur = vid.getAttribute('src') || '';
+  const idx = cands.indexOf(cur);
+  const next = idx >= 0 ? cands[idx + 1] : cands[0];
+  if (next && next !== cur) {
+    vid.src = next;
+    vid.load();
+    return true;
+  }
+  return false;
+}
+
+function setupHomeVideo(mediaEl) {
+  if (!mediaEl || mediaEl.dataset.homeSetup) return;
+  const vid = mediaEl.querySelector('video');
+  if (!vid) return;
+  mediaEl.dataset.homeSetup = '1';
+  const postId = vid.getAttribute('data-post-id') || '';
+  const v = postId ? videos.find(x => String(x.id) === String(postId)) : null;
+  // True aspect ratio once the metadata arrives (no crop, no bars).
+  vid.addEventListener('loadedmetadata', () => {
+    if (vid.videoWidth > 0 && vid.videoHeight > 0) {
+      mediaEl.style.aspectRatio = vid.videoWidth + ' / ' + vid.videoHeight;
+    }
+  });
+  // First frame ready: hide the spinner.
+  vid.addEventListener('canplay', () => {
+    const spinner = mediaEl.querySelector('.home-video-spinner');
+    if (spinner) spinner.style.display = 'none';
+  });
+  // Keep the play overlay in sync with real playback state.
+  vid.addEventListener('play', () => updateHomePlayIcon(mediaEl));
+  vid.addEventListener('pause', () => updateHomePlayIcon(mediaEl));
+  // Broken URL: walk the fallbacks, then show the error state.
+  vid.addEventListener('error', () => {
+    if (v && tryNextHomeVideoSrc(vid, v)) return;
+    showHomeVideoError(mediaEl);
+  });
+  const obs = ensureHomeVideoObserver();
+  if (obs) obs.observe(vid);
+}
+
+function setupHomeVideos() {
+  const obs = ensureHomeVideoObserver();
+  document.querySelectorAll('#home-feed .home-post-media').forEach(mediaEl => setupHomeVideo(mediaEl));
+  if (obs) return;
+  // No IntersectionObserver (very old WebView): fall back to tap-to-play.
 }
 
 function toggleHomeVideo(mediaEl) {
   const vid = mediaEl ? mediaEl.querySelector('video') : null;
   if (!vid) return;
-  const playIcon = mediaEl.querySelector('.home-post-play');
   if (vid.paused) {
-    // Only one home video plays at a time.
+    delete vid.dataset.homeManualPaused;
     pauseAllHomeVideos();
+    currentHomeVideo = vid;
     vid.play().catch(() => {});
-    if (playIcon) playIcon.style.display = 'none';
   } else {
+    vid.dataset.homeManualPaused = '1';
     vid.pause();
-    if (playIcon) playIcon.style.display = 'flex';
+    if (currentHomeVideo === vid) currentHomeVideo = null;
+  }
+  updateHomePlayIcon(mediaEl);
+}
+
+function toggleHomeSound(ev, btn) {
+  if (ev) ev.stopPropagation();
+  const media = btn ? homeMediaOf(btn) : null;
+  const vid = media ? media.querySelector('video') : null;
+  if (!vid) return;
+  vid.muted = !vid.muted;
+  btn.innerHTML = lucideIcon(vid.muted ? 'volume-x' : 'volume-2', 20);
+  // Unmuting a paused video starts it so the user hears it.
+  if (!vid.muted && vid.paused) {
+    delete vid.dataset.homeManualPaused;
+    currentHomeVideo = vid;
+    vid.play().catch(() => {});
   }
 }
 
 function pauseAllHomeVideos() {
   document.querySelectorAll('#home-feed video').forEach(v => { try { v.pause(); } catch (_) {} });
   document.querySelectorAll('#home-feed .home-post-play').forEach(el => { el.style.display = 'flex'; });
+  currentHomeVideo = null;
 }
 
 async function toggleHomeLike(btn, id, idx) {
@@ -10773,6 +11010,39 @@ async function openNotifications() {
   } catch (err) {
     list.innerHTML = '<div class="notif-empty">Could not load notifications.</div>';
   }
+}
+
+// ── Home header auto-hide on scroll ──
+// Scroll down: hide the header. Scroll up: show it. At the very
+// top: always show it. A small delta threshold stops flicker from
+// tiny scrolls. The header is sticky, so hiding it with a transform
+// never shifts the content below it, and the bottom nav is untouched.
+let homeHeaderLastScroll = 0;
+let homeHeaderHidden = false;
+let homeHeaderScrollAttached = false;
+
+function onHomeScroll() {
+  const page = document.getElementById('page-home');
+  const header = page ? page.querySelector('.home-header') : null;
+  if (!page || !header) return;
+  const st = page.scrollTop;
+  const dy = st - homeHeaderLastScroll;
+  if (st <= 0) {
+    if (homeHeaderHidden) { header.classList.remove('home-header-hidden'); homeHeaderHidden = false; }
+  } else if (dy > 6 && st > 80 && !homeHeaderHidden) {
+    header.classList.add('home-header-hidden'); homeHeaderHidden = true;
+  } else if (dy < -6 && homeHeaderHidden) {
+    header.classList.remove('home-header-hidden'); homeHeaderHidden = false;
+  }
+  homeHeaderLastScroll = st;
+}
+
+function setupHomeHeaderScroll() {
+  if (homeHeaderScrollAttached) return;
+  const page = document.getElementById('page-home');
+  if (!page) return;
+  page.addEventListener('scroll', onHomeScroll, { passive: true });
+  homeHeaderScrollAttached = true;
 }
 
 function goPage(page, navEl) {
