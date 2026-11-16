@@ -35,6 +35,17 @@ const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL ||
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4b2FqYm5jZnB3aGlzZWh2YmNmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5Mjg2ODAsImV4cCI6MjEwNDUwNDY4MH0.Gbpsd3h-MgodjvugosWLomZL51KWbxMZWFazi6zbzsg';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// Service-role client for Supabase Auth admin operations (ban /
+// unban). The key comes ONLY from the SUPABASE_SERVICE_ROLE_KEY
+// environment variable — it is NEVER hardcoded and NEVER sent to
+// the frontend. When it is not configured, the admin-ban endpoints
+// answer 503 and the app still enforces bans through the
+// public.user_bans table (the Auth sync is a bonus, not the lock).
+const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+const supabaseAdmin = supabaseServiceRoleKey
+  ? createClient(supabaseUrl, supabaseServiceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+  : null;
+
 const app = express();
 const PORT = process.env.DEFAULT_APP_PORT || (process.env.PORT && String(process.env.PORT) !== '8080' ? Number(process.env.PORT) : 3000);
 const HOST = '0.0.0.0';
@@ -85,6 +96,81 @@ app.post('/api/config', (req, res) => {
     supabaseUrl: process.env.SUPABASE_URL,
     supabaseAnonKey: process.env.SUPABASE_ANON_KEY
   });
+});
+
+// ---- Admin ban / unban (Supabase Auth sync) ----
+// The app enforces bans through public.user_bans (RLS: admins only).
+// These endpoints keep Supabase Auth in sync by setting the Auth
+// user's banned_until (a far-future date = permanent). They verify
+// the caller's session token AND their profiles.role = 'admin'
+// server-side, and they use the service-role key, which never
+// leaves this server. If the service-role key is not configured
+// they answer 503 and the user_bans ban still stands.
+async function verifyAdminRequest(accessToken) {
+  if (!accessToken) {
+    const e = new Error('Missing access token');
+    e.status = 401;
+    throw e;
+  }
+  const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+  if (error || !user) {
+    const e = new Error('Invalid session');
+    e.status = 401;
+    throw e;
+  }
+  const { data: prof } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (!prof || prof.role !== 'admin') {
+    const e = new Error('Admin only');
+    e.status = 403;
+    throw e;
+  }
+  return { adminId: user.id };
+}
+
+function requireSupabaseAdmin(res) {
+  if (!supabaseAdmin) {
+    res.status(503).json({
+      ok: false,
+      authSync: false,
+      error: 'Auth sync not configured: set SUPABASE_SERVICE_ROLE_KEY in the server environment. The user_bans ban is still active in the app.'
+    });
+    return false;
+  }
+  return true;
+}
+
+app.post('/api/admin/ban', async (req, res) => {
+  try {
+    const { accessToken, targetUserId, expiresAt } = req.body || {};
+    await verifyAdminRequest(accessToken);
+    if (!targetUserId) return res.status(400).json({ ok: false, error: 'targetUserId is required' });
+    if (!requireSupabaseAdmin(res)) return;
+    // Permanent = far-future banned_until; temporary = the expiry.
+    const bannedUntil = expiresAt ? new Date(expiresAt).toISOString() : '2999-01-01T00:00:00.000Z';
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, { banned_until: bannedUntil });
+    if (error) return res.status(400).json({ ok: false, authSync: false, error: error.message });
+    res.json({ ok: true, authSync: true, bannedUntil });
+  } catch (err) {
+    res.status(err.status || 500).json({ ok: false, authSync: false, error: err.message || 'Ban failed' });
+  }
+});
+
+app.post('/api/admin/unban', async (req, res) => {
+  try {
+    const { accessToken, targetUserId } = req.body || {};
+    await verifyAdminRequest(accessToken);
+    if (!targetUserId) return res.status(400).json({ ok: false, error: 'targetUserId is required' });
+    if (!requireSupabaseAdmin(res)) return;
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, { banned_until: null });
+    if (error) return res.status(400).json({ ok: false, authSync: false, error: error.message });
+    res.json({ ok: true, authSync: true });
+  } catch (err) {
+    res.status(err.status || 500).json({ ok: false, authSync: false, error: err.message || 'Unban failed' });
+  }
 });
 
 // Securely read Cloudinary credentials from environment variables

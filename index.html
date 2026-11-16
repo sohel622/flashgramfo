@@ -2031,6 +2031,111 @@
       margin: 2px auto 12px auto;
       width: fit-content;
     }
+    /* Account Suspended screen (dark theme, covers the whole app) */
+    body.is-banned #bottomnav, body.is-banned #topbar { display: none !important; }
+    .banned-screen {
+      background: #000;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    .banned-card {
+      width: min(92vw, 420px);
+      margin: auto;
+      text-align: center;
+      padding: 28px 22px;
+    }
+    .banned-avatar-wrap {
+      width: 92px; height: 92px;
+      margin: 0 auto 14px auto;
+      border-radius: 50%;
+      overflow: hidden;
+      border: 3px solid rgba(255, 45, 120, 0.55);
+      background: #1a1a1a;
+      position: relative;
+    }
+    .banned-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .banned-avatar-placeholder {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      color: #888; font-size: 30px; font-weight: 700;
+      background: linear-gradient(135deg, #ff2d78, #7c3aed);
+      color: #fff;
+    }
+    .banned-username { font-size: 15px; font-weight: 700; color: #bbb; margin-bottom: 10px; }
+    .banned-heading {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      font-size: 26px; font-weight: 800; color: #fff; margin-bottom: 16px;
+    }
+    .banned-heading .material-symbols-rounded { font-size: 30px; color: #ff2d78; }
+    .banned-reason-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #888; margin-bottom: 6px; }
+    .banned-reason {
+      font-size: 15px; line-height: 1.5; color: #eee;
+      background: rgba(255, 45, 120, 0.10);
+      border: 1px solid rgba(255, 45, 120, 0.30);
+      border-radius: 12px; padding: 12px 14px; margin-bottom: 18px;
+    }
+    .banned-meta { margin-bottom: 22px; }
+    .banned-meta-row {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 13.5px; color: #aaa;
+      padding: 9px 2px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .banned-meta-row strong { color: #fff; font-weight: 700; }
+    .banned-type-badge { color: #ffb020; }
+    .banned-type-badge.permanent { color: #ff2d78; }
+    .banned-countdown { color: #ff2d78; font-variant-numeric: tabular-nums; }
+    .banned-logout-btn {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 13px; border-radius: 999px;
+      background: #ff2d78; color: #fff; border: none;
+      font-size: 15px; font-weight: 700; cursor: pointer;
+    }
+    .banned-logout-btn:active { opacity: 0.85; }
+    .banned-note { margin-top: 14px; font-size: 12px; color: #777; }
+    /* Admin ban panel */
+    .ab-section-title {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 13px; font-weight: 800; color: var(--fg);
+      margin: 16px 0 8px 0;
+    }
+    .ab-history-toggle {
+      background: none; border: 1px solid rgba(255,255,255,0.2);
+      color: var(--fg2); border-radius: 999px; padding: 4px 10px;
+      font-size: 11.5px; font-weight: 600; cursor: pointer;
+    }
+    .ab-ban-list { display: flex; flex-direction: column; gap: 10px; }
+    .ab-ban-row {
+      display: flex; align-items: flex-start; gap: 10px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 12px; padding: 11px 12px;
+    }
+    .ab-ban-main { flex: 1; min-width: 0; }
+    .ab-ban-user { font-size: 13.5px; font-weight: 700; color: var(--fg); }
+    .ab-ban-uid { font-size: 11px; color: var(--fg2); word-break: break-all; }
+    .ab-ban-reason-row { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+    .ab-ban-reason-text { font-size: 13px; color: var(--fg); flex: 1; }
+    .ab-icon-btn {
+      background: rgba(255,255,255,0.07); border: none; border-radius: 8px;
+      width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+      color: var(--fg2); cursor: pointer; flex-shrink: 0;
+    }
+    .ab-icon-btn .material-symbols-rounded { font-size: 16px; }
+    .ab-ban-meta { font-size: 11.5px; color: var(--fg2); margin-top: 5px; line-height: 1.45; }
+    .ab-unban-btn {
+      background: rgba(22, 163, 74, 0.15); color: #4ade80;
+      border: 1px solid rgba(74, 222, 128, 0.35); border-radius: 999px;
+      padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer; flex-shrink: 0;
+    }
+    .ab-empty { font-size: 13px; color: var(--fg2); text-align: center; padding: 12px 0; }
+    .ab-auth-note {
+      margin-top: 12px; font-size: 12px; line-height: 1.5; color: #fbbf24;
+      background: rgba(245, 158, 11, 0.10);
+      border: 1px solid rgba(245, 158, 11, 0.30);
+      border-radius: 10px; padding: 9px 11px;
+    }
     .ep-label-row {
       display: flex;
       align-items: center;
@@ -2487,6 +2592,10 @@
         <span class="material-symbols-rounded" style="font-size:16px;">edit</span>
         Edit Profile
       </button>
+      <button id="profile-admin-ban-btn" class="profile-btn-edit-main" style="display:none;margin-top:10px;border-color:rgba(255,45,120,0.4);color:#ff2d78;" onclick="openAdminBanPanel()">
+        <span class="material-symbols-rounded" style="font-size:16px;">shield</span>
+        Admin — Ban Users
+      </button>
     </div>
   </div>
 
@@ -2762,6 +2871,69 @@
       <span class="material-symbols-rounded" style="font-size:18px;">logout</span>
       Log Out of Account
     </button>
+  </div>
+</div>
+
+</div>
+
+<!-- ADMIN — BAN USERS MODAL -->
+<div id="admin-ban-modal" onclick="closeOnBackdrop(event,'admin-ban-modal')">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Admin — Ban Users</div>
+    <div class="modal-sub">Only admins can ban, unban, or edit a ban reason.</div>
+    <div id="ab-error" class="ep-error-box"></div>
+    <div class="ep-label-row"><span class="ep-label-text">User ID (Supabase Auth UID)</span></div>
+    <input id="ab-user-id" type="text" class="text-input" placeholder="e.g. 1da05455-5cfc-4a9a-8037-6a60d7e91d46" style="margin-bottom:12px;">
+    <div class="ep-label-row"><span class="ep-label-text">Ban reason</span></div>
+    <input id="ab-reason" type="text" class="text-input" placeholder="e.g. Repeated spam" style="margin-bottom:12px;">
+    <div class="ep-label-row"><span class="ep-label-text">Duration</span></div>
+    <select id="ab-duration" class="text-input" style="margin-bottom:14px;">
+      <option value="3600">1 hour</option>
+      <option value="86400" selected>24 hours</option>
+      <option value="604800">7 days</option>
+      <option value="2592000">30 days</option>
+      <option value="permanent">Permanent</option>
+    </select>
+    <button id="ab-ban-btn" class="upload-btn" onclick="adminBanUser()">
+      <span class="material-symbols-rounded">block</span>
+      Ban User
+    </button>
+    <div class="ab-section-title">
+      <span>Active bans</span>
+      <button class="ab-history-toggle" id="ab-history-toggle" onclick="toggleAdminBanHistory()">Show history</button>
+    </div>
+    <div id="ab-active-list" class="ab-ban-list"></div>
+    <div id="ab-auth-note" class="ab-auth-note" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- ACCOUNT SUSPENDED (banned) — fullscreen, covers the whole app -->
+<div id="page-banned" class="fullscreen-page banned-screen" style="display:none;">
+  <div class="banned-card">
+    <div class="banned-avatar-wrap">
+      <img id="banned-avatar-img" class="banned-avatar-img" src="" alt="Profile picture" style="display:none;" />
+      <div id="banned-avatar-placeholder" class="banned-avatar-placeholder">
+        <span class="material-symbols-rounded">person</span>
+      </div>
+    </div>
+    <div class="banned-username" id="banned-username">@user</div>
+    <div class="banned-heading">
+      <span class="material-symbols-rounded">block</span>
+      Account Suspended
+    </div>
+    <div class="banned-reason-label">Reason</div>
+    <div class="banned-reason" id="banned-reason"></div>
+    <div class="banned-meta">
+      <div class="banned-meta-row"><span>Banned on</span><strong id="banned-date"></strong></div>
+      <div class="banned-meta-row"><span>Status</span><strong id="banned-type" class="banned-type-badge"></strong></div>
+      <div class="banned-meta-row"><span>Time remaining</span><strong id="banned-countdown" class="banned-countdown"></strong></div>
+    </div>
+    <button class="banned-logout-btn" onclick="handleBannedLogout()">
+      <span class="material-symbols-rounded">logout</span>
+      Log Out
+    </button>
+    <div class="banned-note">If you think this is a mistake, contact support.</div>
   </div>
 </div>
 
@@ -3059,6 +3231,7 @@ let profile = {
   saved: [],
   name: 'Sign In',
   handle: 'user',
+  role: 'user',
   is_verified: false,
   profile_color: '#000000',
   bio: '',
@@ -3944,6 +4117,10 @@ async function initSupabase() {
         subscribeToRealtimeChat();
         closeAuthPage();
         await loadUserProfileFromSupabase(session.user.id);
+        // Ban check on login / refresh / app open (server-time RPC),
+        // plus a Realtime subscription so an admin ban lands instantly.
+        await refreshBanState();
+        subscribeToBanRealtime(session.user.id);
         await loadCreatorsFromSupabase();
         loadUserChatThreadsFromSupabase();
         await loadPostsFromSupabase();
@@ -3955,6 +4132,8 @@ async function initSupabase() {
         // demo mode keeps the shared key untouched.
         const wasLoggedIn = chatThreadsKey !== CHAT_THREADS_LEGACY_KEY;
         currentAuthUser = null;
+        applyBanState(null);
+        unsubscribeBanRealtime();
         if (wasLoggedIn) {
           chatThreads = [];
           activeChatThreadId = null;
@@ -4133,6 +4312,7 @@ async function loadUserProfileFromSupabase(userId) {
       profile.username_updated_at = data.username_updated_at || data.updated_at || null;
       profile.bio_updated_at = data.bio_updated_at || data.updated_at || null;
       profile.is_verified = data.is_verified === true;
+      profile.role = data.role || 'user';
       profile.profile_color = normalizeProfileColor(data.profile_color);
       // Profile edit quota (read-only here; the quota trigger owns it).
       profile.profile_edit_count = Math.max(0, parseInt(data.profile_edit_count, 10) || 0);
@@ -4152,6 +4332,7 @@ async function loadUserProfileFromSupabase(userId) {
         if (profile.username_updated_at) await dbPut('profile', { key: 'username_updated_at', val: profile.username_updated_at });
         if (profile.bio_updated_at) await dbPut('profile', { key: 'bio_updated_at', val: profile.bio_updated_at });
         await dbPut('profile', { key: 'profile_color', val: profile.profile_color });
+        await dbPut('profile', { key: 'role', val: profile.role });
         await dbPut('profile', { key: 'profile_edit_count', val: profile.profile_edit_count });
         if (profile.cycle_started_at) await dbPut('profile', { key: 'cycle_started_at', val: profile.cycle_started_at });
         if (profile.lock_expires_at) await dbPut('profile', { key: 'lock_expires_at', val: profile.lock_expires_at });
@@ -5553,6 +5734,412 @@ function avatarUrlForUserId(userId, handle) {
   return '';
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  USER BANS — real-time account suspension (public.user_bans)
+//  A ban is active when is_active = true AND (expires_at IS NULL
+//  [permanent] OR expires_at > now()). Expiry is judged with the
+//  DATABASE clock via the is_user_banned RPC — never the phone
+//  clock — so an expired ban can never lock a user again, and a
+//  user cannot bypass the lock by changing their clock, refreshing,
+//  or reopening the app. The suspension screen covers the whole app
+//  and the action guards below block posting / liking / commenting /
+//  messaging / uploading while banned. Realtime on user_bans fires
+//  the moment an admin bans or unbans; a 60s server re-check
+//  restores access when a temporary ban expires.
+// ═══════════════════════════════════════════════════════════════
+let currentBan = null;
+let banRealtimeChannel = null;
+let banCountdownTimer = null;
+let banRecheckTimer = null;
+
+function isCurrentUserBanned() { return Boolean(currentBan); }
+function isCurrentUserAdmin() { return profile.role === 'admin'; }
+
+function formatBanDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// "6d 4h" / "23h 15m" / "45m 10s" / "Permanent"
+function formatBanRemaining(expiresAt) {
+  if (!expiresAt) return 'Permanent';
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (isNaN(ms) || ms <= 0) return 'Expired';
+  const s = Math.floor(ms / 1000);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (d > 0) return d + 'd ' + h + 'h';
+  if (h > 0) return h + 'h ' + m + 'm';
+  if (m > 0) return m + 'm ' + sec + 's';
+  return sec + 's';
+}
+
+// Live countdown: "23:15:42" or "6d 04:12:33"
+function formatBanCountdown(expiresAt) {
+  if (!expiresAt) return 'Permanent';
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (isNaN(ms) || ms <= 0) return '00:00:00';
+  const s = Math.floor(ms / 1000);
+  const d = Math.floor(s / 86400);
+  const h = String(Math.floor((s % 86400) / 3600)).padStart(2, '0');
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const sec = String(s % 60).padStart(2, '0');
+  return (d > 0 ? d + 'd ' : '') + h + ':' + m + ':' + sec;
+}
+
+// Server-time ban check (RPC uses the database clock). Returns the
+// active ban object or null. Local/offline mode has no bans.
+async function checkUserBan(userId) {
+  if (!supabaseClient || !userId) return null;
+  if (supabaseClient.isLocalAdapter) return null;
+  if (typeof supabaseClient.rpc !== 'function') return null;
+  try {
+    const { data, error } = await supabaseClient.rpc('is_user_banned', { p_user_id: String(userId) });
+    if (error) {
+      console.warn('ban check error:', error.message);
+      return null;
+    }
+    return data || null;
+  } catch (e) {
+    console.warn('ban check failed:', e);
+    return null;
+  }
+}
+
+async function refreshBanState() {
+  if (!currentAuthUser) { applyBanState(null); return null; }
+  const ban = await checkUserBan(currentAuthUser.id);
+  applyBanState(ban);
+  return ban;
+}
+
+function applyBanState(ban) {
+  const wasBanned = Boolean(currentBan);
+  currentBan = ban || null;
+  if (currentBan) {
+    document.body.classList.add('is-banned');
+    showBannedScreen(currentBan);
+    try { pauseAllFeedVideos(); } catch (_) {}
+    startBanCountdown();
+    startBanRecheck();
+  } else {
+    document.body.classList.remove('is-banned');
+    hideBannedScreen();
+    stopBanCountdown();
+    stopBanRecheck();
+    if (wasBanned) {
+      showToast('Your account access has been restored ✨');
+      try { loadPostsFromSupabase(); } catch (_) {}
+    }
+  }
+}
+
+function subscribeToBanRealtime(userId) {
+  if (!supabaseClient || !userId || supabaseClient.isLocalAdapter) return;
+  try {
+    if (banRealtimeChannel) { try { supabaseClient.removeChannel(banRealtimeChannel); } catch (_) {} banRealtimeChannel = null; }
+    banRealtimeChannel = supabaseClient
+      .channel('realtime_user_bans')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_bans', filter: 'user_id=eq.' + userId }, async () => {
+        await refreshBanState();
+      })
+      .subscribe();
+  } catch (e) {
+    console.warn('ban realtime subscribe failed:', e);
+  }
+}
+
+function unsubscribeBanRealtime() {
+  if (banRealtimeChannel && supabaseClient) { try { supabaseClient.removeChannel(banRealtimeChannel); } catch (_) {} }
+  banRealtimeChannel = null;
+}
+
+function showBannedScreen(ban) {
+  const page = document.getElementById('page-banned');
+  if (!page) return;
+  const nameEl = document.getElementById('banned-username');
+  if (nameEl) nameEl.textContent = '@' + (profile.handle || 'user');
+  const reasonEl = document.getElementById('banned-reason');
+  if (reasonEl) reasonEl.textContent = ban.ban_reason || 'Violation of community guidelines.';
+  const dateEl = document.getElementById('banned-date');
+  if (dateEl) dateEl.textContent = formatBanDate(ban.banned_at);
+  const typeEl = document.getElementById('banned-type');
+  if (typeEl) {
+    const isPermanent = !ban.expires_at || ban.ban_type === 'permanent';
+    typeEl.textContent = isPermanent ? 'Permanent Ban' : 'Temporary Ban';
+    typeEl.className = 'banned-type-badge' + (isPermanent ? ' permanent' : '');
+  }
+  const cdEl = document.getElementById('banned-countdown');
+  if (cdEl) {
+    cdEl.textContent = (!ban.expires_at || ban.ban_type === 'permanent')
+      ? 'Permanent'
+      : formatBanCountdown(ban.expires_at);
+  }
+  try {
+    setAvatarInto(
+      document.getElementById('banned-avatar-img'),
+      document.getElementById('banned-avatar-placeholder'),
+      profile.id, profile.name || profile.handle, profile.avatar_url
+    );
+  } catch (_) {}
+  page.style.display = 'flex';
+}
+
+function hideBannedScreen() {
+  const page = document.getElementById('page-banned');
+  if (page) page.style.display = 'none';
+}
+
+function startBanCountdown() {
+  stopBanCountdown();
+  if (!currentBan || !currentBan.expires_at || currentBan.ban_type === 'permanent') return;
+  const tick = () => {
+    const cdEl = document.getElementById('banned-countdown');
+    if (!currentBan || !currentBan.expires_at) { stopBanCountdown(); return; }
+    const remaining = new Date(currentBan.expires_at).getTime() - Date.now();
+    if (remaining <= 0) {
+      // Countdown hit zero: re-check with the DATABASE clock (the RPC
+      // judges expiry with now(), so a slow phone clock cannot fake it).
+      stopBanCountdown();
+      refreshBanState();
+      return;
+    }
+    if (cdEl) cdEl.textContent = formatBanCountdown(currentBan.expires_at);
+  };
+  tick();
+  banCountdownTimer = setInterval(tick, 1000);
+}
+function stopBanCountdown() {
+  if (banCountdownTimer) { clearInterval(banCountdownTimer); banCountdownTimer = null; }
+}
+
+function startBanRecheck() {
+  stopBanRecheck();
+  // Re-validate with the server every 60s while banned, so an expired
+  // ban restores access even if the tab was throttled and the countdown
+  // never fired. The RPC uses the database clock.
+  banRecheckTimer = setInterval(() => { refreshBanState(); }, 60000);
+}
+function stopBanRecheck() {
+  if (banRecheckTimer) { clearInterval(banRecheckTimer); banRecheckTimer = null; }
+}
+
+async function handleBannedLogout() {
+  try {
+    if (supabaseClient && supabaseClient.auth && supabaseClient.auth.signOut) {
+      await supabaseClient.auth.signOut();
+    }
+  } catch (_) {}
+  currentAuthUser = null;
+  applyBanState(null);
+  unsubscribeBanRealtime();
+  openAuthPage();
+}
+
+
+// ── Admin ban panel (admins only; RLS enforces it server-side) ──
+let adminBansShowHistory = false;
+let adminBansCache = [];
+
+function openAdminBanPanel() {
+  if (!isCurrentUserAdmin()) { showToast('Admin only.'); return; }
+  adminBansShowHistory = false;
+  const t = document.getElementById('ab-history-toggle');
+  if (t) t.textContent = 'Show history';
+  const errBox = document.getElementById('ab-error');
+  if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+  document.getElementById('admin-ban-modal').classList.add('open');
+  loadAdminBans();
+}
+function closeAdminBanPanel() {
+  document.getElementById('admin-ban-modal').classList.remove('open');
+}
+function toggleAdminBanHistory() {
+  adminBansShowHistory = !adminBansShowHistory;
+  const t = document.getElementById('ab-history-toggle');
+  if (t) t.textContent = adminBansShowHistory ? 'Show active only' : 'Show history';
+  loadAdminBans();
+}
+async function loadAdminBans() {
+  const listEl = document.getElementById('ab-active-list');
+  if (!supabaseClient || !isCurrentUserAdmin()) return;
+  if (listEl) listEl.innerHTML = '<div class="ab-empty">Loading…</div>';
+  try {
+    // Clean up expired bans first (marks is_active=false; history kept).
+    if (typeof supabaseClient.rpc === 'function' && !supabaseClient.isLocalAdapter) {
+      try { await supabaseClient.rpc('deactivate_expired_bans'); } catch (_) {}
+    }
+    let q = supabaseClient.from('user_bans')
+      .select('id,user_id,ban_reason,ban_type,banned_at,expires_at,is_active,created_by,created_at')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (!adminBansShowHistory) q = q.eq('is_active', true);
+    const { data, error } = await q;
+    if (error) throw error;
+    let bans = data || [];
+    if (!adminBansShowHistory) {
+      const now = Date.now();
+      bans = bans.filter(b => !b.expires_at || new Date(b.expires_at).getTime() > now);
+    }
+    adminBansCache = bans;
+    const ids = [...new Set(bans.map(b => b.user_id).filter(Boolean))];
+    const names = {};
+    if (ids.length) {
+      const { data: profs } = await supabaseClient.from('profiles')
+        .select('user_id,username,display_name').in('user_id', ids);
+      (profs || []).forEach(pr => { names[pr.user_id] = pr.username || pr.display_name || ''; });
+    }
+    renderAdminBanList(bans, names);
+  } catch (e) {
+    if (listEl) listEl.innerHTML = '<div class="ab-empty">Could not load bans: ' + escapeHtml(e.message || 'error') + '</div>';
+  }
+}
+function renderAdminBanList(bans, names) {
+  const listEl = document.getElementById('ab-active-list');
+  if (!listEl) return;
+  if (!bans.length) {
+    listEl.innerHTML = '<div class="ab-empty">' + (adminBansShowHistory ? 'No ban history yet.' : 'No active bans.') + '</div>';
+    return;
+  }
+  listEl.innerHTML = bans.map(b => {
+    const uname = names[b.user_id] ? escapeHtml('@' + names[b.user_id]) : '';
+    const isPermanent = !b.expires_at || b.ban_type === 'permanent';
+    const expired = b.expires_at && new Date(b.expires_at).getTime() <= Date.now();
+    const status = !b.is_active ? 'Unbanned' : (expired ? 'Expired' : (isPermanent ? 'Permanent' : 'Active'));
+    const remaining = isPermanent ? 'Permanent' : formatBanRemaining(b.expires_at);
+    const expiryText = isPermanent ? 'no expiry' : ('expires ' + formatBanDate(b.expires_at) + ' · ' + remaining + ' left');
+    const canUnban = b.is_active && !expired;
+    return '<div class="ab-ban-row">'
+      + '<div class="ab-ban-main">'
+      + '<div class="ab-ban-user">' + (uname || '<span class="ab-ban-uid">' + escapeHtml(String(b.user_id)) + '</span>') + '</div>'
+      + '<div class="ab-ban-uid">' + escapeHtml(String(b.user_id)) + '</div>'
+      + '<div class="ab-ban-reason-row">'
+      + '<span class="ab-ban-reason-text">' + escapeHtml(b.ban_reason || '') + '</span>'
+      + '<button class="ab-icon-btn" title="Edit reason" onclick="adminEditBanReason(\'' + escapeHtml(String(b.id)) + '\')">'
+      + '<span class="material-symbols-rounded">edit</span>'
+      + '</button>'
+      + '</div>'
+      + '<div class="ab-ban-meta">Banned ' + escapeHtml(formatBanDate(b.banned_at)) + ' · ' + escapeHtml(status) + ' · ' + escapeHtml(expiryText) + '</div>'
+      + '</div>'
+      + (canUnban ? '<button class="ab-unban-btn" onclick="adminUnbanUser(\'' + escapeHtml(String(b.id)) + '\', \'' + escapeHtml(String(b.user_id)) + '\')">Unban</button>' : '')
+      + '</div>';
+  }).join('');
+}
+async function adminBanUser() {
+  const errBox = document.getElementById('ab-error');
+  const setErr = (m) => { if (errBox) { errBox.textContent = m; errBox.style.display = m ? 'block' : 'none'; } };
+  setErr('');
+  if (!isCurrentUserAdmin()) { setErr('Admin only.'); return; }
+  const targetUserId = (document.getElementById('ab-user-id').value || '').trim();
+  const reason = (document.getElementById('ab-reason').value || '').trim();
+  const dur = document.getElementById('ab-duration').value;
+  if (!targetUserId) { setErr('Enter the user ID (Supabase Auth UID).'); return; }
+  if (!reason) { setErr('Enter a ban reason.'); return; }
+  const btn = document.getElementById('ab-ban-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading-ring-sm"></span> Banning…'; }
+  try {
+    const isPermanent = dur === 'permanent';
+    const expiresAt = isPermanent ? null : new Date(Date.now() + Number(dur) * 1000).toISOString();
+    const nowIso = new Date().toISOString();
+    const { error } = await supabaseClient.from('user_bans').insert({
+      user_id: targetUserId,
+      ban_reason: reason,
+      ban_type: isPermanent ? 'permanent' : 'temporary',
+      banned_at: nowIso,
+      expires_at: expiresAt,
+      is_active: true,
+      created_by: currentAuthUser.id
+    });
+    if (error) throw error;
+    // Sync Supabase Auth (banned_until) via the secure server endpoint.
+    // If the server is not configured, the user_bans ban still stands.
+    await syncAuthBan(targetUserId, expiresAt);
+    showToast(isPermanent ? 'User banned permanently.' : 'User banned.');
+    document.getElementById('ab-user-id').value = '';
+    document.getElementById('ab-reason').value = '';
+    await loadAdminBans();
+  } catch (e) {
+    setErr(e.message || 'Ban failed.');
+    showToast(e.message || 'Ban failed.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-rounded">block</span> Ban User'; }
+  }
+}
+async function syncAuthBan(targetUserId, expiresAt) {
+  const noteEl = document.getElementById('ab-auth-note');
+  try {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    const token = session && session.access_token;
+    if (!token) return;
+    const res = await fetch('/api/admin/ban', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken: token, targetUserId, expiresAt })
+    });
+    const out = await res.json().catch(() => ({}));
+    if (noteEl) {
+      if (out && out.authSync) {
+        noteEl.style.display = 'none';
+      } else {
+        noteEl.style.display = 'block';
+        noteEl.textContent = 'Note: Supabase Auth sync is not configured on the server (' + (out.error || 'service key missing') + '). The ban is still active in the app.';
+      }
+    }
+  } catch (e) {
+    if (noteEl) {
+      noteEl.style.display = 'block';
+      noteEl.textContent = 'Note: could not reach the Auth sync endpoint. The ban is still active in the app.';
+    }
+  }
+}
+async function adminUnbanUser(banId, targetUserId) {
+  if (!isCurrentUserAdmin()) return;
+  try {
+    const { error } = await supabaseClient.from('user_bans')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', banId);
+    if (error) throw error;
+    try {
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      const token = session && session.access_token;
+      if (token) {
+        await fetch('/api/admin/unban', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accessToken: token, targetUserId })
+        });
+      }
+    } catch (_) {}
+    showToast('User unbanned.');
+    await loadAdminBans();
+    if (currentAuthUser && String(currentAuthUser.id) === String(targetUserId)) await refreshBanState();
+  } catch (e) {
+    showToast(e.message || 'Unban failed.');
+  }
+}
+async function adminEditBanReason(banId) {
+  if (!isCurrentUserAdmin()) return;
+  const ban = adminBansCache.find(b => String(b.id) === String(banId));
+  const next = window.prompt('Edit ban reason:', ban ? (ban.ban_reason || '') : '');
+  if (next === null) return;
+  const reason = next.trim();
+  if (!reason) { showToast('Reason cannot be empty.'); return; }
+  try {
+    const { error } = await supabaseClient.from('user_bans')
+      .update({ ban_reason: reason, updated_at: new Date().toISOString() })
+      .eq('id', banId);
+    if (error) throw error;
+    showToast('Ban reason updated.');
+    await loadAdminBans();
+  } catch (e) {
+    showToast(e.message || 'Could not update reason.');
+  }
+}
+
 function applyProfile() {
   document.getElementById('profile-display-name').textContent = profile.name || (currentAuthUser ? 'Creator' : 'Sign In');
   applyProfileColor(profile.profile_color);
@@ -5578,6 +6165,10 @@ function applyProfile() {
   const ownVideos = videos.filter(v => !v.isSeed || v.username === profile.handle);
   const totalLikes = ownVideos.reduce((sum, v) => sum + (v.likes || 0), 0) + (profile.likes || 0);
   document.getElementById('stat-likes').textContent = fmtN(totalLikes);
+
+  // Admin-only: show the "Admin — Ban Users" button on the profile page.
+  const adminBanBtn = document.getElementById('profile-admin-ban-btn');
+  if (adminBanBtn) adminBanBtn.style.display = isCurrentUserAdmin() ? 'flex' : 'none';
 
   updateAuthStatusUI();
 }
@@ -7146,6 +7737,7 @@ async function loadCommentsForVideo(v) {
 }
 
 async function toggleLike(btn, id, idx) {
+  if (isCurrentUserBanned()) { showToast('Your account is suspended.'); return; }
   const v = videos[idx];
   if (!v) return;
   const isLiked = btn.classList.toggle('liked');
@@ -7222,6 +7814,7 @@ function toggleMute() {
 // ═══════════════════════════════════════════════════════
 //  VIDEO UPLOAD (With Custom Thumbnail & Preview)
 function openUpload() {
+  if (isCurrentUserBanned()) { showToast('Your account is suspended.'); return; }
   if (!currentAuthUser) {
     showToast('Please sign in to upload videos');
     openAuthModal();
@@ -7947,6 +8540,7 @@ async function uploadVideoToCloudinaryWithRetry(file) {
 }
 
 async function submitUpload() {
+  if (isCurrentUserBanned()) { showToast('Your account is suspended.'); return; }
   const file = document.getElementById('fileInput').files[0];
   if (!file) {
     showToast('Please select a video file first');
@@ -8231,6 +8825,7 @@ function addCommentEl(list, user, text, time, avatarUrl, userId) {
 }
 
 async function postComment() {
+  if (isCurrentUserBanned()) { showToast('Your account is suspended.'); return; }
   const input = document.getElementById('commentInput');
   const text = input.value.trim();
   if (!text) return;
@@ -9008,6 +9603,7 @@ async function resolveChatRecipientId(recipient, thread) {
 }
 
 async function sendChatMessage() {
+  if (isCurrentUserBanned()) { showToast('Your account is suspended.'); return; }
   const inp = document.getElementById('chatInput');
   const text = (inp.value || '').trim();
   if (!text) return;

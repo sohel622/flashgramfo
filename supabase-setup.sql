@@ -772,3 +772,194 @@ DROP POLICY IF EXISTS "Users can delete their own comments" ON public.comments;
 CREATE POLICY "Users can delete their own comments"
   ON public.comments FOR DELETE
   USING (auth.uid()::text = user_id::text);
+
+-- ========================================================
+-- 10. USER BANS (public.user_bans) — admin-only banning
+-- and real-time account suspension.
+-- The table was created in the Dashboard with columns:
+-- id, user_id, ban_reason, ban_type, banned_at, expires_at,
+-- is_active, created_by, created_at, updated_at.
+-- This section is idempotent: it creates the table only if
+-- missing, adds any missing column, then wires RLS, the
+-- server-time ban check, expiry cleanup, and Realtime.
+-- A ban is "active" when is_active = true AND
+-- (expires_at IS NULL [permanent] OR expires_at > now()).
+-- Expiry is always judged with the DATABASE clock (now()),
+-- never the phone clock, so an expired ban can never lock
+-- a user again.
+-- ========================================================
+CREATE TABLE IF NOT EXISTS public.user_bans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  ban_reason TEXT NOT NULL DEFAULT '',
+  ban_type TEXT NOT NULL DEFAULT 'temporary',
+  banned_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+  expires_at TIMESTAMPTZ,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- Ensure every column exists (the Dashboard-created table may
+-- already have them; this only fills gaps). Types are left
+-- untouched when a column already exists.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_bans' AND column_name = 'id') THEN
+    ALTER TABLE public.user_bans ADD COLUMN id UUID PRIMARY KEY DEFAULT gen_random_uuid();
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_bans' AND column_name = 'user_id') THEN
+    ALTER TABLE public.user_bans ADD COLUMN user_id UUID NOT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_bans' AND column_name = 'ban_reason') THEN
+    ALTER TABLE public.user_bans ADD COLUMN ban_reason TEXT NOT NULL DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_bans' AND column_name = 'ban_type') THEN
+    ALTER TABLE public.user_bans ADD COLUMN ban_type TEXT NOT NULL DEFAULT 'temporary';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_bans' AND column_name = 'banned_at') THEN
+    ALTER TABLE public.user_bans ADD COLUMN banned_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_bans' AND column_name = 'expires_at') THEN
+    ALTER TABLE public.user_bans ADD COLUMN expires_at TIMESTAMPTZ;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_bans' AND column_name = 'is_active') THEN
+    ALTER TABLE public.user_bans ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_bans' AND column_name = 'created_by') THEN
+    ALTER TABLE public.user_bans ADD COLUMN created_by UUID;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_bans' AND column_name = 'created_at') THEN
+    ALTER TABLE public.user_bans ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_bans' AND column_name = 'updated_at') THEN
+    ALTER TABLE public.user_bans ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now());
+  END IF;
+END $$;
+
+-- Index: the ban check is always "one user's active ban".
+CREATE INDEX IF NOT EXISTS idx_user_bans_user_active
+  ON public.user_bans (user_id, is_active, expires_at);
+
+-- Helper: is the caller an admin? (profiles.role = 'admin'.)
+-- SECURITY DEFINER so RLS on profiles cannot hide the row.
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE user_id = auth.uid() AND role = 'admin'
+  );
+$$;
+
+-- Row Level Security: a user may read ONLY their own ban row
+-- (so they see the reason + countdown); admins read everything.
+-- Only admins may insert, update or delete. Normal users can
+-- never ban themself or anyone else, even with a direct
+-- database request (PostgREST / SQL) — the policy blocks it.
+ALTER TABLE public.user_bans ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users read their own ban, admins read all" ON public.user_bans;
+CREATE POLICY "Users read their own ban, admins read all"
+  ON public.user_bans FOR SELECT
+  USING (auth.uid()::text = user_id::text OR public.is_admin());
+
+DROP POLICY IF EXISTS "Only admins can create bans" ON public.user_bans;
+CREATE POLICY "Only admins can create bans"
+  ON public.user_bans FOR INSERT
+  WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Only admins can update bans" ON public.user_bans;
+CREATE POLICY "Only admins can update bans"
+  ON public.user_bans FOR UPDATE
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Only admins can delete bans" ON public.user_bans;
+CREATE POLICY "Only admins can delete bans"
+  ON public.user_bans FOR DELETE
+  USING (public.is_admin());
+
+-- Server-time ban check. Returns the active ban as JSON, or NULL.
+-- A user may check only their own ban; an admin may check anyone's.
+-- Expiry uses the DATABASE clock (now()), never the phone clock.
+-- SECURITY DEFINER so the check works even though RLS hides other
+-- users' rows; the caller check above is the authorization.
+CREATE OR REPLACE FUNCTION public.is_user_banned(p_user_id TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_ban RECORD;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN NULL;
+  END IF;
+  IF auth.uid()::text <> p_user_id AND NOT public.is_admin() THEN
+    RETURN NULL;
+  END IF;
+  SELECT * INTO v_ban FROM public.user_bans
+  WHERE user_id::text = p_user_id
+    AND is_active = true
+    AND (expires_at IS NULL OR expires_at > now())
+  ORDER BY banned_at DESC NULLS LAST, created_at DESC NULLS LAST
+  LIMIT 1;
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+  RETURN jsonb_build_object(
+    'id', v_ban.id,
+    'user_id', v_ban.user_id::text,
+    'ban_reason', v_ban.ban_reason,
+    'ban_type', v_ban.ban_type,
+    'banned_at', v_ban.banned_at,
+    'expires_at', v_ban.expires_at,
+    'is_active', v_ban.is_active,
+    'created_by', v_ban.created_by::text
+  );
+END;
+$$;
+
+-- Mark every expired temporary ban inactive (history is kept —
+-- the rows stay, only is_active flips to false). Returns how many
+-- rows were deactivated. Safe to call any time; idempotent.
+CREATE OR REPLACE FUNCTION public.deactivate_expired_bans()
+RETURNS INT
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_count INT;
+BEGIN
+  UPDATE public.user_bans
+  SET is_active = false, updated_at = timezone('utc'::text, now())
+  WHERE is_active = true
+    AND expires_at IS NOT NULL
+    AND expires_at <= now();
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_user_banned(TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.deactivate_expired_bans() TO authenticated;
+
+-- Add public.user_bans to the Supabase Realtime publication, so a
+-- banned user's app sees the ban the moment an admin creates it.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'user_bans'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.user_bans;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'Could not add user_bans to the realtime publication: %', SQLERRM;
+END $$;
