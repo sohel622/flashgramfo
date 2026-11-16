@@ -4432,6 +4432,85 @@ async function signInWithGooglePopup() {
   });
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  GOOGLE SIGN-IN — THE APP'S OWN WINDOW-BROWSER (Capacitor)
+//  A plain web page cannot embed Google sign-in in an iframe
+//  (Google refuses to load in a frame), so the "own window" for
+//  Google sign-in is the Capacitor Browser plugin: it opens the
+//  Google page in an in-app browser window (a Chrome Custom Tab)
+//  that stays inside the app — no switch to the Chrome app, and a
+//  close button brings the user straight back. After Google signs
+//  the user in, Supabase redirects to the app's own scheme
+//  (com.flashgram.app://login-callback), the system re-opens the
+//  app, the App plugin fires appUrlOpen, the browser window is
+//  closed, and handleOAuthCallback completes the sign-in — the user
+//  lands on the home feed. Needs: @capacitor/browser +
+//  @capacitor/app installed in the APK build, the deep-link intent
+//  filter in AndroidManifest, and this callback URL added in
+//  Supabase Dashboard → Authentication → URL Configuration →
+//  Redirect URLs. Without the plugins the flow returns
+//  'unavailable' and the popup / redirect is used instead, so
+//  sign-in never breaks.
+// ═══════════════════════════════════════════════════════════════
+const GOOGLE_OAUTH_APP_CALLBACK = 'com.flashgram.app://login-callback';
+let googleInAppBrowserActive = false;
+function capacitorPlugins() {
+  return (window.Capacitor && window.Capacitor.Plugins) || null;
+}
+async function signInWithGoogleInAppBrowser() {
+  const plugins = capacitorPlugins();
+  const Browser = plugins && plugins.Browser;
+  const App = plugins && plugins.App;
+  if (!Browser || typeof Browser.open !== 'function' || !App || typeof App.addListener !== 'function') return 'unavailable';
+  if (!supabaseClient || supabaseClient.isLocalAdapter) return 'unavailable';
+  if (googleInAppBrowserActive) return 'opened';
+  let handles = null;
+  const removeListeners = async () => {
+    if (!handles) return;
+    const hs = handles; handles = null;
+    for (const h of hs) { try { await h.remove(); } catch (_) {} }
+  };
+  try {
+    const { data, error } = await supabaseClient.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: GOOGLE_OAUTH_APP_CALLBACK, skipBrowserRedirect: true }
+    });
+    if (error) throw error;
+    if (!data || !data.url) return 'unavailable';
+    googleInAppBrowserActive = true;
+    const restoreBtn = () => {
+      const googleBtn = document.getElementById('auth-google-btn');
+      if (googleBtn) { googleBtn.disabled = false; googleBtn.innerHTML = googleBtnDefaultHtml; }
+    };
+    handles = [
+      await App.addListener('appUrlOpen', async (event) => {
+        const url = event && event.url ? String(event.url) : '';
+        if (!url || url.indexOf(GOOGLE_OAUTH_APP_CALLBACK) !== 0) return;
+        googleInAppBrowserActive = false;
+        try { await Browser.close(); } catch (_) {}
+        await removeListeners();
+        const ok = await handleOAuthCallback(url);
+        if (!ok) restoreBtn();
+      }),
+      await Browser.addListener('browserFinished', async () => {
+        // The user closed the in-app browser without signing in.
+        if (!googleInAppBrowserActive) return;
+        googleInAppBrowserActive = false;
+        await removeListeners();
+        restoreBtn();
+      })
+    ];
+    await Browser.open({ url: data.url });
+    return 'opened';
+  } catch (err) {
+    console.error('Google in-app browser sign-in failed:', err);
+    googleInAppBrowserActive = false;
+    await removeListeners();
+    try { await Browser.close(); } catch (_) {}
+    return 'unavailable';
+  }
+}
+
 async function handleGoogleSignIn() {
   const errBox = document.getElementById('auth-error');
   const googleBtn = document.getElementById('auth-google-btn');
@@ -4457,7 +4536,14 @@ async function handleGoogleSignIn() {
     // 1) Native Android account picker (Capacitor plugin), when installed.
     if (await tryNativeGoogleSignIn()) return;
 
-    // 2) Genuine Google account chooser as an in-app popup (GIS).
+    // 2) The app's own window-browser (Capacitor Browser plugin).
+    //    Google opens inside the app; the deep link brings the user
+    //    straight back to the feed.
+    const inApp = await signInWithGoogleInAppBrowser();
+    if (inApp === 'opened') return;
+    // 'unavailable' → fall through to the popup / redirect below.
+
+    // 3) Genuine Google account chooser as an in-app popup (GIS).
     //    Only with a real Supabase backend — the local demo adapter
     //    has no signInWithIdToken, so it keeps the old flow.
     const isRealSupabase = !supabaseClient.isLocalAdapter && supabaseClient.auth && typeof supabaseClient.auth.signInWithIdToken === 'function';
@@ -4468,7 +4554,7 @@ async function handleGoogleSignIn() {
       // 'unavailable' → fall through to the redirect flow below.
     }
 
-    // 3) Fallback: the existing OAuth redirect flow (unchanged).
+    // 4) Fallback: the existing OAuth redirect flow (unchanged).
     const isIframe = typeof window !== 'undefined' && window.self !== window.top;
 
     console.log('Initiating Google OAuth with strict production redirect URL:', LIVE_REDIRECT_URL, { isIframe });
