@@ -89,6 +89,54 @@ jobs:
           print('AGP / Gradle / compileSdk bump done successfully')
           PY
 
+      - name: Enable multi-window on MainActivity
+        # Small Window / floating window / split-screen: the activity
+        # must declare android:resizeableActivity="true" and handle
+        # every resize-related config change itself, otherwise Android
+        # destroys and recreates the activity (and reloads the WebView,
+        # losing the feed position and any unsaved caption) whenever
+        # the window is resized. Capacitor generates resizeableActivity
+        # as true by default for targetSdk 24+, but this makes it
+        # explicit and fills in the configChanges flags the template
+        # omits (density, layoutDirection).
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          p = pathlib.Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          m = re.search(r'<activity[^>]*android:name="\.MainActivity"[^>]*>', s)
+          if not m:
+              print('ERROR: MainActivity not found in AndroidManifest.xml')
+              sys.exit(1)
+          tag = m.group(0)
+          orig_tag = tag
+          required = ['orientation', 'keyboardHidden', 'keyboard', 'screenSize', 'locale', 'smallestScreenSize', 'screenLayout', 'uiMode', 'density', 'layoutDirection']
+          if 'android:resizeableActivity' not in tag:
+              tag = tag[:-1] + ' android:resizeableActivity="true">'
+              print('added android:resizeableActivity="true"')
+          else:
+              print('android:resizeableActivity already present')
+          cm = re.search(r'android:configChanges="([^"]*)"', tag)
+          if cm:
+              have = [x for x in cm.group(1).split('|') if x]
+              missing = [x for x in required if x not in have]
+              if missing:
+                  newval = '|'.join(have + missing)
+                  tag = tag[:cm.start(1)] + newval + tag[cm.end(1):]
+                  print('added configChanges flags:', ','.join(missing))
+              else:
+                  print('configChanges already complete')
+          else:
+              tag = tag[:-1] + ' android:configChanges="' + '|'.join(required) + '">'
+              print('added android:configChanges')
+          if tag != orig_tag:
+              s = s[:m.start()] + tag + s[m.end():]
+              p.write_text(s)
+              print('AndroidManifest patched for multi-window')
+          else:
+              print('AndroidManifest already multi-window ready')
+          PY
+
       - name: Fix Kotlin Version Conflict
         run: |
           cd android/app
