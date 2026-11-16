@@ -27,11 +27,40 @@ jobs:
 
       - name: Install and Setup Capacitor
         run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/browser @capacitor/app
           rm -f capacitor.config.json capacitor.config.ts
           npx cap init "Flashgram" "com.flashgram.app" --web-dir=dist
           npx cap add android || true
           npx cap sync android
+
+      - name: Add Google sign-in deep-link intent filter
+        # The in-app browser (Capacitor Browser plugin) returns from
+        # Google via the app's own scheme com.flashgram.app://...
+        # so the app must declare an intent filter for that scheme,
+        # otherwise Android will not re-open the app after sign-in.
+        # android/ is regenerated on every build, so the filter is
+        # injected here (idempotent — skipped if already present).
+        run: |
+          python3 - <<'PY'
+          import pathlib, re
+          p = pathlib.Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          if 'android:scheme="com.flashgram.app"' in s:
+              print('deep-link intent filter already present')
+          else:
+              block = ('        <intent-filter>\n'
+                       '            <action android:name="android.intent.action.VIEW" />\n'
+                       '            <category android:name="android.intent.category.DEFAULT" />\n'
+                       '            <category android:name="android.intent.category.BROWSABLE" />\n'
+                       '            <data android:scheme="com.flashgram.app" />\n'
+                       '        </intent-filter>\n')
+              s2, n = re.subn(r'(</intent-filter>)', r'\1\n' + block, s, count=1)
+              if n == 0:
+                  print('WARNING: no intent-filter found in AndroidManifest.xml, deep link not added')
+              else:
+                  p.write_text(s2)
+                  print('deep-link intent filter added')
+          PY
 
       - name: Fix Kotlin Version Conflict
         run: |
