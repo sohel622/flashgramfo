@@ -5753,7 +5753,20 @@ let banCountdownTimer = null;
 let banRecheckTimer = null;
 
 function isCurrentUserBanned() { return Boolean(currentBan); }
-function isCurrentUserAdmin() { return profile.role === 'admin'; }
+// Admin is trusted from the JWT's protected app_metadata first
+// (is_admin = true, or role = 'admin') — only settable via the Auth
+// Admin API / Dashboard, never by the user — then from the
+// trigger-protected profiles.role column. user_metadata is NEVER
+// trusted for admin privileges.
+function isCurrentUserAdmin() {
+  const meta = (currentAuthUser && currentAuthUser.app_metadata) || {};
+  if (meta.is_admin === true || meta.role === 'admin') return true;
+  return profile.role === 'admin';
+}
+// A Supabase Auth UID is a UUID.
+function isValidAuthUid(uid) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(uid || '').trim());
+}
 
 function formatBanDate(iso) {
   if (!iso) return '';
@@ -6038,26 +6051,42 @@ async function adminBanUser() {
   const reason = (document.getElementById('ab-reason').value || '').trim();
   const dur = document.getElementById('ab-duration').value;
   if (!targetUserId) { setErr('Enter the user ID (Supabase Auth UID).'); return; }
+  if (!isValidAuthUid(targetUserId)) { setErr('Invalid user ID: enter a valid Supabase Auth UID (a UUID).'); return; }
   if (!reason) { setErr('Enter a ban reason.'); return; }
+  if (currentAuthUser && String(currentAuthUser.id) === targetUserId) { setErr('An admin cannot ban themself.'); return; }
   const btn = document.getElementById('ab-ban-btn');
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading-ring-sm"></span> Banning…'; }
   try {
     const isPermanent = dur === 'permanent';
     const expiresAt = isPermanent ? null : new Date(Date.now() + Number(dur) * 1000).toISOString();
-    const nowIso = new Date().toISOString();
-    const { error } = await supabaseClient.from('user_bans').insert({
-      user_id: targetUserId,
-      ban_reason: reason,
-      ban_type: isPermanent ? 'permanent' : 'temporary',
-      banned_at: nowIso,
-      expires_at: expiresAt,
-      is_active: true,
-      created_by: currentAuthUser.id
+    // Fast check: does a profile exist for this UID? (The Edge Function
+    // is the authority — it verifies the user in Supabase Auth — but a
+    // missing profile is a strong hint the UID is wrong.)
+    try {
+      const { data: targetProf } = await supabaseClient.from('profiles')
+        .select('user_id,username').eq('user_id', targetUserId).maybeSingle();
+      if (!targetProf) showToast('No profile found for this UID — checking Supabase Auth…');
+    } catch (_) {}
+    // Secure Edge Function: verifies the admin + the target user
+    // server-side, inserts the ban into public.user_bans, and applies
+    // the Auth ban. Success is shown ONLY when it answers ok:true
+    // (both operations done); its real error is shown otherwise.
+    const result = await invokeBanEdgeFunction('ban-user', {
+      targetUserId,
+      banReason: reason,
+      banType: isPermanent ? 'permanent' : 'temporary',
+      expiresAt,
     });
-    if (error) throw error;
-    // Sync Supabase Auth (banned_until) via the secure server endpoint.
-    // If the server is not configured, the user_bans ban still stands.
-    await syncAuthBan(targetUserId, expiresAt);
+    if (!result.ok) {
+      // Edge Function not deployed yet: fall back to the direct
+      // database insert (RLS: admins only) + the server Auth sync.
+      // This is still a real database operation, never a fake success.
+      if (result.notDeployed) {
+        await adminBanUserDirect(targetUserId, reason, isPermanent, expiresAt);
+      } else {
+        throw new Error(result.error || 'Ban failed.');
+      }
+    }
     showToast(isPermanent ? 'User banned permanently.' : 'User banned.');
     document.getElementById('ab-user-id').value = '';
     document.getElementById('ab-reason').value = '';
@@ -6068,6 +6097,51 @@ async function adminBanUser() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-rounded">block</span> Ban User'; }
   }
+}
+// Calls a ban Edge Function and returns { ok, error?, notDeployed? }.
+// notDeployed is true when the function does not exist yet (404),
+// so the caller can fall back to the direct database path.
+async function invokeBanEdgeFunction(fnName, body) {
+  try {
+    if (!supabaseClient || typeof supabaseClient.functions !== 'object' || typeof supabaseClient.functions.invoke !== 'function') {
+      return { ok: false, notDeployed: true, error: 'Edge Functions are not available in this client.' };
+    }
+    const { data, error } = await supabaseClient.functions.invoke(fnName, { body });
+    if (error) {
+      const msg = String((error && error.message) || error || '');
+      const status = error && (error.status || error.code);
+      if (status === 404 || /not found|Failed to send a request|NetworkError/i.test(msg)) {
+        return { ok: false, notDeployed: true, error: msg };
+      }
+      return { ok: false, error: msg || 'Edge Function failed.' };
+    }
+    if (data && data.ok) return { ok: true, data };
+    return { ok: false, error: (data && data.error) || 'Ban failed.' };
+  } catch (e) {
+    const msg = String((e && e.message) || e || '');
+    if (/not found|Failed to send a request|NetworkError|404/i.test(msg)) {
+      return { ok: false, notDeployed: true, error: msg };
+    }
+    return { ok: false, error: msg || 'Ban failed.' };
+  }
+}
+// Direct ban path (used only while the Edge Function is not deployed
+// yet): insert into public.user_bans (RLS: admins only), then sync
+// Supabase Auth via the secure server endpoint. Throws the real
+// database/server error on failure — never a fake success.
+async function adminBanUserDirect(targetUserId, reason, isPermanent, expiresAt) {
+  const nowIso = new Date().toISOString();
+  const { error } = await supabaseClient.from('user_bans').insert({
+    user_id: targetUserId,
+    ban_reason: reason,
+    ban_type: isPermanent ? 'permanent' : 'temporary',
+    banned_at: nowIso,
+    expires_at: expiresAt,
+    is_active: true,
+    created_by: currentAuthUser.id
+  });
+  if (error) throw error;
+  await syncAuthBan(targetUserId, expiresAt);
 }
 async function syncAuthBan(targetUserId, expiresAt) {
   const noteEl = document.getElementById('ab-auth-note');
@@ -6099,21 +6173,32 @@ async function syncAuthBan(targetUserId, expiresAt) {
 async function adminUnbanUser(banId, targetUserId) {
   if (!isCurrentUserAdmin()) return;
   try {
-    const { error } = await supabaseClient.from('user_bans')
-      .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq('id', banId);
-    if (error) throw error;
-    try {
-      const { data: { session } } = await supabaseClient.auth.getSession();
-      const token = session && session.access_token;
-      if (token) {
-        await fetch('/api/admin/unban', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: token, targetUserId })
-        });
+    // Secure Edge Function: sets is_active = false in user_bans and
+    // lifts the Auth ban. Success only when it answers ok:true.
+    const result = await invokeBanEdgeFunction('unban-user', { targetUserId, banId });
+    if (!result.ok) {
+      if (result.notDeployed) {
+        // Edge Function not deployed yet: direct update (RLS: admins
+        // only) + server Auth sync. Still a real database operation.
+        const { error } = await supabaseClient.from('user_bans')
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq('id', banId);
+        if (error) throw error;
+        try {
+          const { data: { session } } = await supabaseClient.auth.getSession();
+          const token = session && session.access_token;
+          if (token) {
+            await fetch('/api/admin/unban', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ accessToken: token, targetUserId })
+            });
+          }
+        } catch (_) {}
+      } else {
+        throw new Error(result.error || 'Unban failed.');
       }
-    } catch (_) {}
+    }
     showToast('User unbanned.');
     await loadAdminBans();
     if (currentAuthUser && String(currentAuthUser.id) === String(targetUserId)) await refreshBanState();

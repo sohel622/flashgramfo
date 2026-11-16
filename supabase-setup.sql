@@ -963,3 +963,72 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'Could not add user_bans to the realtime publication: %', SQLERRM;
 END $$;
+
+-- ========================================================
+-- 11. ADMIN ROLE — protected app_metadata + protected
+-- profiles.role (fixes a hole: profiles.role was editable by
+-- the user themself via the "UPDATE own" RLS policy, so anyone
+-- could set role='admin' and ban people. Now role can only be
+-- changed from the Dashboard / service_role / direct SQL, or by
+-- an in-app admin — exactly like is_verified and profile_color.)
+-- Admin is trusted from EITHER:
+--   (a) the JWT's protected app_metadata (is_admin = true, or
+--       role = 'admin') — only settable via the Auth Admin API /
+--       Dashboard, never by the user; or
+--   (b) the (now trigger-protected) profiles.role = 'admin'.
+-- Normal users must never be able to grant themself admin.
+-- ========================================================
+CREATE OR REPLACE FUNCTION public.protect_profile_role()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_old TEXT;
+  v_new TEXT;
+  v_is_service_role BOOLEAN;
+  v_actor_is_admin BOOLEAN;
+BEGIN
+  v_old := COALESCE(OLD.role, 'user');
+  v_new := COALESCE(NEW.role, 'user');
+  IF v_old IS NOT DISTINCT FROM v_new THEN
+    RETURN NEW;
+  END IF;
+  v_is_service_role := (auth.role() = 'service_role');
+  IF NOT v_is_service_role AND auth.uid() IS NOT NULL THEN
+    SELECT EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE user_id = auth.uid() AND role = 'admin'
+    ) INTO v_actor_is_admin;
+  ELSE
+    v_actor_is_admin := false;
+  END IF;
+  IF v_is_service_role OR auth.uid() IS NULL OR v_actor_is_admin THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'Only an administrator may change a profile role.';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_protect_profile_role ON public.profiles;
+CREATE TRIGGER trg_protect_profile_role
+BEFORE UPDATE OF role ON public.profiles
+FOR EACH ROW EXECUTE FUNCTION public.protect_profile_role();
+
+-- is_admin() now trusts the JWT's protected app_metadata first,
+-- then the (trigger-protected) profiles.role column. RLS policies
+-- on user_bans and the is_user_banned RPC all call this function,
+-- so they pick up the fix automatically.
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT
+    COALESCE((auth.jwt() -> 'app_metadata' ->> 'is_admin')::boolean, false)
+    OR (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
+    OR EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE user_id = auth.uid() AND role = 'admin'
+    );
+$$;
