@@ -91,6 +91,12 @@
         right: auto !important;
         transform: translateX(-50%) !important;
         width: min(100vw, calc(100vh * 9 / 16)) !important;
+        /* Small floating window / split-screen: a short window makes
+           the 9:16 column narrow (a 400x300 window gives a 169px
+           column). Never let it drop below a usable 300px (or the
+           full window width, whichever is smaller), so the video,
+           action buttons and text stay usable. */
+        min-width: min(100vw, 300px) !important;
       }
       #page-feed {
         height: 100vh !important;
@@ -107,6 +113,19 @@
       body {
         background: #000;
       }
+    }
+    /* Small floating window / split-screen: below 360px wide, tighten
+       the feed chrome so the action buttons, bottom nav and music
+       line never crowd the video info. The design is unchanged —
+       only spacing shrinks. */
+    @media (max-width: 360px) {
+      #topbar { padding: 0 max(10px, env(safe-area-inset-right, 0px)) 0 max(10px, env(safe-area-inset-left, 0px)); }
+      .right-actions { gap: 14px; right: 8px; }
+      .action-icon-wrap { width: 40px; height: 40px; }
+      .action-icon-wrap .material-symbols-rounded { font-size: 30px; }
+      .music-text { max-width: 140px; }
+      .nav-item { padding: 6px 6px; }
+      .bottom-info { right: 64px; left: max(12px, env(safe-area-inset-left, 0px)); }
     }
 
     /* ── PAGES ── */
@@ -7606,6 +7625,91 @@ async function retryPendingPostUploads() {
   return done;
 }
 
+// Upload one video file to Cloudinary (a single attempt). Resolves
+// to the Cloudinary response ({secure_url, ...}). Rejects with an
+// Error whose `isNetworkError` is true when the connection broke
+// before Cloudinary could answer (status 0 / network error) —
+// that is the only failure worth retrying.
+function uploadVideoToCloudinary(file) {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', CLOUDINARY_UPLOAD_URL, true);
+    // A stalled upload must fail loudly instead of spinning forever:
+    // the ontimeout handler below only fires when this is set.
+    xhr.timeout = 600000; // 10 minutes
+
+    xhr.upload.addEventListener('progress', updateUploadBarFromEvent);
+
+    xhr.upload.addEventListener('load', () => {
+      // Bytes are on Cloudinary now; it is preparing the video.
+      updateUploadProgress(
+        85,
+        'Processing on Cloudinary (85%)…',
+        'Cloudinary is preparing your video…'
+      );
+    });
+
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === XMLHttpRequest.DONE) {
+        let data = {};
+        try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { data = {}; }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(data);
+        } else {
+          // Cloudinary answers errors as {error: {message}}.
+          const cloudErr = cloudinaryUploadErrorMessage(data);
+          let detail = cloudErr || (data.reason ? `Flagged: ${data.reason}` : '');
+          if (!detail) detail = xhr.status === 413 ? 'Video file exceeds maximum size' : `Upload failed with status ${xhr.status}`;
+          console.error('[upload] Cloudinary upload failed:', xhr.status, detail);
+          const err = new Error(detail);
+          // Status 0 = no HTTP response at all: the connection broke
+          // after the bytes were sent (phone network dropped while
+          // waiting for Cloudinary's reply). That is a network
+          // failure, not a Cloudinary rejection, so it is safe to
+          // retry.
+          err.isNetworkError = (xhr.status === 0);
+          reject(err);
+        }
+      }
+    };
+
+    xhr.onerror = () => {
+      console.error('[upload] Network connection error during upload');
+      const err = new Error('Network connection error during upload');
+      err.isNetworkError = true;
+      reject(err);
+    };
+    xhr.ontimeout = () => {
+      console.error('[upload] Upload request timed out after', xhr.timeout, 'ms');
+      reject(new Error('Upload request timed out'));
+    };
+
+    xhr.send(formData);
+  });
+}
+// Retry a Cloudinary upload when the connection breaks (status 0 /
+// network error). A real Cloudinary answer (400/413/…) is final and
+// is not retried. Up to 3 attempts, 2 seconds apart.
+async function uploadVideoToCloudinaryWithRetry(file) {
+  const maxAttempts = 3;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await uploadVideoToCloudinary(file);
+    } catch (err) {
+      lastErr = err;
+      if (!err.isNetworkError || attempt === maxAttempts) throw err;
+      console.warn('[upload] Connection dropped during upload, retrying (attempt ' + (attempt + 1) + ' of ' + maxAttempts + ')…');
+      updateUploadProgress(0, 'Connection dropped — retrying upload…', 'Attempt ' + (attempt + 1) + ' of ' + maxAttempts);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+  throw lastErr;
+}
+
 async function submitUpload() {
   const file = document.getElementById('fileInput').files[0];
   if (!file) {
@@ -7647,55 +7751,7 @@ async function submitUpload() {
     // moderator refuses (403) or cannot check (503) is never published.
     const resData = MODERATION_UPLOAD_URL
       ? await uploadViaModeration(file, caption)
-      : await new Promise((resolve, reject) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', CLOUDINARY_UPLOAD_URL, true);
-      // A stalled upload must fail loudly instead of spinning forever:
-      // the ontimeout handler below only fires when this is set.
-      xhr.timeout = 600000; // 10 minutes
-
-      xhr.upload.addEventListener('progress', updateUploadBarFromEvent);
-
-      xhr.upload.addEventListener('load', () => {
-        // Bytes are on Cloudinary now; it is preparing the video.
-        updateUploadProgress(
-          85,
-          'Processing on Cloudinary (85%)…',
-          'Cloudinary is preparing your video…'
-        );
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === XMLHttpRequest.DONE) {
-          let data = {};
-          try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { data = {}; }
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(data);
-          } else {
-            // Cloudinary answers errors as {error: {message}}.
-            const cloudErr = cloudinaryUploadErrorMessage(data);
-            let detail = cloudErr || (data.reason ? `Flagged: ${data.reason}` : '');
-            if (!detail) detail = xhr.status === 413 ? 'Video file exceeds maximum size' : `Upload failed with status ${xhr.status}`;
-            console.error('[upload] Cloudinary upload failed:', xhr.status, detail);
-            reject(new Error(detail));
-          }
-        }
-      };
-
-      xhr.onerror = () => {
-        console.error('[upload] Network connection error during upload');
-        reject(new Error('Network connection error during upload'));
-      };
-      xhr.ontimeout = () => {
-        console.error('[upload] Upload request timed out after', xhr.timeout, 'ms');
-        reject(new Error('Upload request timed out'));
-      };
-
-      xhr.send(formData);
-    });
+      : await uploadVideoToCloudinaryWithRetry(file);
 
     // Check if video was rejected by AI content moderation (18+ or inappropriate)
     if (resData.approved === false || resData.rejected) {
@@ -9573,6 +9629,25 @@ document.addEventListener('visibilitychange', async () => {
     try { await document.exitPictureInPicture(); } catch (_) {}
     autoPiPActive = false;
   }
+});
+// Small window / split-screen / rotation: when the window size
+// changes, the slides (100dvh) change height and the scroll position
+// no longer lines up with a slide boundary. Re-align to the active
+// slide (instant, no animation) so it fills the new window — the
+// video keeps playing from where it was, nothing reloads, and no
+// caption or upload state is touched. Debounced so a drag-resize
+// does not thrash the scroll.
+let feedResizeTimer = null;
+function handleFeedResize() {
+  if (!isFeedPageVisible()) return;
+  const slides = feedEl ? feedEl.querySelectorAll('.video-slide') : [];
+  const slide = slides[activeIdx];
+  if (!slide) return;
+  slide.scrollIntoView({ behavior: 'auto', block: 'start' });
+}
+window.addEventListener('resize', () => {
+  clearTimeout(feedResizeTimer);
+  feedResizeTimer = setTimeout(handleFeedResize, 150);
 });
 function updateMediaSession(v) {
   if (!('mediaSession' in navigator) || !v || typeof MediaMetadata === 'undefined') return;
