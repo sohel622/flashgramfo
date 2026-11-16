@@ -26,6 +26,12 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   avatar_updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
   username_updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
   bio_updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
+  -- Profile edit quota (2 edits per 30-day cycle, then a 30-day lock).
+  -- The *_updated_at columns above are kept only as an audit trail;
+  -- locking is driven by these three columns + the quota trigger.
+  profile_edit_count INT DEFAULT 0,
+  cycle_started_at TIMESTAMPTZ,
+  lock_expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
   updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now())
 );
@@ -54,6 +60,18 @@ BEGIN
 
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'bio_updated_at') THEN
     ALTER TABLE public.profiles ADD COLUMN bio_updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now());
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'profile_edit_count') THEN
+    ALTER TABLE public.profiles ADD COLUMN profile_edit_count INT DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'cycle_started_at') THEN
+    ALTER TABLE public.profiles ADD COLUMN cycle_started_at TIMESTAMPTZ;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'lock_expires_at') THEN
+    ALTER TABLE public.profiles ADD COLUMN lock_expires_at TIMESTAMPTZ;
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'videos') THEN
@@ -167,51 +185,61 @@ CREATE POLICY "Authenticated users can update avatars"
   );
 
 -- ========================================================
--- 6. Strict 30-Day Cooldown Trigger on Profile Updates
--- Enforces 30-day cooldown on name, username, avatar, and bio
+-- 6. Profile Edit Quota: 2 edits per 30-day cycle, then a 30-day lock
+-- Replaces the old per-field 30-day cooldown (trg_check_profile_cooldown).
+-- A "profile edit" is a real change to display_name / full_name /
+-- username / bio / avatar_url. One Save (even changing several fields
+-- at once) counts as ONE edit. The trigger is the server-side source
+-- of truth: it counts the edit, starts the cycle on the first edit,
+-- sets lock_expires_at on the 2nd edit, blocks any edit while locked,
+-- and resets the counter to 0 once the lock has expired (fresh cycle).
+-- The app only READS these columns; it never writes them directly.
 -- ========================================================
-CREATE OR REPLACE FUNCTION public.check_profile_update_cooldown()
+CREATE OR REPLACE FUNCTION public.enforce_profile_edit_quota()
 RETURNS trigger AS $$
 DECLARE
-  v_cooldown_interval INTERVAL := INTERVAL '30 days';
   v_now TIMESTAMPTZ := timezone('utc'::text, now());
+  v_cycle INTERVAL := INTERVAL '30 days';
+  v_count INT;
+  v_lock TIMESTAMPTZ;
+  v_cycle_start TIMESTAMPTZ;
+  v_is_edit BOOLEAN;
 BEGIN
   -- Only validate on UPDATE (allow INSERT/creation)
   IF TG_OP = 'UPDATE' THEN
-    -- Check Display Name / Full Name change
-    IF (OLD.display_name IS DISTINCT FROM NEW.display_name OR OLD.full_name IS DISTINCT FROM NEW.full_name) THEN
-      IF OLD.name_updated_at IS NOT NULL AND (v_now - OLD.name_updated_at) < v_cooldown_interval THEN
-        RAISE EXCEPTION 'You can only update your profile name once every 30 days. Next change available in % days.',
-          CEIL(EXTRACT(EPOCH FROM (OLD.name_updated_at + v_cooldown_interval - v_now)) / 86400);
+    v_is_edit := (OLD.display_name IS DISTINCT FROM NEW.display_name)
+              OR (OLD.full_name IS DISTINCT FROM NEW.full_name)
+              OR (OLD.username IS DISTINCT FROM NEW.username)
+              OR (OLD.bio IS DISTINCT FROM NEW.bio)
+              OR (OLD.avatar_url IS DISTINCT FROM NEW.avatar_url);
+    IF v_is_edit THEN
+      v_count := COALESCE(OLD.profile_edit_count, 0);
+      v_lock := OLD.lock_expires_at;
+      v_cycle_start := OLD.cycle_started_at;
+      -- Locked: block the edit (the app shows the unlock date).
+      IF v_lock IS NOT NULL AND v_now < v_lock THEN
+        RAISE EXCEPTION '30-day cooldown active: you have used both profile edits. Next updates unlock on %.',
+          to_char(v_lock, 'DD Mon YYYY');
       END IF;
-      NEW.name_updated_at := v_now;
-    END IF;
-
-    -- Check Username handle change
-    IF (OLD.username IS DISTINCT FROM NEW.username) THEN
-      IF OLD.username_updated_at IS NOT NULL AND (v_now - OLD.username_updated_at) < v_cooldown_interval THEN
-        RAISE EXCEPTION 'You can only update your username handle once every 30 days. Next change available in % days.',
-          CEIL(EXTRACT(EPOCH FROM (OLD.username_updated_at + v_cooldown_interval - v_now)) / 86400);
+      -- Lock expired: fresh cycle (reset count, clear lock/cycle).
+      IF v_lock IS NOT NULL AND v_now >= v_lock THEN
+        v_count := 0;
+        v_lock := NULL;
+        v_cycle_start := NULL;
       END IF;
-      NEW.username_updated_at := v_now;
-    END IF;
-
-    -- Check Avatar / Profile picture change
-    IF (OLD.avatar_url IS DISTINCT FROM NEW.avatar_url) THEN
-      IF OLD.avatar_url IS NOT NULL AND OLD.avatar_updated_at IS NOT NULL AND (v_now - OLD.avatar_updated_at) < v_cooldown_interval THEN
-        RAISE EXCEPTION 'You can only update your profile picture once every 30 days. Next change available in % days.',
-          CEIL(EXTRACT(EPOCH FROM (OLD.avatar_updated_at + v_cooldown_interval - v_now)) / 86400);
+      -- Count this edit.
+      v_count := v_count + 1;
+      IF v_cycle_start IS NULL THEN
+        v_cycle_start := v_now;
       END IF;
-      NEW.avatar_updated_at := v_now;
-    END IF;
-
-    -- Check Bio change
-    IF (OLD.bio IS DISTINCT FROM NEW.bio) THEN
-      IF OLD.bio_updated_at IS NOT NULL AND (v_now - OLD.bio_updated_at) < v_cooldown_interval THEN
-        RAISE EXCEPTION 'You can only update your bio once every 30 days. Next change available in % days.',
-          CEIL(EXTRACT(EPOCH FROM (OLD.bio_updated_at + v_cooldown_interval - v_now)) / 86400);
+      NEW.profile_edit_count := v_count;
+      NEW.cycle_started_at := v_cycle_start;
+      -- 2nd edit triggers the 30-day lock.
+      IF v_count >= 2 THEN
+        NEW.lock_expires_at := v_now + v_cycle;
+      ELSE
+        NEW.lock_expires_at := NULL;
       END IF;
-      NEW.bio_updated_at := v_now;
     END IF;
 
     NEW.updated_at := v_now;
@@ -221,11 +249,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_check_profile_cooldown ON public.profiles;
-CREATE TRIGGER trg_check_profile_cooldown
+DROP TRIGGER IF EXISTS trg_profile_edit_quota ON public.profiles;
+CREATE TRIGGER trg_profile_edit_quota
   BEFORE UPDATE ON public.profiles
   FOR EACH ROW
-  EXECUTE FUNCTION public.check_profile_update_cooldown();
+  EXECUTE FUNCTION public.enforce_profile_edit_quota();
+
+-- Remove the old per-field 30-day cooldown (replaced by the quota above).
+DROP TRIGGER IF EXISTS trg_check_profile_cooldown ON public.profiles;
+DROP FUNCTION IF EXISTS public.check_profile_update_cooldown();
 
 -- 6b. Verified badge protection: only an administrator may change
 -- profiles.is_verified. The column already exists (boolean, default

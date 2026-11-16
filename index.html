@@ -2016,6 +2016,18 @@
       color: #f59e0b;
       margin-top: 1px;
     }
+    .ep-quota-info {
+      text-align: center;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--fg2);
+      background: rgba(255, 45, 120, 0.08);
+      border: 1px solid rgba(255, 45, 120, 0.22);
+      border-radius: 999px;
+      padding: 6px 12px;
+      margin: 2px auto 12px auto;
+      width: fit-content;
+    }
     .ep-label-row {
       display: flex;
       align-items: center;
@@ -2698,6 +2710,7 @@
     <div class="modal-handle"></div>
     <div class="modal-title">Edit Profile</div>
     <div class="modal-sub">Update your public profile information</div>
+    <div id="ep-quota-info" class="ep-quota-info" style="display:none;"></div>
 
     <!-- Cooldown Warning Banner & Error Box -->
     <div id="ep-error" class="ep-error-box"></div>
@@ -3054,7 +3067,13 @@ let profile = {
   name_updated_at: null,
   avatar_updated_at: null,
   username_updated_at: null,
-  bio_updated_at: null
+  bio_updated_at: null,
+  // Profile edit quota (2 edits per 30-day cycle, then a 30-day lock).
+  // Read from Supabase; the app never writes these (the quota trigger
+  // in supabase-setup.sql counts the edit and sets the lock).
+  profile_edit_count: 0,
+  cycle_started_at: null,
+  lock_expires_at: null
 };
 // Verified-badge cache: user_id (lowercased) -> is_verified. Filled
 // from the own profile and the Discover creators list; updated live
@@ -4112,6 +4131,10 @@ async function loadUserProfileFromSupabase(userId) {
       profile.bio_updated_at = data.bio_updated_at || data.updated_at || null;
       profile.is_verified = data.is_verified === true;
       profile.profile_color = normalizeProfileColor(data.profile_color);
+      // Profile edit quota (read-only here; the quota trigger owns it).
+      profile.profile_edit_count = Math.max(0, parseInt(data.profile_edit_count, 10) || 0);
+      profile.cycle_started_at = data.cycle_started_at || null;
+      profile.lock_expires_at = data.lock_expires_at || null;
       cacheVerified(profile.id, profile.is_verified);
 
       // Cache locally in IndexedDB
@@ -4126,6 +4149,9 @@ async function loadUserProfileFromSupabase(userId) {
         if (profile.username_updated_at) await dbPut('profile', { key: 'username_updated_at', val: profile.username_updated_at });
         if (profile.bio_updated_at) await dbPut('profile', { key: 'bio_updated_at', val: profile.bio_updated_at });
         await dbPut('profile', { key: 'profile_color', val: profile.profile_color });
+        await dbPut('profile', { key: 'profile_edit_count', val: profile.profile_edit_count });
+        if (profile.cycle_started_at) await dbPut('profile', { key: 'cycle_started_at', val: profile.cycle_started_at });
+        if (profile.lock_expires_at) await dbPut('profile', { key: 'lock_expires_at', val: profile.lock_expires_at });
       } catch(_) {}
 
       applyProfile();
@@ -5042,9 +5068,9 @@ function handleSetupAvatarSelected(e) {
 }
 
 function triggerEditAvatarClick() {
-  const cd = getFieldCooldownStatus(profile.avatar_updated_at);
-  if (cd.isLocked) {
-    const msg = `You can only update your profile picture once every 30 days. Next change available in ${cd.remainingDays} days (${cd.formattedDate}).`;
+  const quota = getProfileEditQuota();
+  if (quota.isLocked) {
+    const msg = `30-day cooldown active: you have used both profile edits. Next updates unlock on ${quota.formattedDate} (in ${quota.remainingDays} days).`;
     showToast(msg);
     const errBox = document.getElementById('ep-error');
     if (errBox) {
@@ -5061,10 +5087,10 @@ function handleEditAvatarSelected(e) {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
 
-  const cd = getFieldCooldownStatus(profile.avatar_updated_at);
-  if (cd.isLocked) {
+  const quota = getProfileEditQuota();
+  if (quota.isLocked) {
     e.target.value = '';
-    const msg = `You can only update your profile picture once every 30 days. Next change available in ${cd.remainingDays} days (${cd.formattedDate}).`;
+    const msg = `30-day cooldown active: you have used both profile edits. Next updates unlock on ${quota.formattedDate} (in ${quota.remainingDays} days).`;
     showToast(msg);
     const errBox = document.getElementById('ep-error');
     if (errBox) {
@@ -5553,48 +5579,102 @@ function applyProfile() {
   updateAuthStatusUI();
 }
 
-// ═══════════════════════════════════════════════════════
-//  30-DAY COOLDOWN PROFILE RESTRICTION LOGIC
-// ═══════════════════════════════════════════════════════
-const COOLDOWN_DAYS = 30;
-const COOLDOWN_MS = COOLDOWN_DAYS * 24 * 60 * 60 * 1000; // 30 days in ms (2,592,000,000 ms)
+// ═══════════════════════════════════════════════════════════════
+//  PROFILE EDIT QUOTA — 2 edits per 30-day cycle, then a 30-day lock
+//  Replaces the old per-field 30-day cooldown. One Save (even
+//  changing several fields at once) counts as ONE edit. The Supabase
+//  trigger (enforce_profile_edit_quota) is the server-side source of
+//  truth: it counts the edit, starts the cycle, sets the lock on the
+//  2nd edit, blocks edits while locked, and resets the counter once
+//  the lock expires. The app only READS profile_edit_count /
+//  cycle_started_at / lock_expires_at — it never writes them.
+// ═══════════════════════════════════════════════════════════════
+const PROFILE_EDIT_QUOTA = 2; // edits allowed per cycle
+const PROFILE_EDIT_CYCLE_DAYS = 30;
+const PROFILE_EDIT_CYCLE_MS = PROFILE_EDIT_CYCLE_DAYS * 24 * 60 * 60 * 1000;
 
-function getFieldCooldownStatus(lastUpdatedTimestamp) {
-  if (!lastUpdatedTimestamp) {
-    return { isLocked: false, remainingDays: 0, remainingHours: 0, nextAvailableDate: null, formattedDate: '' };
-  }
-  const lastTime = new Date(lastUpdatedTimestamp).getTime();
-  if (isNaN(lastTime)) {
-    return { isLocked: false, remainingDays: 0, remainingHours: 0, nextAvailableDate: null, formattedDate: '' };
-  }
+function formatQuotaDate(date) {
+  if (!date || isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Current quota state, derived from the profile row. When the lock has
+// expired the effective count is 0 (fresh cycle) even before the
+// database row is rewritten — the trigger resets it on the next edit.
+function getProfileEditQuota() {
+  const count = Math.max(0, parseInt(profile.profile_edit_count, 10) || 0);
+  const lockMs = profile.lock_expires_at ? new Date(profile.lock_expires_at).getTime() : 0;
   const now = Date.now();
-  const elapsed = now - lastTime;
-  const remaining = COOLDOWN_MS - elapsed;
-  if (remaining <= 0) {
-    return { isLocked: false, remainingDays: 0, remainingHours: 0, nextAvailableDate: null, formattedDate: '' };
+  if (lockMs && !isNaN(lockMs) && now < lockMs) {
+    const remainingMs = lockMs - now;
+    const remainingDays = Math.ceil(remainingMs / (24 * 60 * 60 * 1000));
+    const unlockDate = new Date(lockMs);
+    return {
+      count,
+      remaining: 0,
+      isLocked: true,
+      lockExpiresAt: profile.lock_expires_at,
+      unlockDate,
+      remainingDays,
+      formattedDate: formatQuotaDate(unlockDate),
+      cycleStartedAt: profile.cycle_started_at || null
+    };
   }
-  const remainingDays = Math.ceil(remaining / (24 * 60 * 60 * 1000));
-  const remainingHours = Math.ceil(remaining / (60 * 60 * 1000));
-  const nextAvailableDate = new Date(lastTime + COOLDOWN_MS);
+  const effectiveCount = (lockMs && !isNaN(lockMs) && now >= lockMs && count >= PROFILE_EDIT_QUOTA) ? 0 : count;
   return {
-    isLocked: true,
-    remainingMs: remaining,
-    remainingDays,
-    remainingHours,
-    nextAvailableDate,
-    formattedDate: nextAvailableDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    count: effectiveCount,
+    remaining: Math.max(0, PROFILE_EDIT_QUOTA - effectiveCount),
+    isLocked: false,
+    lockExpiresAt: null,
+    unlockDate: null,
+    remainingDays: 0,
+    formattedDate: '',
+    cycleStartedAt: profile.cycle_started_at || null
   };
+}
+
+// Apply a just-saved edit to the local profile quota (the trigger
+// computes the same values server-side; the next profile load reads
+// the authoritative row). Returns the new quota state.
+function applyProfileEditQuota() {
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  let count = Math.max(0, parseInt(profile.profile_edit_count, 10) || 0);
+  const lockMs = profile.lock_expires_at ? new Date(profile.lock_expires_at).getTime() : 0;
+  if (lockMs && !isNaN(lockMs) && now >= lockMs && count >= PROFILE_EDIT_QUOTA) {
+    count = 0;
+    profile.lock_expires_at = null;
+    profile.cycle_started_at = null;
+  }
+  if (!profile.cycle_started_at) profile.cycle_started_at = nowIso;
+  count = count + 1;
+  profile.profile_edit_count = count;
+  if (count >= PROFILE_EDIT_QUOTA) {
+    profile.lock_expires_at = new Date(now + PROFILE_EDIT_CYCLE_MS).toISOString();
+  } else {
+    profile.lock_expires_at = null;
+  }
+  return getProfileEditQuota();
 }
 
 function renderProfileCooldownUI() {
   const errBox = document.getElementById('ep-error');
   if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
 
+  const quota = getProfileEditQuota();
   const banner = document.getElementById('ep-cooldown-banner');
-  const nameCooldown = getFieldCooldownStatus(profile.name_updated_at);
-  const handleCooldown = getFieldCooldownStatus(profile.username_updated_at);
-  const avatarCooldown = getFieldCooldownStatus(profile.avatar_updated_at);
-  const bioCooldown = getFieldCooldownStatus(profile.bio_updated_at);
+  const quotaInfo = document.getElementById('ep-quota-info');
+  const locked = quota.isLocked;
+
+  // Remaining-edits line (always visible while editing is possible).
+  if (quotaInfo) {
+    if (locked) {
+      quotaInfo.style.display = 'none';
+    } else {
+      quotaInfo.style.display = 'block';
+      quotaInfo.textContent = quota.remaining + ' of ' + PROFILE_EDIT_QUOTA + ' edits remaining this month';
+    }
+  }
 
   const epNameInput = document.getElementById('ep-name');
   const epHandleInput = document.getElementById('ep-handle');
@@ -5604,147 +5684,87 @@ function renderProfileCooldownUI() {
   const epAvatarBadgeIcon = document.getElementById('ep-avatar-badge-icon-symbol');
   const epSaveBtn = document.getElementById('ep-save-btn');
 
+  const setFieldBadge = (badgeEl, lockedBadge) => {
+    if (!badgeEl) return;
+    if (locked) {
+      badgeEl.className = 'cooldown-badge locked';
+      badgeEl.innerHTML = '<span class="material-symbols-rounded">lock</span> Locked (' + quota.remainingDays + 'd)';
+    } else {
+      badgeEl.className = 'cooldown-badge available';
+      badgeEl.innerHTML = '<span class="material-symbols-rounded">check_circle</span> Ready to edit';
+    }
+  };
+
   // Display Name
-  const epNameBadge = document.getElementById('ep-name-badge');
-  if (nameCooldown.isLocked) {
-    if (epNameInput) {
-      epNameInput.readOnly = true;
-      epNameInput.classList.add('input-locked');
-      epNameInput.title = `Display Name is locked for ${nameCooldown.remainingDays} more days (available on ${nameCooldown.formattedDate})`;
-    }
-    if (epNameBadge) {
-      epNameBadge.className = 'cooldown-badge locked';
-      epNameBadge.innerHTML = `<span class="material-symbols-rounded">lock</span> Locked (${nameCooldown.remainingDays}d)`;
-    }
-  } else {
-    if (epNameInput) {
-      epNameInput.readOnly = false;
-      epNameInput.classList.remove('input-locked');
-      epNameInput.title = '';
-    }
-    if (epNameBadge) {
-      epNameBadge.className = 'cooldown-badge available';
-      epNameBadge.innerHTML = `<span class="material-symbols-rounded">check_circle</span> Ready to edit`;
-    }
+  if (epNameInput) {
+    epNameInput.readOnly = locked;
+    epNameInput.classList.toggle('input-locked', locked);
+    epNameInput.title = locked ? ('Display Name is locked for ' + quota.remainingDays + ' more days (available on ' + quota.formattedDate + ')') : '';
   }
+  setFieldBadge(document.getElementById('ep-name-badge'));
 
   // Username Handle
-  const epHandleBadge = document.getElementById('ep-handle-badge');
-  if (handleCooldown.isLocked) {
-    if (epHandleInput) {
-      epHandleInput.readOnly = true;
-      epHandleInput.classList.add('input-locked');
-      epHandleInput.title = `Username handle is locked for ${handleCooldown.remainingDays} more days (available on ${handleCooldown.formattedDate})`;
-    }
-    if (epHandleBadge) {
-      epHandleBadge.className = 'cooldown-badge locked';
-      epHandleBadge.innerHTML = `<span class="material-symbols-rounded">lock</span> Locked (${handleCooldown.remainingDays}d)`;
-    }
-  } else {
-    if (epHandleInput) {
-      epHandleInput.readOnly = false;
-      epHandleInput.classList.remove('input-locked');
-      epHandleInput.title = '';
-    }
-    if (epHandleBadge) {
-      epHandleBadge.className = 'cooldown-badge available';
-      epHandleBadge.innerHTML = `<span class="material-symbols-rounded">check_circle</span> Ready to edit`;
-    }
+  if (epHandleInput) {
+    epHandleInput.readOnly = locked;
+    epHandleInput.classList.toggle('input-locked', locked);
+    epHandleInput.title = locked ? ('Username handle is locked for ' + quota.remainingDays + ' more days (available on ' + quota.formattedDate + ')') : '';
   }
+  setFieldBadge(document.getElementById('ep-handle-badge'));
 
   // Bio
-  const epBioBadge = document.getElementById('ep-bio-badge');
-  if (bioCooldown.isLocked) {
-    if (epBioInput) {
-      epBioInput.readOnly = true;
-      epBioInput.classList.add('input-locked');
-      epBioInput.title = `Bio is locked for ${bioCooldown.remainingDays} more days (available on ${bioCooldown.formattedDate})`;
-    }
-    if (epBioBadge) {
-      epBioBadge.className = 'cooldown-badge locked';
-      epBioBadge.innerHTML = `<span class="material-symbols-rounded">lock</span> Locked (${bioCooldown.remainingDays}d)`;
-    }
-  } else {
-    if (epBioInput) {
-      epBioInput.readOnly = false;
-      epBioInput.classList.remove('input-locked');
-      epBioInput.title = '';
-    }
-    if (epBioBadge) {
-      epBioBadge.className = 'cooldown-badge available';
-      epBioBadge.innerHTML = `<span class="material-symbols-rounded">check_circle</span> Ready to edit`;
-    }
+  if (epBioInput) {
+    epBioInput.readOnly = locked;
+    epBioInput.classList.toggle('input-locked', locked);
+    epBioInput.title = locked ? ('Bio is locked for ' + quota.remainingDays + ' more days (available on ' + quota.formattedDate + ')') : '';
   }
+  setFieldBadge(document.getElementById('ep-bio-badge'));
 
   // Avatar
   const epAvatarBadgeWrap = document.getElementById('ep-avatar-badge-wrap');
-  if (avatarCooldown.isLocked) {
-    if (epAvatarCircle) {
-      epAvatarCircle.classList.add('avatar-locked');
-      epAvatarCircle.title = `Profile photo is locked for ${avatarCooldown.remainingDays} more days (available on ${avatarCooldown.formattedDate})`;
-    }
-    if (epAvatarTip) {
-      epAvatarTip.textContent = `Photo locked until ${avatarCooldown.formattedDate}`;
-    }
-    if (epAvatarBadgeIcon) {
-      epAvatarBadgeIcon.textContent = 'lock';
-    }
-    if (epAvatarBadgeWrap) {
-      epAvatarBadgeWrap.innerHTML = `<span class="cooldown-badge locked"><span class="material-symbols-rounded">lock</span> Photo locked for ${avatarCooldown.remainingDays}d</span>`;
-    }
-  } else {
-    if (epAvatarCircle) {
-      epAvatarCircle.classList.remove('avatar-locked');
-      epAvatarCircle.title = 'Change avatar';
-    }
-    if (epAvatarTip) {
-      epAvatarTip.textContent = 'Change Profile Picture';
-    }
-    if (epAvatarBadgeIcon) {
-      epAvatarBadgeIcon.textContent = 'photo_camera';
-    }
-    if (epAvatarBadgeWrap) {
-      epAvatarBadgeWrap.innerHTML = `<span class="cooldown-badge available"><span class="material-symbols-rounded">check_circle</span> Ready to change</span>`;
+  if (epAvatarCircle) {
+    epAvatarCircle.classList.toggle('avatar-locked', locked);
+    epAvatarCircle.title = locked ? ('Profile photo is locked for ' + quota.remainingDays + ' more days (available on ' + quota.formattedDate + ')') : 'Change avatar';
+  }
+  if (epAvatarTip) {
+    epAvatarTip.textContent = locked ? ('Photo locked until ' + quota.formattedDate) : 'Change Profile Picture';
+  }
+  if (epAvatarBadgeIcon) {
+    epAvatarBadgeIcon.textContent = locked ? 'lock' : 'photo_camera';
+  }
+  if (epAvatarBadgeWrap) {
+    if (locked) {
+      epAvatarBadgeWrap.innerHTML = '<span class="cooldown-badge locked"><span class="material-symbols-rounded">lock</span> Photo locked for ' + quota.remainingDays + 'd</span>';
+    } else {
+      epAvatarBadgeWrap.innerHTML = '<span class="cooldown-badge available"><span class="material-symbols-rounded">check_circle</span> Ready to change</span>';
     }
   }
 
-  // Cooldown Banner & Save Button
-  const lockedCount = (nameCooldown.isLocked ? 1 : 0) + (handleCooldown.isLocked ? 1 : 0) + (bioCooldown.isLocked ? 1 : 0) + (avatarCooldown.isLocked ? 1 : 0);
-
+  // Cooldown banner (lock warning only; the quota line covers the rest).
   if (banner) {
-    if (lockedCount > 0) {
+    if (locked) {
       banner.style.display = 'flex';
-      if (lockedCount === 4) {
-        banner.innerHTML = `
+      banner.innerHTML = `
           <span class="material-symbols-rounded">lock_clock</span>
           <div>
-            <strong>30-Day Cooldown Active:</strong> All profile fields were recently updated. Next updates unlock on <strong>${nameCooldown.formattedDate || avatarCooldown.formattedDate}</strong>.
+            <strong>30-Day Cooldown Active:</strong> You have used both profile edits for this month. Next updates unlock on <strong>${quota.formattedDate}</strong> (in ${quota.remainingDays} days).
           </div>
         `;
-      } else {
-        banner.innerHTML = `
-          <span class="material-symbols-rounded">info</span>
-          <div>
-            <strong>30-Day Cooldown Policy:</strong> Profile details can only be changed once every 30 days. Locked fields will show the remaining cooldown time.
-          </div>
-        `;
-      }
     } else {
       banner.style.display = 'none';
     }
   }
 
   if (epSaveBtn) {
-    if (lockedCount === 4) {
+    if (locked) {
       epSaveBtn.disabled = true;
       epSaveBtn.style.opacity = '0.55';
       epSaveBtn.style.cursor = 'not-allowed';
-      epSaveBtn.innerHTML = `<span class="material-symbols-rounded">lock_clock</span> Changes Locked (30-day cooldown)`;
+      epSaveBtn.innerHTML = '<span class="material-symbols-rounded">lock_clock</span> Changes Locked (30-day cooldown)';
     } else {
       epSaveBtn.disabled = false;
       epSaveBtn.style.opacity = '1';
       epSaveBtn.style.cursor = 'pointer';
-      epSaveBtn.innerHTML = `<span class="material-symbols-rounded">check</span> Save Changes`;
+      epSaveBtn.innerHTML = '<span class="material-symbols-rounded">check</span> Save Changes';
     }
   }
 }
@@ -5801,45 +5821,14 @@ async function saveProfile() {
     return;
   }
 
-  // 1. Strict 30-Day Cooldown Validation on each changed field
-  if (avatarChanged) {
-    const cd = getFieldCooldownStatus(profile.avatar_updated_at);
-    if (cd.isLocked) {
-      const msg = `You can only update your profile picture once every 30 days. Next change available in ${cd.remainingDays} days (${cd.formattedDate}).`;
-      if (errBox) { errBox.textContent = msg; errBox.style.display = 'block'; }
-      showToast(msg);
-      return;
-    }
-  }
-
-  if (nameChanged) {
-    const cd = getFieldCooldownStatus(profile.name_updated_at);
-    if (cd.isLocked) {
-      const msg = `You can only update your display name once every 30 days. Next change available in ${cd.remainingDays} days (${cd.formattedDate}).`;
-      if (errBox) { errBox.textContent = msg; errBox.style.display = 'block'; }
-      showToast(msg);
-      return;
-    }
-  }
-
-  if (handleChanged) {
-    const cd = getFieldCooldownStatus(profile.username_updated_at);
-    if (cd.isLocked) {
-      const msg = `You can only update your username handle once every 30 days. Next change available in ${cd.remainingDays} days (${cd.formattedDate}).`;
-      if (errBox) { errBox.textContent = msg; errBox.style.display = 'block'; }
-      showToast(msg);
-      return;
-    }
-  }
-
-  if (bioChanged) {
-    const cd = getFieldCooldownStatus(profile.bio_updated_at);
-    if (cd.isLocked) {
-      const msg = `You can only update your bio once every 30 days. Next change available in ${cd.remainingDays} days (${cd.formattedDate}).`;
-      if (errBox) { errBox.textContent = msg; errBox.style.display = 'block'; }
-      showToast(msg);
-      return;
-    }
+  // 1. Profile edit quota: 2 edits per 30-day cycle, then a 30-day lock.
+  // One Save counts as ONE edit, however many fields changed.
+  const quota = getProfileEditQuota();
+  if (quota.isLocked) {
+    const msg = `30-day cooldown active: you have used both profile edits. Next updates unlock on ${quota.formattedDate} (in ${quota.remainingDays} days).`;
+    if (errBox) { errBox.textContent = msg; errBox.style.display = 'block'; }
+    showToast(msg);
+    return;
   }
 
   saveBtn.disabled = true;
@@ -5876,8 +5865,8 @@ async function saveProfile() {
 
       if (updateErr) {
         console.warn('public.profiles update error:', updateErr.message);
-        // If error contains cooldown rejection from database trigger, show to user
-        if (updateErr.message && (updateErr.message.toLowerCase().includes('cooldown') || updateErr.message.toLowerCase().includes('30 days'))) {
+        // If error contains quota/cooldown rejection from database trigger, show to user
+        if (updateErr.message && (updateErr.message.toLowerCase().includes('cooldown') || updateErr.message.toLowerCase().includes('30 days') || updateErr.message.toLowerCase().includes('both profile edits'))) {
           if (errBox) {
             errBox.textContent = updateErr.message;
             errBox.style.display = 'block';
@@ -5899,6 +5888,16 @@ async function saveProfile() {
     if (avatarChanged) profile.avatar_updated_at = nowIso;
     if (bioChanged) profile.bio_updated_at = nowIso;
 
+    // This Save counts as ONE profile edit. The quota trigger computes
+    // the same values server-side; apply them locally so the modal
+    // shows the right remaining-edits / lock state on the next open.
+    const newQuota = applyProfileEditQuota();
+    try {
+      await dbPut('profile', { key: 'profile_edit_count', val: profile.profile_edit_count });
+      if (profile.cycle_started_at) await dbPut('profile', { key: 'cycle_started_at', val: profile.cycle_started_at });
+      if (profile.lock_expires_at) await dbPut('profile', { key: 'lock_expires_at', val: profile.lock_expires_at });
+    } catch(e) {}
+
     // Also persist in local offline store
     try {
       await dbPut('profile', { key: 'name', val: profile.name });
@@ -5915,7 +5914,7 @@ async function saveProfile() {
     document.getElementById('edit-profile-modal').classList.remove('open');
     applyProfile();
     renderProfileGrid();
-    showToast('Profile updated ✨ (30-day cooldown active)');
+    showToast(newQuota.isLocked ? ('Profile updated ✨ (30-day cooldown active — unlocks ' + newQuota.formattedDate + ')') : ('Profile updated ✨ (' + newQuota.remaining + ' of ' + PROFILE_EDIT_QUOTA + ' edits remaining this month)'));
   } catch(err) {
     console.error('saveProfile error:', err);
     if (errBox) {
