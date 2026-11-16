@@ -761,6 +761,50 @@
     .profile-hero-avatar-placeholder .material-symbols-rounded {
       font-size: 40px;
     }
+    /* When the placeholder shows initials instead of the person icon
+       (no avatar, or the avatar URL is dead), the letter is the avatar. */
+    .profile-hero-avatar-placeholder {
+      font-size: 30px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* Reusable profile avatar (cache-first, initials fallback).
+       .av is a self-contained circle: the initial letter shows
+       instantly, and hydrateAvatars() swaps the real picture over
+       it once it is resolved from the IndexedDB cache (or the
+       network on first load). A dead URL simply keeps the initial,
+       so a broken image is never shown. Size via --av-size. */
+    .av {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: var(--av-size, 36px);
+      height: var(--av-size, 36px);
+      border-radius: 50%;
+      background: linear-gradient(135deg, #ff2d78, #7c3aed);
+      color: #fff;
+      font-weight: 700;
+      overflow: hidden;
+      flex: none;
+    }
+    .av-initial {
+      font-size: calc(var(--av-size, 36px) * 0.42);
+      line-height: 1;
+      pointer-events: none;
+    }
+    .av-img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+      display: block;
+    }
+    /* Feed author avatar: small circle at the start of the author row. */
+    .author-row .av { margin-right: 2px; }
 
     /* Full-Screen Auth & Profile Setup Page Styles */
     .fullscreen-page {
@@ -2934,7 +2978,7 @@ new MutationObserver(ms=>{
      APPLICATION CORE JAVASCRIPT
 ═══════════════════════════════════════════════════════ -->
 <script>
-const DB_NAME = 'reelflow', DB_VER = 1;
+const DB_NAME = 'reelflow', DB_VER = 2;
 let db = null;
 
 function openDB() {
@@ -2946,6 +2990,10 @@ function openDB() {
         d.createObjectStore('videos', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('profile'))
         d.createObjectStore('profile', { keyPath: 'key' });
+      // Avatar image cache (profile pictures, cache-first). Added in
+      // DB v2; older installs upgrade in place, existing stores kept.
+      if (!d.objectStoreNames.contains('avatars'))
+        d.createObjectStore('avatars', { keyPath: 'key' });
     };
     req.onsuccess = e => { db = e.target.result; res(db); };
     req.onerror = e => rej(e.target.error);
@@ -2957,6 +3005,14 @@ function dbGetAll(store) {
   return new Promise((res, rej) => {
     const tx = db.transaction(store, 'readonly');
     const req = tx.objectStore(store).getAll();
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+function dbGet(store, key) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).get(key);
     req.onsuccess = () => res(req.result);
     req.onerror = () => rej(req.error);
   });
@@ -5293,6 +5349,181 @@ async function saveProfileSetup() {
 // ═══════════════════════════════════════════════════════
 //  OWN PROFILE (Reference Image 2 Style + Supabase Avatar)
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  PROFILE AVATAR — reusable component + permanent local cache
+//  Root causes fixed here:
+//  * The profile page set <img src> with no error handling, so a
+//    dead avatar URL showed a broken-image icon + the alt text
+//    "Profile picture". Live data proves it: some profiles point
+//    at a different Supabase project's storage URL that returns
+//    HTTP 400, and Google picture URLs can 404 after the user
+//    changes their photo. A failed load now keeps the initials.
+//  * Every avatar was re-downloaded on every render and page.
+//    Now each image is downloaded ONCE and kept in IndexedDB
+//    (store 'avatars'), and later renders use the cached blob.
+//    Blobs live in IndexedDB only — never in localStorage.
+//  * Comments showed initials only; Discover / inbox / chat
+//    re-fetched the same URL on every render.
+//  Design: avatarHTML() renders initials immediately (never a
+//  broken image). hydrateAvatars() then resolves the picture
+//  cache-first and swaps an <img> over the initials. Cache key =
+//  user id + a hash of the image URL, so a changed picture is a
+//  new key and the old entry is pruned. In-flight fetches are
+//  deduped by key, so re-renders never cause duplicate requests.
+// ═══════════════════════════════════════════════════════════════
+function avatarInitials(name) {
+  const clean = String(name || '').replace(/^@/, '').trim();
+  return (clean[0] || 'U').toUpperCase();
+}
+function avatarUrlHash(url) {
+  // cyrb53 — short, stable hash for a cache key.
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  const s = String(url || '');
+  for (let i = 0, ch; i < s.length; i++) {
+    ch = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36);
+}
+function avatarCacheKey(uid, url) {
+  return 'av:' + String(uid || 'anon') + ':' + avatarUrlHash(url);
+}
+const avatarFetchInFlight = new Map();
+const avatarBadUrls = new Set();
+const avatarBlobUrlMemo = new Map();
+const AVATAR_CACHE_MAX_ENTRIES = 200;
+
+async function avatarCachePrune(uid, keepKey) {
+  try {
+    const all = await dbGetAll('avatars');
+    for (const e of all) {
+      if (e && String(e.uid) === String(uid || 'anon') && e.key !== keepKey) {
+        try { await dbDelete('avatars', e.key); } catch (_) {}
+      }
+    }
+    const rest = await dbGetAll('avatars');
+    if (rest.length > AVATAR_CACHE_MAX_ENTRIES) {
+      rest.sort((a, b) => (a.savedAt || 0) - (b.savedAt || 0));
+      for (const e of rest.slice(0, rest.length - AVATAR_CACHE_MAX_ENTRIES)) {
+        try { await dbDelete('avatars', e.key); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+
+// Resolve an avatar URL to something an <img> can show, cache-first.
+// Returns a blob: URL (cached or freshly downloaded), the original
+// data: URL as-is, or null when the picture cannot be loaded.
+async function resolveAvatarSrc(uid, url) {
+  if (!url) return null;
+  if (typeof url === 'string' && url.indexOf('data:') === 0) return url;
+  const key = avatarCacheKey(uid, url);
+  // A URL that just failed is not re-fetched again this session.
+  if (avatarBadUrls.has(key)) return null;
+  // Reuse the same blob URL for the same image (no leak on re-render).
+  if (avatarBlobUrlMemo.has(key)) return avatarBlobUrlMemo.get(key);
+  try {
+    const hit = await dbGet('avatars', key);
+    if (hit && hit.blob) {
+      const blobUrl = URL.createObjectURL(hit.blob);
+      avatarBlobUrlMemo.set(key, blobUrl);
+      return blobUrl;
+    }
+  } catch (_) {}
+  if (avatarFetchInFlight.has(key)) return avatarFetchInFlight.get(key);
+  const p = (async () => {
+    try {
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) throw new Error('avatar HTTP ' + res.status);
+      const blob = await res.blob();
+      if (!blob || !blob.size) throw new Error('avatar empty');
+      try {
+        await dbPut('avatars', { key, uid: String(uid || 'anon'), url, blob, savedAt: Date.now() });
+        avatarCachePrune(uid, key);
+      } catch (_) {}
+      const blobUrl = URL.createObjectURL(blob);
+      avatarBlobUrlMemo.set(key, blobUrl);
+      return blobUrl;
+    } catch (err) {
+      avatarBadUrls.add(key);
+      return null;
+    } finally {
+      avatarFetchInFlight.delete(key);
+    }
+  })();
+  avatarFetchInFlight.set(key, p);
+  return p;
+}
+
+// Reusable avatar markup: initials show instantly; hydrateAvatars()
+// swaps the real picture over them once it is resolved (cache-first).
+function avatarHTML(uid, name, url, size) {
+  const initial = avatarInitials(name);
+  const px = parseInt(size, 10) || 36;
+  return '<span class="av" data-av-uid="' + escapeHtml(String(uid || '')) + '" data-av-name="' + escapeHtml(String(name || '')) + '" data-av-url="' + escapeHtml(String(url || '')) + '" style="--av-size:' + px + 'px"><span class="av-initial">' + initial + '</span></span>';
+}
+
+async function hydrateOneAvatar(el) {
+  if (!el || el.dataset.avDone) return;
+  el.dataset.avDone = '1';
+  const url = el.getAttribute('data-av-url');
+  if (!url) return;
+  const uid = el.getAttribute('data-av-uid') || '';
+  const name = el.getAttribute('data-av-name') || '';
+  const src = await resolveAvatarSrc(uid, url);
+  if (!src) return; // keep the initials
+  if (typeof document !== 'undefined' && document.contains && !document.contains(el)) return; // re-rendered away while loading
+  const img = document.createElement('img');
+  img.className = 'av-img';
+  img.alt = name;
+  img.src = src;
+  img.onerror = () => { try { img.remove(); } catch (_) {} };
+  el.appendChild(img);
+}
+
+function hydrateAvatars(root) {
+  const scope = root || document;
+  const els = scope.querySelectorAll ? scope.querySelectorAll('.av') : [];
+  els.forEach(el => { if (el.getAttribute && el.getAttribute('data-av-url')) hydrateOneAvatar(el); });
+}
+
+// Direct-DOM spots (profile page, chat header): fill an existing
+// <img> + placeholder pair cache-first; initials when it fails.
+async function setAvatarInto(imgEl, placeholderEl, uid, name, url) {
+  if (!imgEl || !placeholderEl) return;
+  const showInitials = () => {
+    imgEl.style.display = 'none';
+    placeholderEl.style.display = 'flex';
+    placeholderEl.textContent = avatarInitials(name);
+  };
+  if (!url) { showInitials(); return; }
+  const src = await resolveAvatarSrc(uid, url);
+  if (!src) { showInitials(); return; }
+  imgEl.src = src;
+  imgEl.style.display = 'block';
+  placeholderEl.style.display = 'none';
+}
+
+// Resolve the avatar URL for a user: own profile first, then the
+// in-memory creators list (Discover already fetched avatar_url).
+function avatarUrlForUserId(userId, handle) {
+  const uid = String(userId || '');
+  if (uid && currentAuthUser && String(currentAuthUser.id) === uid) return profile.avatar_url || '';
+  if (uid && profile.id && String(profile.id) === uid) return profile.avatar_url || '';
+  const list = Array.isArray(creators) ? creators : [];
+  const byId = uid ? list.find(c => String(c.user_id || c.id || '') === uid) : null;
+  if (byId && byId.avatar_url) return byId.avatar_url;
+  const h = String(handle || '').replace(/^@/, '').toLowerCase();
+  if (h) {
+    const byHandle = list.find(c => String(c.handle || '').replace(/^@/, '').toLowerCase() === h);
+    if (byHandle && byHandle.avatar_url) return byHandle.avatar_url;
+  }
+  return '';
+}
+
 function applyProfile() {
   document.getElementById('profile-display-name').textContent = profile.name || (currentAuthUser ? 'Creator' : 'Sign In');
   applyProfileColor(profile.profile_color);
@@ -5307,17 +5538,13 @@ function applyProfile() {
   document.getElementById('stat-following').textContent = fmtN(profile.following || 0);
   document.getElementById('stat-followers').textContent = fmtN(profile.followers || 0);
 
-  // Profile Avatar in top-right area of header
-  const avatarImg = document.getElementById('profile-avatar-img');
-  const avatarPlaceholder = document.getElementById('profile-avatar-placeholder');
-  if (profile.avatar_url) {
-    avatarImg.src = profile.avatar_url;
-    avatarImg.style.display = 'block';
-    avatarPlaceholder.style.display = 'none';
-  } else {
-    avatarImg.style.display = 'none';
-    avatarPlaceholder.style.display = 'flex';
-  }
+  // Profile Avatar in top-right area of header (cache-first; a dead
+  // URL shows initials, never a broken image + "Profile picture").
+  setAvatarInto(
+    document.getElementById('profile-avatar-img'),
+    document.getElementById('profile-avatar-placeholder'),
+    profile.id, profile.name || profile.handle, profile.avatar_url
+  );
 
   const ownVideos = videos.filter(v => !v.isSeed || v.username === profile.handle);
   const totalLikes = ownVideos.reduce((sum, v) => sum + (v.likes || 0), 0) + (profile.likes || 0);
@@ -6496,6 +6723,8 @@ function fillSlide(slide, v, i) {
   // Right action buttons & Bottom info
   slide.appendChild(makeActions(v, i));
   slide.appendChild(makeInfo(v));
+  // Resolve the author avatar cache-first (initials until it loads).
+  hydrateAvatars(slide);
   return slide;
 }
 
@@ -6755,8 +6984,10 @@ function makeInfo(v) {
   wrap.className = 'bottom-info';
   const tags = (v.hashtags || []).map(t => `<span class="hashtag" onclick="searchTag('${t}')">${t}</span>`).join(' ');
 
+  const authorAvatarUrl = avatarUrlForUserId(v.user_id, v.username);
   wrap.innerHTML = `
     <div class="author-row">
+      ${avatarHTML(v.user_id, v.userDisplayName || v.username, authorAvatarUrl, 28)}
       <span class="author-name">@${v.username || 'user'}</span>${verifiedBadgeSlotHTML(v.user_id, isUserVerified(v.user_id) || isHandleVerified(v.username), v.username)}
       ${(v.created_at || v.ts) ? `<span class="post-time">· ${formatRelativeTime(v.created_at || v.ts)}</span>` : ''}
     </div>
@@ -6883,16 +7114,19 @@ async function loadCommentsForVideo(v) {
     const rows = Array.isArray(data) ? data : [];
     const ids = [...new Set(rows.map(r => String(r.user_id)).filter(Boolean))];
     const handles = {};
+    const avatars = {};
     if (ids.length > 0) {
       const { data: profs } = await supabaseClient
-        .from('profiles').select('user_id, username, display_name').in('user_id', ids);
+        .from('profiles').select('user_id, username, display_name, avatar_url').in('user_id', ids);
       (Array.isArray(profs) ? profs : []).forEach(p => {
         handles[String(p.user_id)] = p.username || p.display_name || 'user';
+        avatars[String(p.user_id)] = p.avatar_url || '';
       });
     }
     const list = rows.map(r => ({
       user: '@' + (handles[String(r.user_id)] || 'user'),
       user_id: r.user_id,
+      avatar_url: avatars[String(r.user_id)] || '',
       text: r.content || '',
       time: r.created_at ? formatRelativeTime(r.created_at) : '',
       created_at: r.created_at || null,
@@ -7966,7 +8200,8 @@ async function openComments(id) {
   const render = () => {
     document.getElementById('commentsTitle').textContent = fmtN(cmCount(v)) + ' Comments';
     list.innerHTML = '';
-    (v?.userComments || []).forEach(c => addCommentEl(list, c.user, c.text, c.time));
+    (v?.userComments || []).forEach(c => addCommentEl(list, c.user, c.text, c.time, c.avatar_url, c.user_id));
+    hydrateAvatars(list);
     const ccEl = document.getElementById('cc-' + id);
     if (ccEl) ccEl.textContent = fmtC(cmCount(v));
   };
@@ -7978,12 +8213,12 @@ async function openComments(id) {
   render();
 }
 
-function addCommentEl(list, user, text, time) {
+function addCommentEl(list, user, text, time, avatarUrl, userId) {
   const item = document.createElement('div');
   item.className = 'comment-item';
-  const initial = (user.replace('@','') || 'U')[0].toUpperCase();
+  const avUrl = avatarUrl || avatarUrlForUserId(userId, user) || '';
   item.innerHTML = `
-    <div class="comment-avatar"><span style="font-weight:700;font-size:12px;color:#fff;">${initial}</span></div>
+    <div class="comment-avatar">${avatarHTML(userId, user, avUrl, 34)}</div>
     <div class="comment-body">
       <div class="comment-user">${user}${verifiedBadgeSlotHTML('', isHandleVerified(user), user)}</div>
       <div class="comment-text">${text}</div>
@@ -8000,12 +8235,13 @@ async function postComment() {
   const v = videos.find(x => x.id === activeCommentsId);
   if (!v) return;
 
-  const c = { user: '@' + profile.handle, text, time: 'Just now' };
+  const c = { user: '@' + profile.handle, user_id: currentAuthUser ? String(currentAuthUser.id) : (profile.id || ''), avatar_url: profile.avatar_url || '', text, time: 'Just now' };
   if (!v.userComments) v.userComments = [];
   v.userComments.push(c);
 
   document.getElementById('commentsTitle').textContent = fmtN(cmCount(v)) + ' Comments';
-  addCommentEl(document.getElementById('commentsList'), c.user, c.text, c.time);
+  addCommentEl(document.getElementById('commentsList'), c.user, c.text, c.time, c.avatar_url, c.user_id);
+  hydrateAvatars(document.getElementById('commentsList'));
   document.getElementById('commentsList').scrollTop = 99999;
   input.value = '';
 
@@ -8175,14 +8411,11 @@ function renderCreators() {
       card.style.backgroundColor = cc;
       card.classList.toggle('creator-color-light', isLightProfileColor(cc));
     }
-    const initial = (c.name || c.handle || 'C')[0].toUpperCase();
     const handleClean = (c.handle || '').replace(/^@/, '');
 
     card.innerHTML = `
       <div class="creator-card-av">
-        ${c.avatar_url ? `
-          <img class="creator-card-av-img" src="${c.avatar_url}" alt="${escapeHtml(c.name)}" onerror="this.style.display='none';this.parentElement.innerHTML='<span style=\\'font-weight:700;font-size:18px;color:#fff;\\'>${initial}</span>';">
-        ` : `<span style="font-weight:700;font-size:18px;color:#fff;">${initial}</span>`}
+        ${avatarHTML(c.user_id || c.id, c.name || c.handle, c.avatar_url, 52)}
       </div>
       <div class="creator-card-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}${verifiedBadgeSlotHTML(c.user_id || c.id, c.is_verified === true, c.handle)}</div>
       <div class="creator-card-handle" title="@${escapeHtml(handleClean)}">@${escapeHtml(handleClean)}</div>
@@ -8193,6 +8426,8 @@ function renderCreators() {
     `;
     container.appendChild(card);
   });
+  // Resolve creator avatars cache-first (initials until they load).
+  hydrateAvatars(container);
 }
 
 function renderDiscover() {
@@ -8491,18 +8726,12 @@ function renderChatThreads() {
     const lastMsg = t.messages[t.messages.length - 1] || { text: 'No messages yet', content: 'No messages yet', time: '' };
     const lastText = isStickerMessage(lastMsg) ? '\u{1F3A8} ' + stickerLabelForMessage(lastMsg) : (lastMsg.content || lastMsg.text || 'No messages yet');
     const displayTime = formatRelativeTime(lastMsg.created_at || lastMsg.time);
-    const initial = (t.user || 'U')[0].toUpperCase();
-
     const row = document.createElement('div');
     row.className = 'chat-thread-item';
     row.onclick = () => openChat(t.id);
     row.innerHTML = `
       <div class="chat-thread-av-wrap">
-        ${t.avatar_url ? `
-          <img class="chat-thread-av-img" src="${t.avatar_url}" alt="${escapeHtml(t.user)}" onerror="this.style.display='none';this.parentElement.innerHTML='<div class=\\'chat-thread-av\\'>${initial}</div>';">
-        ` : `
-          <div class="chat-thread-av">${initial}</div>
-        `}
+        ${avatarHTML(t.user_id || t.creatorId, t.user, t.avatar_url, 48)}
       </div>
       <div class="chat-thread-body">
         <div class="chat-thread-top">
@@ -8514,6 +8743,8 @@ function renderChatThreads() {
     `;
     container.appendChild(row);
   });
+  // Resolve thread avatars cache-first (initials until they load).
+  hydrateAvatars(container);
 }
 
 let activeChatThreadId = null;
@@ -8620,17 +8851,13 @@ function openChat(threadId) {
     syncVerifiedBadgeSlot(chatNameBadge2);
   }
   document.getElementById('chat-user-handle').textContent = '@' + (thread.handle || '').replace(/^@/, '');
-  const avImg = document.getElementById('chat-user-avatar');
-  const avInit = document.getElementById('chat-header-initial');
-  if (thread.avatar_url || creator.avatar_url) {
-    avImg.src = thread.avatar_url || creator.avatar_url;
-    avImg.style.display = 'block';
-    avInit.style.display = 'none';
-  } else {
-    avImg.style.display = 'none';
-    avInit.textContent = (thread.user || 'U')[0].toUpperCase();
-    avInit.style.display = 'flex';
-  }
+  // Chat header avatar (cache-first; a dead URL shows initials).
+  setAvatarInto(
+    document.getElementById('chat-user-avatar'),
+    document.getElementById('chat-header-initial'),
+    thread.user_id || thread.creatorId || creator.user_id || creator.id,
+    thread.user, thread.avatar_url || creator.avatar_url
+  );
 
   // Load message history from Supabase if available
   loadSupabaseMessagesForThread(thread);
@@ -8706,9 +8933,7 @@ function renderChatMessages(thread) {
     const showAvatar = idx === thread.messages.length - 1 || nextIsMe !== isMe;
     const avatarHtml = showAvatar
       ? '<div class="chat-bubble-av-wrap" title="' + escapeHtml(senderName) + '">' +
-          (senderAvatar
-            ? '<img src="' + senderAvatar + '" class="chat-bubble-av-img" alt="' + escapeHtml(senderName) + '" onerror="this.style.display=\'none\';this.parentElement.innerHTML=\'<div class=&quot;chat-bubble-av-initial&quot;>' + senderInitial + '</div>\';">'
-            : '<div class="chat-bubble-av-initial">' + senderInitial + '</div>') +
+          avatarHTML(m.sender_id || (isMe ? myId : (thread.user_id || thread.creatorId || '')), senderName, senderAvatar, 30) +
         '</div>'
       : '<div class="chat-bubble-av-wrap chat-bubble-av-hidden" aria-hidden="true"></div>';
     const bubbleHtml = sticker
@@ -8730,6 +8955,8 @@ function renderChatMessages(thread) {
   });
 
   container.scrollTop = container.scrollHeight;
+  // Resolve message-sender avatars cache-first (initials until loaded).
+  hydrateAvatars(container);
 }
 
 
