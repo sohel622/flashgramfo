@@ -106,7 +106,7 @@
       }
     }
     @media (min-width: 600px) {
-      #page-profile, #page-discover, #page-inbox,
+      #page-profile, #page-discover, #page-inbox, #page-home,
       .modal-sheet, .comments-sheet, .chat-sheet {
         max-width: 480px;
         left: 50% !important;
@@ -132,12 +132,12 @@
     }
 
     /* ── PAGES ── */
-    #page-feed, #page-profile, #page-discover, #page-inbox {
+    #page-feed, #page-profile, #page-discover, #page-inbox, #page-home {
       position: fixed;
       inset: 0;
       transition: transform 0.28s cubic-bezier(.4,0,.2,1), opacity 0.25s;
     }
-    #page-profile, #page-discover, #page-inbox {
+    #page-profile, #page-discover, #page-inbox, #page-home {
       transform: translateX(100%);
       opacity: 0;
       pointer-events: none;
@@ -145,7 +145,7 @@
       background: var(--bg);
       z-index: 40;
     }
-    #page-profile.active, #page-discover.active, #page-inbox.active {
+    #page-profile.active, #page-discover.active, #page-inbox.active, #page-home.active {
       transform: translateX(0);
       opacity: 1;
       pointer-events: auto;
@@ -206,6 +206,222 @@
       color: #fff;
       border-bottom-color: #fff;
     }
+
+    /* ═══════════════════════════════════════════════════════
+       HOME PAGE (Instagram-style, light theme)
+       - White background, dark text — separate from the dark
+         TikTok-style Reels feed (#page-feed).
+       - Header: + (create) left, ReelFlow wordmark centre,
+         heart (notifications) right.
+       - Stories row: real users in gradient rings.
+       - Post feed: real Supabase posts as cards.
+       ═══════════════════════════════════════════════════════ */
+    #page-home {
+      background: #fff;
+      color: #111;
+      padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+    }
+    .home-header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+      padding: calc(env(safe-area-inset-top, 0px)) 14px 0;
+      background: #fff;
+      border-bottom: 1px solid rgba(0,0,0,0.08);
+    }
+    .home-logo {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #111;
+      line-height: 1;
+      user-select: none;
+    }
+    .home-header-btn {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      border: none;
+      color: #111;
+      cursor: pointer;
+      border-radius: 50%;
+      padding: 0;
+    }
+    .home-header-btn:active { background: rgba(0,0,0,0.06); }
+    .home-header-btn svg { width: 26px; height: 26px; }
+    /* Stories row: horizontal scroll, gradient rings. */
+    .home-stories {
+      display: flex;
+      gap: 14px;
+      overflow-x: auto;
+      padding: 12px 14px 10px;
+      border-bottom: 1px solid rgba(0,0,0,0.06);
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    .home-stories::-webkit-scrollbar { display: none; }
+    .home-story {
+      flex: 0 0 auto;
+      width: 66px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+    }
+    .home-story-ring {
+      width: 62px;
+      height: 62px;
+      border-radius: 50%;
+      padding: 3px;
+      background: conic-gradient(from 210deg, #feda75, #fa7e1e, #d62976, #962fbf, #4f5bd5, #feda75);
+      position: relative;
+    }
+    .home-story-ring .home-story-av {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: #fff;
+      padding: 2px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .home-story-ring .home-story-av .av {
+      width: 100% !important;
+      height: 100% !important;
+    }
+    .home-story-add {
+      position: absolute;
+      right: -1px;
+      bottom: -1px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #0095f6;
+      border: 2px solid #fff;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+    }
+    .home-story-add svg { width: 12px; height: 12px; }
+    .home-story-name {
+      font-size: 11.5px;
+      color: #111;
+      max-width: 66px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: center;
+    }
+    /* Post cards. */
+    .home-post {
+      border-bottom: 1px solid rgba(0,0,0,0.08);
+      padding-bottom: 12px;
+      margin-bottom: 4px;
+    }
+    .home-post-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+    }
+    .home-post-user { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; }
+    .home-post-username {
+      font-size: 14px;
+      font-weight: 700;
+      color: #111;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .home-post-time { font-size: 12px; color: rgba(0,0,0,0.45); flex-shrink: 0; }
+    .home-post-more {
+      background: none; border: none; color: #111; cursor: pointer;
+      width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+      padding: 0; border-radius: 50%;
+    }
+    .home-post-more:active { background: rgba(0,0,0,0.06); }
+    .home-post-media {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 5;
+      background: #000;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .home-post-media video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      background: #000;
+    }
+    .home-post-play {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      color: rgba(255,255,255,0.9);
+    }
+    .home-post-play svg { width: 56px; height: 56px; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5)); }
+    .home-post-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 8px 2px;
+    }
+    .home-post-act {
+      background: none; border: none; cursor: pointer; color: #111;
+      width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+      padding: 0; border-radius: 50%;
+    }
+    .home-post-act:active { background: rgba(0,0,0,0.06); }
+    .home-post-act svg { width: 26px; height: 26px; }
+    .home-post-act.liked { color: #ff3040; }
+    .home-post-act.liked svg { fill: #ff3040; }
+    .home-post-act.save.saved svg { fill: #111; }
+    .home-post-act.save { margin-left: auto; }
+    .home-post-likes { font-size: 14px; font-weight: 700; color: #111; padding: 2px 12px 0; }
+    .home-post-caption { font-size: 14px; line-height: 1.4; color: #111; padding: 3px 12px 0; word-wrap: break-word; }
+    .home-post-caption b { font-weight: 700; margin-right: 5px; }
+    .home-post-comments {
+      font-size: 14px; color: rgba(0,0,0,0.45); padding: 3px 12px 0;
+      background: none; border: none; cursor: pointer; text-align: left; display: block;
+    }
+    .home-post-empty {
+      padding: 48px 24px;
+      text-align: center;
+      color: rgba(0,0,0,0.5);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .home-post-empty b { color: #111; display: block; font-size: 16px; margin-bottom: 6px; }
+    /* Notifications list (real activity). */
+    .notif-list { display: flex; flex-direction: column; }
+    .notif-item {
+      display: flex; align-items: center; gap: 11px;
+      padding: 11px 2px; border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .notif-text { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.4; color: #fff; }
+    .notif-text b { font-weight: 700; }
+    .notif-time { font-size: 12px; color: var(--fg3); flex-shrink: 0; }
+    .notif-empty { padding: 26px 10px; text-align: center; color: var(--fg3); font-size: 13.5px; }
 
     /* ── FEED ── */
     #feed {
@@ -575,11 +791,23 @@
       cursor: pointer;
       padding: 6px 12px;
       position: relative;
+      color: rgba(255,255,255,0.4);
     }
+    .nav-item .nav-icon { display: flex; align-items: center; justify-content: center; color: inherit; }
+    .nav-item .nav-icon svg { width: 24px; height: 24px; }
     .nav-item .material-symbols-rounded { font-size: 24px; color: rgba(255,255,255,0.4); transition: color .18s; }
-    .nav-label { font-size: 10.5px; font-weight: 600; color: rgba(255,255,255,0.4); letter-spacing: 0.02em; transition: color .18s; }
+    .nav-label { font-size: 10.5px; font-weight: 600; color: inherit; letter-spacing: 0.02em; transition: color .18s; }
+    .nav-item.active { color: #fff; }
     .nav-item.active .material-symbols-rounded { color: #fff; }
     .nav-item.active .nav-label { color: #fff; }
+    /* Light bottom nav while the white Home page is showing. */
+    body.home-light #bottomnav {
+      background: rgba(255,255,255,0.97);
+      border-top: 1px solid rgba(0,0,0,0.08);
+    }
+    body.home-light .nav-item { color: rgba(0,0,0,0.45); }
+    body.home-light .nav-item.active { color: #111; }
+    body.home-light .nav-item.active .nav-label { color: #111; }
     .nav-badge-dot {
       position: absolute;
       top: 4px;
@@ -1962,7 +2190,7 @@
     }
 
     /* ── MODALS (Upload, Share, Comments, Edit Profile) ── */
-    #upload-modal, #share-modal, #comments-modal, #edit-profile-modal, #more-modal, #admin-ban-modal {
+    #upload-modal, #share-modal, #comments-modal, #edit-profile-modal, #more-modal, #admin-ban-modal, #notif-modal {
       position: fixed;
       inset: 0;
       z-index: 200;
@@ -1974,7 +2202,7 @@
       pointer-events: none;
       transition: opacity .22s;
     }
-    #upload-modal.open, #share-modal.open, #comments-modal.open, #edit-profile-modal.open, #more-modal.open, #admin-ban-modal.open {
+    #upload-modal.open, #share-modal.open, #comments-modal.open, #edit-profile-modal.open, #more-modal.open, #admin-ban-modal.open, #notif-modal.open {
       opacity: 1;
       pointer-events: auto;
     }
@@ -2640,6 +2868,21 @@
   <div id="profile-grid-wrap"></div>
 </div>
 
+<!-- 0. HOME PAGE (Instagram-style) -->
+<div id="page-home">
+  <header class="home-header">
+    <button class="home-header-btn" onclick="openUpload()" title="Create post" aria-label="Create post">
+      <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+    </button>
+    <div class="home-logo">ReelFlow</div>
+    <button class="home-header-btn" onclick="openNotifications()" title="Notifications" aria-label="Notifications">
+      <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
+    </button>
+  </header>
+  <div class="home-stories" id="home-stories"></div>
+  <div id="home-feed"></div>
+</div>
+
 <!-- 3. DISCOVER PAGE -->
 <div id="page-discover">
   <div class="discover-header">
@@ -2705,26 +2948,25 @@
 
 <!-- 5. BOTTOM NAVIGATION BAR -->
 <div id="bottomnav">
-  <div class="nav-item active" id="nav-home" onclick="goPage('feed',this)">
-    <span class="material-symbols-rounded fi">home</span>
+  <div class="nav-item active" id="nav-home" onclick="goPage('home',this)">
+    <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>
     <span class="nav-label">Home</span>
   </div>
-  <div class="nav-item" id="nav-discover" onclick="goPage('discover',this)">
-    <span class="material-symbols-rounded">explore</span>
-    <span class="nav-label">Discover</span>
-  </div>
-  <div class="nav-plus" onclick="openUpload()">
-    <div class="plus-btn" title="Create Video">
-      <span class="material-symbols-rounded">add</span>
-    </div>
+  <div class="nav-item" id="nav-reels" onclick="goPage('feed',this)">
+    <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/></svg></span>
+    <span class="nav-label">Reels</span>
   </div>
   <div class="nav-item" id="nav-inbox" onclick="goPage('inbox',this)">
-    <span class="material-symbols-rounded">notifications</span>
-    <span class="nav-label">Inbox</span>
+    <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></span>
+    <span class="nav-label">Messages</span>
     <div class="nav-badge-dot"></div>
   </div>
+  <div class="nav-item" id="nav-discover" onclick="goPage('discover',this)">
+    <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+    <span class="nav-label">Search</span>
+  </div>
   <div class="nav-item" id="nav-profile" onclick="goPage('profile',this)">
-    <span class="material-symbols-rounded">person</span>
+    <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
     <span class="nav-label">Profile</span>
   </div>
 </div>
@@ -2927,6 +3169,16 @@
     </div>
     <div id="ab-active-list" class="ab-ban-list"></div>
     <div id="ab-auth-note" class="ab-auth-note" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- NOTIFICATIONS (Home header heart) — real likes & comments on my posts -->
+<div id="notif-modal" onclick="closeOnBackdrop(event,'notif-modal')">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Notifications</div>
+    <div class="modal-sub">Recent likes and comments on your posts.</div>
+    <div id="notif-list" class="notif-list"></div>
   </div>
 </div>
 
@@ -3588,6 +3840,9 @@ pruneAllExpiredChatMessages();
   loadUserChatThreadsFromSupabase();
   subscribeToRealtimeChat();
   startChatPolling();
+  // Land on the new Instagram-style Home page (the Reels feed stays
+  // a separate tab under the bottom nav).
+  goPage('home', document.getElementById('nav-home'));
 })();
 
 // ═══════════════════════════════════════════════════════
@@ -7065,6 +7320,8 @@ function buildFeed(startIdx) {
     if (slide) slide.scrollIntoView({ behavior: 'auto' });
   }
   setActive(target);
+  // Keep the separate Home page post feed in sync with the same posts.
+  renderHomeFeed();
 }
 
 // ── Video playback helpers ──────────────────────────────────────────
@@ -7768,6 +8025,10 @@ async function syncLikeToSupabase(v, isLiked, btn) {
     if (btn) btn.classList.toggle('liked', revert);
     const countEl = document.getElementById('lc-' + v.id);
     if (countEl) countEl.textContent = fmtC(v.likes);
+    const hCountEl = document.getElementById('hlc-' + v.id);
+    if (hCountEl) hCountEl.textContent = homeLikesText(v);
+    const hBtn = document.getElementById('hlike-' + v.id);
+    if (hBtn) hBtn.classList.toggle('liked', revert);
     try { if (!v.isSeed) await dbPut('videos', v); } catch(_) {}
     showToast('Could not save like: ' + (err.message || 'try again'));
     return { ok: false, error: err };
@@ -7820,6 +8081,11 @@ function refreshEngagementCounts() {
     if (cc) cc.textContent = fmtC(cmCount(v));
     const likeBtn = document.getElementById('like-' + v.id);
     if (likeBtn) likeBtn.classList.toggle('liked', !!v.liked);
+    // Home page card (same post, separate card).
+    const hlc = document.getElementById('hlc-' + v.id);
+    if (hlc) hlc.textContent = homeLikesText(v);
+    const hlikeBtn = document.getElementById('hlike-' + v.id);
+    if (hlikeBtn) hlikeBtn.classList.toggle('liked', !!v.liked);
   });
 }
 // Load a video's comments from Supabase (oldest first) and resolve
@@ -8895,7 +9161,7 @@ async function submitUpload() {
     buildFeed();
     renderProfileGrid();
     applyProfile();
-    goPage('feed', document.getElementById('nav-home'));
+    goPage('feed', document.getElementById('nav-reels'));
     retryPendingPostUploads();
     setTimeout(() => feedEl.scrollTo({ top: 0, behavior: 'smooth' }), 100);
     if (postSaved) showToast('Video approved by AI & published to feed! 🎉');
@@ -8929,10 +9195,18 @@ async function openComments(id) {
     hydrateAvatars(list);
     const ccEl = document.getElementById('cc-' + id);
     if (ccEl) ccEl.textContent = fmtC(cmCount(v));
+    // Home card "View all N comments" link.
+    const hccEl = document.getElementById('hcc-' + id);
+    if (hccEl) {
+      const n = cmCount(v);
+      hccEl.textContent = n > 0 ? 'View all ' + fmtN(n) + ' comment' + (n === 1 ? '' : 's') : '';
+      hccEl.style.display = n > 0 ? '' : 'none';
+    }
   };
   render();
   document.getElementById('comments-modal').classList.add('open');
   pauseAllFeedVideos();
+  pauseAllHomeVideos();
   // Load the real comments from Supabase and re-render.
   await loadCommentsForVideo(v);
   render();
@@ -9002,6 +9276,7 @@ function openShare(id) {
   document.getElementById('shareUrl').textContent = 'reelflow.app/v/' + id;
   document.getElementById('share-modal').classList.add('open');
   pauseAllFeedVideos();
+  pauseAllHomeVideos();
 }
 
 function shareAct(type) {
@@ -9154,6 +9429,8 @@ function renderCreators() {
   });
   // Resolve creator avatars cache-first (initials until they load).
   hydrateAvatars(container);
+  // Keep the Home stories row in sync with the same creators.
+  renderHomeStories();
 }
 
 function renderDiscover() {
@@ -10291,22 +10568,238 @@ function closeFeedModal(id) {
   resumeActiveFeedVideo();
 }
 
+// ═══════════════════════════════════════════════════════
+//  HOME PAGE (Instagram-style) — separate from the Reels feed.
+//  Real Lucide icons (inline SVG paths from the Lucide set),
+//  real Supabase posts/profiles, real likes & comments.
+//  There is no stories table in Supabase, so the stories row
+//  shows real user profiles (creators) in gradient rings;
+//  tapping one opens that user's posts in the Reels feed.
+// ═══════════════════════════════════════════════════════
+const LUCIDE_ICONS = {
+  home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+  film: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+  'message-circle': '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+  bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>',
+  'more-horizontal': '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>'
+};
+function lucideIcon(name, size, filled) {
+  const inner = LUCIDE_ICONS[name] || '';
+  const s = size || 24;
+  const fill = filled ? 'currentColor' : 'none';
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="' + fill + '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
+}
+
+function homeLikesText(v) {
+  const n = v.likes || 0;
+  if (n <= 0) return 'Be the first to like this';
+  return fmtN(n) + (n === 1 ? ' like' : ' likes');
+}
+
+function renderHomeStories() {
+  const row = document.getElementById('home-stories');
+  if (!row) return;
+  const myAv = avatarHTML(profile.id || 'me', profile.name || profile.handle || 'You', profile.avatar_url || avatarUrlForUserId(profile.id, profile.handle), 52);
+  let html = ''
+    + '<button class="home-story" onclick="openUpload()" title="Add to your story">'
+    + '<span class="home-story-ring"><span class="home-story-av">' + myAv + '</span>'
+    + '<span class="home-story-add">' + lucideIcon('plus', 12) + '</span></span>'
+    + '<span class="home-story-name">Your story</span></button>';
+  (creators || []).slice(0, 20).forEach(c => {
+    const uid = c.user_id || c.id;
+    const name = String(c.handle || c.name || 'user').replace(/^@/, '');
+    html += '<button class="home-story" onclick="openCreatorStory(\'' + escapeHtml(String(uid)) + '\')" title="@' + escapeHtml(name) + '">'
+      + '<span class="home-story-ring"><span class="home-story-av">' + avatarHTML(uid, c.name || c.handle, c.avatar_url || '', 52) + '</span></span>'
+      + '<span class="home-story-name">' + escapeHtml(name) + '</span></button>';
+  });
+  row.innerHTML = html;
+  hydrateAvatars(row);
+}
+
+function openCreatorStory(userId) {
+  const idx = videos.findIndex(v => String(v.user_id) === String(userId));
+  if (idx >= 0) { openInFeed(idx); return; }
+  const c = (creators || []).find(x => String(x.user_id || x.id) === String(userId));
+  const name = c ? String(c.handle || c.name || 'user').replace(/^@/, '') : 'user';
+  showToast('No posts from @' + name + ' yet.');
+}
+
+function homePostCardHTML(v, idx) {
+  const authorAvatarUrl = avatarUrlForUserId(v.user_id, v.username);
+  const verified = verifiedBadgeSlotHTML(v.user_id, isUserVerified(v.user_id) || isHandleVerified(v.username), v.username);
+  const time = (v.created_at || v.ts) ? formatRelativeTime(v.created_at || v.ts) : '';
+  const caption = (v.caption && String(v.caption).trim() && String(v.caption).trim() !== 'Video')
+    ? '<div class="home-post-caption"><b>' + escapeHtml(String(v.username || 'user')) + '</b>' + escapeHtml(String(v.caption)) + '</div>' : '';
+  const nComments = cmCount(v);
+  // Always render the link (hidden at 0) so its count can be updated
+  // in place by id when a comment is posted.
+  const commentsLink = '<button class="home-post-comments" id="hcc-' + escapeHtml(String(v.id)) + '" onclick="openComments(\'' + escapeHtml(String(v.id)) + '\')" style="display:' + (nComments > 0 ? '' : 'none') + '">' + (nComments > 0 ? 'View all ' + fmtN(nComments) + ' comment' + (nComments === 1 ? '' : 's') : '') + '</button>';
+  const isSaved = (profile.saved || []).includes(v.id);
+  const src = bestVideoSrc(v) || '';
+  const poster = videoPosterFor(v) || '';
+  return '<article class="home-post" data-home-post-id="' + escapeHtml(String(v.id)) + '">'
+    + '<div class="home-post-head">'
+    + avatarHTML(v.user_id, v.userDisplayName || v.username, authorAvatarUrl, 36)
+    + '<div class="home-post-user"><span class="home-post-username">@' + escapeHtml(String(v.username || 'user')) + '</span>' + verified + '</div>'
+    + (time ? '<span class="home-post-time">' + escapeHtml(time) + '</span>' : '')
+    + '<button class="home-post-more" onclick="openInFeed(' + idx + ')" title="Open in Reels">' + lucideIcon('more-horizontal', 20) + '</button>'
+    + '</div>'
+    + '<div class="home-post-media" onclick="toggleHomeVideo(this)">'
+    + '<video src="' + escapeHtml(src) + '" poster="' + escapeHtml(poster) + '" muted loop playsinline preload="metadata"></video>'
+    + '<span class="home-post-play">' + lucideIcon('play', 56, true) + '</span>'
+    + '</div>'
+    + '<div class="home-post-actions">'
+    + '<button class="home-post-act' + (v.liked ? ' liked' : '') + '" id="hlike-' + escapeHtml(String(v.id)) + '" onclick="toggleHomeLike(this,\'' + escapeHtml(String(v.id)) + '\',' + idx + ')" title="Like">' + lucideIcon('heart', 26) + '</button>'
+    + '<button class="home-post-act" onclick="openComments(\'' + escapeHtml(String(v.id)) + '\')" title="Comment">' + lucideIcon('message-circle', 26) + '</button>'
+    + '<button class="home-post-act" onclick="openShare(\'' + escapeHtml(String(v.id)) + '\')" title="Share">' + lucideIcon('send', 26) + '</button>'
+    + '<button class="home-post-act save' + (isSaved ? ' saved' : '') + '" id="hsave-' + escapeHtml(String(v.id)) + '" onclick="toggleHomeSave(\'' + escapeHtml(String(v.id)) + '\')" title="Save">' + lucideIcon('bookmark', 26) + '</button>'
+    + '</div>'
+    + '<div class="home-post-likes" id="hlc-' + escapeHtml(String(v.id)) + '">' + homeLikesText(v) + '</div>'
+    + caption
+    + commentsLink
+    + '</article>';
+}
+
+function renderHomeFeed() {
+  const feed = document.getElementById('home-feed');
+  if (!feed) return;
+  const scrollTop = feed.parentElement ? feed.parentElement.scrollTop : 0;
+  pauseAllHomeVideos();
+  const order = videos.map((v, i) => ({ v, i })).filter(o => o.v).sort((a, b) => (b.v.ts || 0) - (a.v.ts || 0));
+  if (order.length === 0) {
+    feed.innerHTML = '<div class="home-post-empty"><b>No posts yet</b>Be the first to share a video — tap the + at the top to upload.</div>';
+    return;
+  }
+  feed.innerHTML = order.map(o => homePostCardHTML(o.v, o.i)).join('');
+  hydrateAvatars(feed);
+  refreshAllVerifiedBadgeSlots();
+  if (feed.parentElement) feed.parentElement.scrollTop = scrollTop;
+}
+
+function toggleHomeVideo(mediaEl) {
+  const vid = mediaEl ? mediaEl.querySelector('video') : null;
+  if (!vid) return;
+  const playIcon = mediaEl.querySelector('.home-post-play');
+  if (vid.paused) {
+    // Only one home video plays at a time.
+    pauseAllHomeVideos();
+    vid.play().catch(() => {});
+    if (playIcon) playIcon.style.display = 'none';
+  } else {
+    vid.pause();
+    if (playIcon) playIcon.style.display = 'flex';
+  }
+}
+
+function pauseAllHomeVideos() {
+  document.querySelectorAll('#home-feed video').forEach(v => { try { v.pause(); } catch (_) {} });
+  document.querySelectorAll('#home-feed .home-post-play').forEach(el => { el.style.display = 'flex'; });
+}
+
+async function toggleHomeLike(btn, id, idx) {
+  if (isCurrentUserBanned()) { showToast('Your account is suspended.'); return; }
+  const v = videos[idx];
+  if (!v) return;
+  const isLiked = btn.classList.toggle('liked');
+  v.liked = isLiked;
+  recordFeedEvent(isLiked ? 'like' : 'unlike', v);
+  if (isLiked) v.likes = (v.likes || 0) + 1;
+  else v.likes = Math.max(0, (v.likes || 0) - 1);
+  const countEl = document.getElementById('hlc-' + id);
+  if (countEl) countEl.textContent = homeLikesText(v);
+  // Keep the Reels feed button/count in sync.
+  const feedCount = document.getElementById('lc-' + id);
+  if (feedCount) feedCount.textContent = fmtC(v.likes);
+  const feedBtn = document.getElementById('like-' + id);
+  if (feedBtn) feedBtn.classList.toggle('liked', isLiked);
+  try { if (!v.isSeed) await dbPut('videos', v); } catch (e) {}
+  await syncLikeToSupabase(v, isLiked, btn);
+}
+
+async function toggleHomeSave(id) {
+  await toggleSave(id);
+  const on = (profile.saved || []).includes(id);
+  const b = document.getElementById('hsave-' + id);
+  if (b) b.classList.toggle('saved', on);
+}
+
+// Notifications: real likes & comments on my own posts
+// (likes/comments tables carry post_owner_id).
+async function openNotifications() {
+  const list = document.getElementById('notif-list');
+  document.getElementById('notif-modal').classList.add('open');
+  if (!list) return;
+  list.innerHTML = '<div class="notif-empty">Loading…</div>';
+  if (!supabaseClient || !currentAuthUser) {
+    list.innerHTML = '<div class="notif-empty">Sign in to see notifications.</div>';
+    return;
+  }
+  const myId = String(currentAuthUser.id);
+  try {
+    const [likesRes, commentsRes] = await Promise.all([
+      supabaseClient.from('likes').select('id, user_id, post_id, created_at').eq('post_owner_id', myId).order('created_at', { ascending: false }).limit(15),
+      supabaseClient.from('comments').select('id, user_id, post_id, content, created_at').eq('post_owner_id', myId).order('created_at', { ascending: false }).limit(15)
+    ]);
+    const items = [];
+    (likesRes.data || []).forEach(r => items.push({ kind: 'like', user_id: r.user_id, created_at: r.created_at, text: '' }));
+    (commentsRes.data || []).forEach(r => items.push({ kind: 'comment', user_id: r.user_id, created_at: r.created_at, text: r.content || '' }));
+    items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const top = items.slice(0, 20);
+    if (top.length === 0) {
+      list.innerHTML = '<div class="notif-empty">No notifications yet.<br>When someone likes or comments on your posts, it will show here.</div>';
+      return;
+    }
+    const ids = [...new Set(top.map(x => String(x.user_id)).filter(Boolean))];
+    const profs = {};
+    if (ids.length) {
+      const { data } = await supabaseClient.from('profiles').select('user_id, username, display_name, avatar_url').in('user_id', ids);
+      (data || []).forEach(p => { profs[String(p.user_id)] = p; });
+    }
+    list.innerHTML = top.map(x => {
+      const p = profs[String(x.user_id)] || {};
+      const name = p.username || p.display_name || 'Someone';
+      const verb = x.kind === 'like' ? 'liked your post' : 'commented: &ldquo;' + escapeHtml(x.text) + '&rdquo;';
+      return '<div class="notif-item">' + avatarHTML(x.user_id, name, p.avatar_url || '', 38)
+        + '<div class="notif-text"><b>' + escapeHtml(String(name)) + '</b> ' + verb + '</div>'
+        + '<span class="notif-time">' + escapeHtml(formatRelativeTime(x.created_at)) + '</span></div>';
+    }).join('');
+    hydrateAvatars(list);
+  } catch (err) {
+    list.innerHTML = '<div class="notif-empty">Could not load notifications.</div>';
+  }
+}
+
 function goPage(page, navEl) {
-  ['discover', 'inbox', 'profile'].forEach(p => {
+  ['home', 'discover', 'inbox', 'profile'].forEach(p => {
     document.getElementById('page-' + p).classList.toggle('active', p === page);
   });
 
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   if (navEl) navEl.classList.add('active');
 
+  // White Home page gets the light bottom nav; every other page keeps it dark.
+  document.body.classList.toggle('home-light', page === 'home');
+
   const topbar = document.getElementById('topbar');
   if (page === 'feed') {
     topbar.style.display = 'flex';
+    pauseAllHomeVideos();
     resumeActiveFeedVideo();
   } else {
     topbar.style.display = 'none';
     pauseAllFeedVideos();
-    if (page === 'profile') {
+    if (page === 'home') {
+      renderHomeStories();
+      renderHomeFeed();
+    } else {
+      pauseAllHomeVideos();
+      if (page === 'profile') {
       if (currentAuthUser && supabaseClient) {
         loadUserProfileFromSupabase(currentAuthUser.id);
         // Pull my videos fresh from the database, then re-render.
@@ -10322,11 +10815,12 @@ function goPage(page, navEl) {
       renderChatThreads();
       loadUserChatThreadsFromSupabase();
     }
+    }
   }
 }
 
 function openInFeed(idx) {
-  goPage('feed', document.getElementById('nav-home'));
+  goPage('feed', document.getElementById('nav-reels'));
   setTimeout(() => {
     const slide = feedEl.children[idx];
     if (slide) slide.scrollIntoView({ behavior: 'smooth' });
