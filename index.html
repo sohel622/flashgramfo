@@ -8835,16 +8835,20 @@ async function loadPostsFromSupabase() {
         rebuildFeedPreservingPosition(currentId);
         renderProfileGrid();
       }
-      // Render the Home feed NOW with the merged list — never wait for
-      // the engagement counts below. The merge above only rebuilds
-      // when the length changed, so without this the Home cards could
-      // keep showing the pre-load render (or nothing at all).
-      renderHomeFeed();
       // Refresh the author info on any slide/card that was already
       // mounted before the profiles arrived (name + avatar + display
       // name, in place, without rebuilding the feed).
       authorIds.forEach(id => refreshAuthorNames(id));
     }
+    // Re-render Home after EVERY load attempt — not only when posts
+    // arrived. The query has no user filter (it is .select('*') over
+    // the whole posts table, so it returns every user's posts), and
+    // Home renders the whole `videos` list; but if the render only
+    // ran when data arrived, a failed or empty load left Home showing
+    // whatever it had before — on a phone that is only the user's
+    // own locally saved videos. Rendering here guarantees Home always
+    // reflects the newest merged list, whatever the load returned.
+    renderHomeFeed();
     // Real like / comment counts and this user's liked state. A failure
     // here must never block the feed render above.
     try {
