@@ -7574,7 +7574,10 @@ function buildFeed(startIdx) {
     const slide = feedEl.children[target];
     if (slide) slide.scrollIntoView({ behavior: 'auto' });
   }
-  setActive(target);
+  // Playback must never block the Home sync below: if activating the
+  // slide throws, the Reels slides are already mounted but the Home
+  // feed would never re-render and would stay on "No posts yet".
+  try { setActive(target); } catch (e) { console.warn('setActive note:', e && e.message); }
   // Keep the separate Home page post feed in sync with the same posts.
   renderHomeFeed();
 }
@@ -11016,7 +11019,13 @@ function renderHomeFeed() {
     feed.innerHTML = '<div class="home-post-empty"><b>No posts yet</b>Be the first to share a video — tap the + at the top to upload.</div>';
     return;
   }
-  feed.innerHTML = order.map(o => homePostCardHTML(o.v, o.i)).join('');
+  // Render each card on its own: one bad post must never blank the
+  // whole Home feed (Reels renders each slide separately, so a bad
+  // post there only affects that one slide — Home must behave the
+  // same, or it stays stuck on "No posts yet" while Reels shows videos).
+  feed.innerHTML = order.map(o => {
+    try { return homePostCardHTML(o.v, o.i); } catch (e) { console.warn('home card skipped:', o.v && o.v.id, e && e.message); return ''; }
+  }).join('');
   hydrateAvatars(feed);
   refreshAllVerifiedBadgeSlots();
   setupHomeVideos();
@@ -11031,6 +11040,7 @@ function renderHomeFeed() {
 // so memory / network stay bounded on low-end phones.
 let homeVideoObserver = null;
 let currentHomeVideo = null;
+let homeEmptyRetryAt = 0;
 
 function ensureHomeVideoObserver() {
   if (homeVideoObserver) return homeVideoObserver;
@@ -11330,6 +11340,14 @@ function goPage(page, navEl) {
     if (page === 'home') {
       renderHomeStories();
       renderHomeFeed();
+      // If Home is empty, the posts may never have loaded (slow or
+      // failed fetch at boot) — fetch them now so Home shows the same
+      // posts as Reels, instead of sitting on "No posts yet".
+      // Throttled to once per 15s; the load re-renders Home itself.
+      if (videos.length === 0 && supabaseClient && Date.now() - homeEmptyRetryAt > 15000) {
+        homeEmptyRetryAt = Date.now();
+        loadPostsFromSupabase();
+      }
     } else {
       pauseAllHomeVideos();
       if (page === 'profile') {
