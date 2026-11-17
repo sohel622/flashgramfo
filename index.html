@@ -4533,10 +4533,23 @@ function extractGoogleUserMetadata(user) {
   return { fullName, avatarUrl, email, handle };
 }
 
-// Automatically inserts or merges Google OAuth metadata in public.profiles table
+// One Google-profile sync per user at a time: boot, the OAuth
+// callback and onAuthStateChange can all fire for the same login, and
+// without this guard two concurrent SELECTs would both miss and both
+// try to INSERT the same row.
+const googleProfileSyncInFlight = new Map();
+
+// Automatically inserts or merges Google OAuth metadata in public.profiles table.
+// The returned isNew is true ONLY when this call actually INSERTED a
+// row (a genuinely new user). A row that already existed — even one
+// with a missing avatar, name or updated_at — is an EXISTING user and
+// isNew is false, so the setup screen never opens for them again.
+// A failed profile query is reported via `error` and is never treated
+// as a new user.
 async function syncUserProfileWithGoogle(user) {
   if (!supabaseClient || !user || !user.id) return { data: null, isNew: false };
-
+  if (googleProfileSyncInFlight.has(user.id)) return googleProfileSyncInFlight.get(user.id);
+  const run = (async () => {
   try {
     const googleInfo = extractGoogleUserMetadata(user);
 
@@ -4548,14 +4561,19 @@ async function syncUserProfileWithGoogle(user) {
       .maybeSingle();
 
     // Fallback if column user_id is named id in custom setups
-    if (queryErr && (queryErr.code === '42703' || queryErr.message.includes('user_id'))) {
+    if (queryErr && (queryErr.code === '42703' || (queryErr.message || '').includes('user_id'))) {
       const fallback = await supabaseClient
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .maybeSingle();
       existing = fallback.data;
+      queryErr = fallback.error || null;
     }
+
+    // The profile could not be verified (network / RLS / DB error):
+    // never treat this as a new user.
+    if (queryErr) return { data: null, isNew: false, error: queryErr };
 
     if (!existing) {
       // User is registering / first login -> insert initial row with Google metadata
@@ -4578,7 +4596,16 @@ async function syncUserProfileWithGoogle(user) {
         .maybeSingle();
 
       if (insertErr) {
+        // A concurrent login may have created the row first: re-read.
+        // If it exists now, this is an existing user, not a new one.
+        const recheck = await supabaseClient
+          .from('profiles')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (recheck.data) return { data: recheck.data, isNew: false };
         console.warn('Initial profile insert note:', insertErr.message);
+        return { data: null, isNew: false, error: insertErr };
       }
 
       return { data: inserted || initialPayload, isNew: true };
@@ -4614,14 +4641,18 @@ async function syncUserProfileWithGoogle(user) {
         }
       }
 
-      // If user has not yet customized their profile, flag as needing setup
-      const isCustomized = Boolean(existing.display_name && existing.username && existing.updated_at);
-      return { data: existing, isNew: !isCustomized };
+      // The row already existed, so this is an existing user — even
+      // if the avatar or a name field is missing. Setup is never
+      // shown for them again.
+      return { data: existing, isNew: false };
     }
   } catch(err) {
     console.error('syncUserProfileWithGoogle error:', err);
-    return { data: null, isNew: false };
+    return { data: null, isNew: false, error: err };
   }
+  })();
+  googleProfileSyncInFlight.set(user.id, run);
+  try { return await run; } finally { googleProfileSyncInFlight.delete(user.id); }
 }
 
 async function loadUserProfileFromSupabase(userId) {
@@ -4633,7 +4664,8 @@ async function loadUserProfileFromSupabase(userId) {
     }
 
     let data = syncResult?.data;
-    if (!data) {
+    let profileError = syncResult?.error || null;
+    if (!data && !profileError) {
       const { data: qData, error } = await supabaseClient
         .from('profiles')
         .select('*')
@@ -4641,13 +4673,24 @@ async function loadUserProfileFromSupabase(userId) {
         .maybeSingle();
 
       if (error) {
-        console.warn('public.profiles query error:', error.message);
+        profileError = error;
       } else {
         data = qData;
       }
     }
 
-    if (data && (data.display_name || data.full_name || data.username)) {
+    // A failed profile query must NEVER be treated as "new user".
+    // Show a retry message instead of opening the setup screen.
+    if (profileError) {
+      console.warn('public.profiles query error:', profileError.message || profileError);
+      showToast('Could not load your profile. Please check your connection and try again.');
+      return;
+    }
+
+    if (data) {
+      // A profile ROW exists: this is an existing user. Load it and
+      // NEVER show the setup screen again — even if the avatar or a
+      // name field is missing (fill sensible defaults instead).
       profile.id = data.user_id || currentAuthUser?.id || userId;
       profile.name = data.display_name || data.full_name || data.name || profile.name;
       profile.handle = (data.username || profile.handle).replace(/^@/, '');
@@ -4689,16 +4732,20 @@ async function loadUserProfileFromSupabase(userId) {
       renderProfileGrid();
       refreshAllVerifiedBadgeSlots();
 
-      // For new signups, open the pre-filled Profile Setup screen once so they can review their details
-      if (syncResult && syncResult.isNew && !localStorage.getItem('reelflow_setup_done_' + userId)) {
+      // New users only: the sync JUST created this row on first login,
+      // so show the pre-filled setup screen exactly once. The database
+      // row itself is the "setup done" marker — no localStorage flag
+      // is needed, so clearing app data can never re-open it.
+      if (syncResult && syncResult.isNew) {
         openProfileSetupPage(userId, currentAuthUser?.email || '');
       }
     } else {
-      // Authenticated but profile record does not exist or incomplete -> trigger Full-Screen Profile Setup
+      // No profile row at all: a genuinely new user -> show setup once.
       openProfileSetupPage(userId, currentAuthUser?.email || '');
     }
   } catch(e) {
     console.error('Error in loadUserProfileFromSupabase:', e);
+    // Never open the setup screen on an unexpected error.
   }
 }
 
@@ -5435,8 +5482,13 @@ async function handlePasswordSignIn() {
 
     closeAuthPage();
 
-    // Restore user profile from Supabase database (profiles table)
+    // Restore user profile from Supabase database (profiles table).
+    // A row existing means an existing user: never show setup again.
+    // A failed query is NOT "no profile" — leave the setup decision
+    // to loadUserProfileFromSupabase (via onAuthStateChange), which
+    // shows a retry message instead.
     let existingProfile = null;
+    let profileQueryFailed = false;
     try {
       let { data: pData, error: pErr } = await supabaseClient
         .from('profiles')
@@ -5444,20 +5496,23 @@ async function handlePasswordSignIn() {
         .eq('user_id', user.id)
         .maybeSingle();
 
-      if (pErr && (pErr.code === '42703' || pErr.message.includes('user_id'))) {
+      if (pErr && (pErr.code === '42703' || (pErr.message || '').includes('user_id'))) {
         const fallback = await supabaseClient
           .from('profiles')
           .select('*')
           .eq('id', user.id)
           .maybeSingle();
         pData = fallback.data;
+        pErr = fallback.error || null;
       }
-      if (pData) existingProfile = pData;
+      if (pErr) profileQueryFailed = true;
+      else if (pData) existingProfile = pData;
     } catch(err) {
       console.warn('Profile fetch error:', err);
+      profileQueryFailed = true;
     }
 
-    if (existingProfile && (existingProfile.display_name || existingProfile.full_name || existingProfile.name || existingProfile.username)) {
+    if (existingProfile) {
       profile.id = user.id;
       profile.name = existingProfile.display_name || existingProfile.full_name || existingProfile.name || profile.name;
       profile.handle = (existingProfile.username || profile.handle).replace(/^@/, '');
@@ -5470,8 +5525,9 @@ async function handlePasswordSignIn() {
       renderProfileGrid();
       refreshAllVerifiedBadgeSlots();
       showToast('Welcome back, ' + (profile.name || '@' + profile.handle) + ' 👋');
-    } else {
-      // Direct user to profile setup if no profile record exists yet
+    } else if (!profileQueryFailed) {
+      // The query succeeded and no profile row exists yet: a
+      // genuinely new user -> show the setup screen once.
       openProfileSetupPage(user.id, email);
     }
   } catch(err) {
