@@ -3594,10 +3594,100 @@ let profile = {
   cycle_started_at: null,
   lock_expires_at: null
 };
-// Verified-badge cache: user_id (lowercased) -> is_verified. Filled
-// from the own profile and the Discover creators list; updated live
-// by the profiles Realtime subscription.
-let verifiedCache = {};
+// Author-profile cache: posts.user_id (lowercased) -> the author's
+// real profile from public.profiles. This is the source of truth for
+// every post header name — the posts table's own username /
+// display_name columns are only a snapshot from upload time (and are
+// NULL on older rows), so reading them is what produced the generic
+// "@creator". A null value means "looked up, no profile row".
+const authorProfiles = new Map();
+
+function authorProfileFor(userId) {
+  if (!userId) return null;
+  const v = authorProfiles.get(String(userId).toLowerCase());
+  return v || null;
+}
+
+// Honest fallback for a post whose author truly has no profile row:
+// derived from the user id, never a fake name like "@creator".
+function authorFallbackHandle(userId) {
+  const s = String(userId || '').replace(/-/g, '');
+  return s ? 'user_' + s.slice(0, 8) : 'user';
+}
+
+// Fetch the authors' real profiles in ONE query (posts.user_id ->
+// profiles.user_id; profiles.id is a BIGINT identity column, NOT the
+// user id). Results are cached, so a repeated load never re-queries
+// the same authors.
+async function loadAuthorProfiles(userIds) {
+  const ids = [...new Set((userIds || []).map(u => String(u)).filter(Boolean))];
+  const missing = ids.filter(id => !authorProfiles.has(id.toLowerCase()));
+  if (!missing.length || !supabaseClient) return authorProfiles;
+  try {
+    let rows = [];
+    if (supabaseClient.isLocalAdapter) {
+      // The local adapter has no .in(): read all profiles and filter.
+      const res = await supabaseClient.from('profiles')
+        .select('user_id,username,display_name,full_name,avatar_url,is_verified,profile_color');
+      rows = Array.isArray(res.data) ? res.data : [];
+    } else {
+      const { data, error } = await supabaseClient.from('profiles')
+        .select('user_id,username,display_name,full_name,avatar_url,is_verified,profile_color')
+        .in('user_id', missing);
+      if (error) throw new Error(error.message);
+      rows = Array.isArray(data) ? data : [];
+    }
+    rows.forEach(p => {
+      const uid = p.user_id ? String(p.user_id).toLowerCase() : '';
+      if (!uid) return;
+      authorProfiles.set(uid, {
+        user_id: uid,
+        username: (p.username || '').replace(/^@/, ''),
+        display_name: p.display_name || p.full_name || '',
+        full_name: p.full_name || '',
+        avatar_url: p.avatar_url || '',
+        is_verified: p.is_verified === true,
+        profile_color: normalizeProfileColor(p.profile_color),
+      });
+    });
+    // Remember authors with no profile row so we don't re-query them
+    // on every load (a later Realtime profile insert clears it).
+    missing.forEach(id => {
+      if (!authorProfiles.has(id.toLowerCase())) authorProfiles.set(id.toLowerCase(), null);
+    });
+  } catch (e) {
+    console.warn('loadAuthorProfiles note:', e && e.message);
+  }
+  return authorProfiles;
+}
+
+// Refresh the displayed author name/avatar for one user everywhere
+// it already appears, without rebuilding the feed (playback is never
+// interrupted). The in-memory videos are updated too, so future
+// renders stay correct.
+function refreshAuthorNames(userId) {
+  const uid = String(userId || '').toLowerCase();
+  if (!uid) return;
+  const author = authorProfiles.get(uid);
+  if (!author) return;
+  videos.forEach(v => {
+    if (v && String(v.user_id || '').toLowerCase() === uid) {
+      if (author.username) v.username = author.username;
+      if (author.display_name || author.full_name) v.userDisplayName = author.display_name || author.full_name;
+    }
+  });
+  const updateNameIn = (root) => {
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll('[data-author-uid]').forEach(el => {
+      if (String(el.getAttribute('data-author-uid') || '').toLowerCase() !== uid) return;
+      const nameEl = el.querySelector('.author-name') || el.querySelector('.home-post-username');
+      if (nameEl && author.username) nameEl.textContent = '@' + author.username;
+      if (el.querySelector) hydrateAvatars(el);
+    });
+  };
+  updateNameIn(document.getElementById('page-feed'));
+  updateNameIn(document.getElementById('page-home'));
+}
 let supabaseClient = null;
 let currentAuthUser = null;
 let currentPendingEmail = '';
@@ -4577,10 +4667,15 @@ async function syncUserProfileWithGoogle(user) {
 
     if (!existing) {
       // User is registering / first login -> insert initial row with Google metadata
+      // (never the generic "Creator" as a display name: fall back to
+      // the email-derived handle so the name is the user's own).
+      const fallbackName = googleInfo.fullName
+        || (googleInfo.handle ? googleInfo.handle.charAt(0).toUpperCase() + googleInfo.handle.slice(1) : '')
+        || 'Creator';
       const initialPayload = {
         user_id: user.id,
-        display_name: googleInfo.fullName || 'Creator',
-        full_name: googleInfo.fullName || 'Creator',
+        display_name: fallbackName,
+        full_name: googleInfo.fullName || fallbackName,
         username: googleInfo.handle,
         email: googleInfo.email || user.email || '',
         avatar_url: googleInfo.avatarUrl || null,
@@ -6126,6 +6221,10 @@ function avatarUrlForUserId(userId, handle) {
   const uid = String(userId || '');
   if (uid && currentAuthUser && String(currentAuthUser.id) === uid) return profile.avatar_url || '';
   if (uid && profile.id && String(profile.id) === uid) return profile.avatar_url || '';
+  // The author-profile cache (loaded with the posts) is the first
+  // place to look for another user's avatar.
+  const author = uid ? authorProfileFor(uid) : null;
+  if (author && author.avatar_url) return author.avatar_url;
   const list = Array.isArray(creators) ? creators : [];
   const byId = uid ? list.find(c => String(c.user_id || c.id || '') === uid) : null;
   if (byId && byId.avatar_url) return byId.avatar_url;
@@ -6651,7 +6750,11 @@ async function adminEditBanReason(banId) {
 }
 
 function applyProfile() {
-  document.getElementById('profile-display-name').textContent = profile.name || (currentAuthUser ? 'Creator' : 'Sign In');
+  // The real display name from the loaded profile. Never the generic
+  // "Creator" placeholder: if the name hasn't loaded yet, show the
+  // user's own handle instead of a wrong name.
+  const displayName = (profile.name && profile.name !== 'Sign In') ? profile.name : '';
+  document.getElementById('profile-display-name').textContent = displayName || ('@' + (profile.handle || 'user'));
   applyProfileColor(profile.profile_color);
   const nameBadgeSlot = document.getElementById('profile-name-badge');
   if (nameBadgeSlot) {
@@ -7971,6 +8074,23 @@ function handleProfilesRealtimeUpdate(row) {
   if (!row || !row.user_id) return;
   const isV = row.is_verified === true;
   cacheVerified(row.user_id, isV);
+  // Keep the author-profile cache in sync, so a name / avatar change
+  // is reflected in every post header without a reload. A Realtime
+  // INSERT also clears the "no profile" marker for a new author.
+  const uid = String(row.user_id).toLowerCase();
+  const cached = authorProfiles.get(uid);
+  if (cached !== undefined || row.username || row.display_name || row.full_name || row.avatar_url) {
+    authorProfiles.set(uid, {
+      user_id: uid,
+      username: (row.username || (cached && cached.username) || '').replace(/^@/, ''),
+      display_name: row.display_name || row.full_name || (cached && cached.display_name) || '',
+      full_name: row.full_name || (cached && cached.full_name) || '',
+      avatar_url: row.avatar_url !== undefined && row.avatar_url !== null ? (row.avatar_url || '') : (cached && cached.avatar_url) || '',
+      is_verified: isV,
+      profile_color: normalizeProfileColor(row.profile_color !== undefined && row.profile_color !== null ? row.profile_color : (cached && cached.profile_color)),
+    });
+    refreshAuthorNames(uid);
+  }
   if (profile && profile.id && verifiedCacheKey(profile.id) === verifiedCacheKey(row.user_id)) {
     profile.is_verified = isV;
   }
@@ -8091,7 +8211,7 @@ function makeInfo(v) {
 
   const authorAvatarUrl = avatarUrlForUserId(v.user_id, v.username);
   wrap.innerHTML = `
-    <div class="author-row">
+    <div class="author-row" data-author-uid="${escapeHtml(String(v.user_id || ''))}">
       ${avatarHTML(v.user_id, v.userDisplayName || v.username, authorAvatarUrl, 28)}
       <span class="author-name">@${v.username || 'user'}</span>${verifiedBadgeSlotHTML(v.user_id, isUserVerified(v.user_id) || isHandleVerified(v.username), v.username)}
       ${(v.created_at || v.ts) ? `<span class="post-time">· ${formatRelativeTime(v.created_at || v.ts)}</span>` : ''}
@@ -8443,6 +8563,22 @@ function mapPostToVideo(p, myId) {
   if (p.thumbnail_url && isImageUrl(p.thumbnail_url) && p.thumbnail_url.indexOf('blob:') !== 0) {
     thumbUrls[pId] = p.thumbnail_url;
   }
+  // The author's REAL identity comes from public.profiles
+  // (posts.user_id -> profiles.user_id), loaded by
+  // loadAuthorProfiles before mapping. The posts table's own username
+  // / display_name columns are only a snapshot from upload time (and
+  // are NULL on older rows) — reading them is what showed "@creator".
+  // The logged-in user's own profile is used only for their own posts
+  // when no author profile is cached yet.
+  const author = authorProfileFor(p.user_id);
+  const username = (author && author.username)
+    || (p.username ? String(p.username).replace(/^@/, '') : '')
+    || (isMe ? (profile.handle || '') : '')
+    || authorFallbackHandle(p.user_id);
+  const displayName = (author && (author.display_name || author.full_name))
+    || p.display_name
+    || (isMe ? (profile.name || '') : '')
+    || username;
   return {
     id: pId,
     user_id: p.user_id,
@@ -8453,8 +8589,8 @@ function mapPostToVideo(p, myId) {
     caption: p.caption || 'Video',
     hashtags: p.hashtags ? String(p.hashtags).split(/\s+/).filter(t => t.length > 0) : [],
     music: 'Original Audio - Flashgram',
-    username: isMe ? profile.handle : (p.username || 'creator'),
-    userDisplayName: isMe ? profile.name : (p.display_name || 'Creator'),
+    username: username,
+    userDisplayName: displayName,
     likes: p.likes_count || 0,
     comments: p.comments_count || 0,
     shares: p.shares_count || 0,
@@ -8490,7 +8626,7 @@ function subscribeToPostsRealtime() {
     postsRealtimeChannel = null;
   }
 }
-function handleIncomingPost(p) {
+async function handleIncomingPost(p) {
   if (!p || !p.video_url) return;
   // Skip our own upload echo (it was already added locally on submit).
   // Canonical comparison: the echo's URL may be spelled differently
@@ -8498,6 +8634,11 @@ function handleIncomingPost(p) {
   if (videos.some(v => sameVideoUrl(v.videoUrl, p.video_url))) return;
   if (p.id && videos.some(v => String(v.id) === String(p.id))) return;
   const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : (profile.id ? String(profile.id).toLowerCase() : null);
+  // Fetch the author's real profile first if it isn't cached yet, so
+  // the new post shows the author's actual name, not the fallback.
+  if (p.user_id && !authorProfileFor(p.user_id)) {
+    await loadAuthorProfiles([p.user_id]);
+  }
   // Capture the video being watched before the unshift moves it.
   const currentId = activeIdx >= 0 && videos[activeIdx] ? videos[activeIdx].id : null;
   videos.unshift(mapPostToVideo(p, myId));
@@ -8624,6 +8765,11 @@ async function loadPostsFromSupabase() {
 
     if (data && Array.isArray(data) && data.length > 0) {
       const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : (profile.id ? String(profile.id).toLowerCase() : null);
+      // Fetch the authors' real profiles FIRST (one query), so every
+      // post is mapped with its author's actual username / display
+      // name instead of the generic fallback.
+      const authorIds = [...new Set(data.map(p => p.user_id).filter(Boolean))];
+      await loadAuthorProfiles(authorIds);
       const dbVids = data.filter(p => p.video_url).map(p => mapPostToVideo(p, myId));
 
       // Merge cleanly: new posts prepend, already-loaded posts stay
@@ -9207,7 +9353,7 @@ async function submitUpload() {
       hashtags: hashtags,
       music: (file.name.replace(/\.[^.]+$/,'') || 'Original Sound') + ' - Original Sound',
       username: profile.handle || 'user',
-      userDisplayName: profile.name || 'Creator',
+      userDisplayName: profile.name || profile.handle || authorFallbackHandle(currentAuthUser ? currentAuthUser.id : profile.id),
       likes: 0,
       comments: 0,
       shares: 0,
@@ -9475,8 +9621,8 @@ async function loadCreatorsFromSupabase() {
         if (seen.has(dedupeKey)) return;
         seen.add(dedupeKey);
 
-        const name = p.display_name || p.full_name || p.username || 'Creator';
-        const displayHandle = p.username ? p.username.replace(/^@/, '') : (p.display_name ? p.display_name.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) : 'creator');
+        const name = p.display_name || p.full_name || p.username || authorFallbackHandle(uid);
+        const displayHandle = p.username ? p.username.replace(/^@/, '') : ((p.display_name || p.full_name) ? (p.display_name || p.full_name).toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) : authorFallbackHandle(uid));
 
         realCreators.push({
           id: uid || displayHandle,
@@ -10759,11 +10905,17 @@ function openCreatorStory(userId) {
 }
 
 function homePostCardHTML(v, idx) {
-  const authorAvatarUrl = avatarUrlForUserId(v.user_id, v.username);
-  const verified = verifiedBadgeSlotHTML(v.user_id, isUserVerified(v.user_id) || isHandleVerified(v.username), v.username);
+  // The author's real identity comes from the author-profile cache
+  // (posts.user_id -> profiles.user_id), not from the post's own
+  // snapshot columns.
+  const author = authorProfileFor(v.user_id);
+  const username = (author && author.username) || v.username || authorFallbackHandle(v.user_id);
+  const displayName = (author && (author.display_name || author.full_name)) || v.userDisplayName || username;
+  const authorAvatarUrl = avatarUrlForUserId(v.user_id, username);
+  const verified = verifiedBadgeSlotHTML(v.user_id, isUserVerified(v.user_id) || isHandleVerified(username), username);
   const time = (v.created_at || v.ts) ? formatRelativeTime(v.created_at || v.ts) : '';
   const caption = (v.caption && String(v.caption).trim() && String(v.caption).trim() !== 'Video')
-    ? '<div class="home-post-caption"><b>' + escapeHtml(String(v.username || 'user')) + '</b>' + escapeHtml(String(v.caption)) + '</div>' : '';
+    ? '<div class="home-post-caption"><b>' + escapeHtml(String(username)) + '</b>' + escapeHtml(String(v.caption)) + '</div>' : '';
   const nComments = cmCount(v);
   // Always render the link (hidden at 0) so its count can be updated
   // in place by id when a comment is posted.
@@ -10772,9 +10924,9 @@ function homePostCardHTML(v, idx) {
   const src = bestVideoSrc(v) || '';
   const poster = videoPosterFor(v) || '';
   return '<article class="home-post" data-home-post-id="' + escapeHtml(String(v.id)) + '">'
-    + '<div class="home-post-head">'
-    + avatarHTML(v.user_id, v.userDisplayName || v.username, authorAvatarUrl, 36)
-    + '<div class="home-post-user"><span class="home-post-username">@' + escapeHtml(String(v.username || 'user')) + '</span>' + verified + '</div>'
+    + '<div class="home-post-head" data-author-uid="' + escapeHtml(String(v.user_id || '')) + '">'
+    + avatarHTML(v.user_id, displayName, authorAvatarUrl, 36)
+    + '<div class="home-post-user"><span class="home-post-username">@' + escapeHtml(String(username)) + '</span>' + verified + '</div>'
     + (time ? '<span class="home-post-time">' + escapeHtml(time) + '</span>' : '')
     + '<button class="home-post-more" onclick="openInFeed(' + idx + ')" title="Open in Reels">' + lucideIcon('more-horizontal', 20) + '</button>'
     + '</div>'
@@ -11428,7 +11580,7 @@ function updateMediaSession(v) {
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: String(v.caption || '@' + (v.username || 'Flashgram')).slice(0, 80),
-      artist: '@' + (v.username || 'creator'),
+      artist: '@' + (v.username || authorFallbackHandle(v.user_id)),
       album: 'Flashgram'
     });
     navigator.mediaSession.setActionHandler('play', () => {
