@@ -3627,6 +3627,14 @@ function authorProfileFor(userId) {
   return v || null;
 }
 
+// Only UUIDs can match profiles.user_id (a UUID column). A local /
+// guest id (usr_...) would make the whole .in() batch fail with an
+// "invalid input syntax for type uuid" error, so it is left out here
+// (its posts fall back to the saved name / id handle instead).
+function isValidUuid(s) {
+  return typeof s === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+}
+
 // Honest fallback for a post whose author truly has no profile row:
 // derived from the user id, never a fake name like "@creator".
 function authorFallbackHandle(userId) {
@@ -3642,19 +3650,27 @@ async function loadAuthorProfiles(userIds) {
   const ids = [...new Set((userIds || []).map(u => String(u)).filter(Boolean))];
   const missing = ids.filter(id => !authorProfiles.has(id.toLowerCase()));
   if (!missing.length || !supabaseClient) return authorProfiles;
+  // Only UUIDs can match profiles.user_id (a UUID column), so only
+  // they go into the .in() query — one local/guest id would make the
+  // whole batch fail with an "invalid input syntax for type uuid"
+  // error. Non-UUID ids are still remembered as "no profile" below,
+  // so they are never re-queried.
+  const uuidIds = missing.filter(id => isValidUuid(id));
   try {
     let rows = [];
-    if (supabaseClient.isLocalAdapter) {
-      // The local adapter has no .in(): read all profiles and filter.
-      const res = await supabaseClient.from('profiles')
-        .select('user_id,username,display_name,full_name,avatar_url,is_verified,profile_color');
-      rows = Array.isArray(res.data) ? res.data : [];
-    } else {
-      const { data, error } = await supabaseClient.from('profiles')
-        .select('user_id,username,display_name,full_name,avatar_url,is_verified,profile_color')
-        .in('user_id', missing);
-      if (error) throw new Error(error.message);
-      rows = Array.isArray(data) ? data : [];
+    if (uuidIds.length) {
+      if (supabaseClient.isLocalAdapter) {
+        // The local adapter has no .in(): read all profiles and filter.
+        const res = await supabaseClient.from('profiles')
+          .select('user_id,username,display_name,full_name,avatar_url,is_verified,profile_color');
+        rows = Array.isArray(res.data) ? res.data : [];
+      } else {
+        const { data, error } = await supabaseClient.from('profiles')
+          .select('user_id,username,display_name,full_name,avatar_url,is_verified,profile_color')
+          .in('user_id', uuidIds);
+        if (error) throw new Error(error.message);
+        rows = Array.isArray(data) ? data : [];
+      }
     }
     rows.forEach(p => {
       const uid = p.user_id ? String(p.user_id).toLowerCase() : '';
@@ -8864,9 +8880,17 @@ async function loadPostsFromSupabase() {
       const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : (profile.id ? String(profile.id).toLowerCase() : null);
       // Fetch the authors' real profiles FIRST (one query), so every
       // post is mapped with its author's actual username / display
-      // name instead of the generic fallback.
+      // name instead of the generic fallback. The fetch has a 5s cap:
+      // a slow or hung profile request must NEVER hold the feed hostage
+      // — the posts map and render with the fallback names, and the
+      // real names refresh in place when the profiles arrive.
       const authorIds = [...new Set(data.map(p => p.user_id).filter(Boolean))];
-      await loadAuthorProfiles(authorIds);
+      try {
+        await Promise.race([
+          loadAuthorProfiles(authorIds),
+          new Promise(r => setTimeout(r, 5000))
+        ]);
+      } catch (_) {}
       const dbVids = data.filter(p => p.video_url).map(p => mapPostToVideo(p, myId));
 
       // Merge cleanly: new posts prepend, already-loaded posts stay
@@ -8883,14 +8907,22 @@ async function loadPostsFromSupabase() {
         rebuildFeedPreservingPosition(currentId);
         renderProfileGrid();
       }
+      // Render the Home feed NOW, with the merged list — never wait
+      // for the engagement counts below. The merge above only rebuilds
+      // when the length changed, so without this the Home cards could
+      // keep showing the pre-load render (or nothing at all).
+      renderHomeFeed();
+      // If the profile fetch was still running when the timeout fired,
+      // refresh the names in place once it lands.
+      authorIds.forEach(id => refreshAuthorNames(id));
     }
-    // Real like / comment counts and this user's liked state.
-    await loadEngagementForVideos();
-    // Re-render the Home feed with the final list: the merge above
-    // only rebuilds when the length changed, so without this the Home
-    // cards could keep showing the pre-load render (stale names, or
-    // no posts at all when the merge deduped them).
-    renderHomeFeed();
+    // Real like / comment counts and this user's liked state. A failure
+    // here must never block the feed render above.
+    try {
+      await loadEngagementForVideos();
+    } catch (e) {
+      console.warn('loadEngagementForVideos note:', e && e.message);
+    }
   } catch(err) {
     console.warn('loadPostsFromSupabase error:', err);
     homePostsLoadFailed = true;
@@ -11076,7 +11108,17 @@ function renderHomeFeed() {
     }
     return;
   }
-  feed.innerHTML = order.map(o => homePostCardHTML(o.v, o.i)).join('');
+  // One bad post must never blank the whole feed: render each card
+  // on its own and skip (with a log) any card that fails.
+  const cards = [];
+  order.forEach(o => {
+    try {
+      cards.push(homePostCardHTML(o.v, o.i));
+    } catch (e) {
+      console.warn('homePostCardHTML failed for post', o.v && o.v.id, e);
+    }
+  });
+  feed.innerHTML = cards.join('');
   hydrateAvatars(feed);
   refreshAllVerifiedBadgeSlots();
   setupHomeVideos();
