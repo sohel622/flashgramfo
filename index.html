@@ -10,11 +10,11 @@
   <meta name="description" content="ReelFlow - Video sharing and social feed web application featuring short-form video streaming, uploads, profile, and discovery.">
   <meta property="og:title" content="ReelFlow">
   <meta property="og:description" content="ReelFlow - Video sharing and social feed web application featuring short-form video streaming, uploads, profile, and discovery.">
-  <!-- Supabase JS Client (CDN with a second-CDN fallback) -->
+  <!-- Supabase JS Client (CDN with local fallback) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     if (!window.supabase) {
-      document.write('<script src="https://unpkg.com/@supabase/supabase-js@2"><\\/script>');
+      document.write('<script src="/vendor/supabase.js"><\\/script>');
     }
   </script>
   <style>
@@ -481,20 +481,6 @@
       line-height: 1.5;
     }
     .home-post-empty b { color: #111; display: block; font-size: 16px; margin-bottom: 6px; }
-    .home-post-retry {
-      margin-top: 14px;
-      padding: 10px 22px;
-      border: none;
-      border-radius: 8px;
-      background: #0095f6;
-      color: #fff;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .home-post-retry:active { opacity: 0.85; }
-    .home-post-error-banner { margin: 12px 16px; padding: 12px 14px; border-radius: 12px; background: #fff7ed; border: 1px solid #fdba74; color: #7c2d12; font-size: 13px; line-height: 1.5; text-align: center; }
-    .home-post-error-banner .home-post-retry { margin-top: 8px; background: #ea580c; }
     /* Notifications list (real activity). */
     .notif-list { display: flex; flex-direction: column; }
     .notif-item {
@@ -591,14 +577,7 @@
       height: 100%;
       max-width: 100%;
       max-height: 100%;
-      /* COVER: the video fills the whole Reels viewing area, so there
-         are no black bars above and below. On a screen taller than
-         9:16 (like the Vivo) the left/right edges are cropped instead
-         — that is the price of a full-screen frame, and it is what a
-         vertical video is shot for. Never CONTAIN here: contain fits
-         the whole frame inside the slide and leaves the huge black
-         spaces above and below that this fix removes. */
-      object-fit: cover;
+      object-fit: contain;
       object-position: center;
       background: #000;
       display: block;
@@ -607,9 +586,9 @@
       transform: translateZ(0);
       will-change: transform;
     }
-    /* Full-screen (resizeMode COVER): every video fills the 9:16
-       container — no black bars, no empty space above or below. */
-    .slide-video.is-portrait { object-fit: cover; }
+    /* Full frame (resizeMode CONTAIN): every video fits inside the 9:16
+       container cleanly — no unwanted cropping, zooming, or edge clipping. */
+    .slide-video.is-portrait { object-fit: contain; }
     /* Loading spinner: a ring over the video while it buffers (the web
        equivalent of ActivityIndicator). It only appears on the slide
        being watched (is-active) while its video is still loading
@@ -3629,14 +3608,6 @@ function authorProfileFor(userId) {
   return v || null;
 }
 
-// Only UUIDs can match profiles.user_id (a UUID column). A local /
-// guest id (usr_...) would make the whole .in() batch fail with an
-// "invalid input syntax for type uuid" error, so it is left out here
-// (its posts fall back to the saved name / id handle instead).
-function isValidUuid(s) {
-  return typeof s === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
-}
-
 // Honest fallback for a post whose author truly has no profile row:
 // derived from the user id, never a fake name like "@creator".
 function authorFallbackHandle(userId) {
@@ -3652,27 +3623,19 @@ async function loadAuthorProfiles(userIds) {
   const ids = [...new Set((userIds || []).map(u => String(u)).filter(Boolean))];
   const missing = ids.filter(id => !authorProfiles.has(id.toLowerCase()));
   if (!missing.length || !supabaseClient) return authorProfiles;
-  // Only UUIDs can match profiles.user_id (a UUID column), so only
-  // they go into the .in() query — one local/guest id would make the
-  // whole batch fail with an "invalid input syntax for type uuid"
-  // error. Non-UUID ids are still remembered as "no profile" below,
-  // so they are never re-queried.
-  const uuidIds = missing.filter(id => isValidUuid(id));
   try {
     let rows = [];
-    if (uuidIds.length) {
-      if (supabaseClient.isLocalAdapter) {
-        // The local adapter has no .in(): read all profiles and filter.
-        const res = await supabaseClient.from('profiles')
-          .select('user_id,username,display_name,full_name,avatar_url,is_verified,profile_color');
-        rows = Array.isArray(res.data) ? res.data : [];
-      } else {
-        const { data, error } = await supabaseClient.from('profiles')
-          .select('user_id,username,display_name,full_name,avatar_url,is_verified,profile_color')
-          .in('user_id', uuidIds);
-        if (error) throw new Error(error.message);
-        rows = Array.isArray(data) ? data : [];
-      }
+    if (supabaseClient.isLocalAdapter) {
+      // The local adapter has no .in(): read all profiles and filter.
+      const res = await supabaseClient.from('profiles')
+        .select('user_id,username,display_name,full_name,avatar_url,is_verified,profile_color');
+      rows = Array.isArray(res.data) ? res.data : [];
+    } else {
+      const { data, error } = await supabaseClient.from('profiles')
+        .select('user_id,username,display_name,full_name,avatar_url,is_verified,profile_color')
+        .in('user_id', missing);
+      if (error) throw new Error(error.message);
+      rows = Array.isArray(data) ? data : [];
     }
     rows.forEach(p => {
       const uid = p.user_id ? String(p.user_id).toLowerCase() : '';
@@ -3726,39 +3689,6 @@ function refreshAuthorNames(userId) {
   updateNameIn(document.getElementById('page-home'));
 }
 let supabaseClient = null;
-// Resolves when the first initSupabase() run has finished (client
-// created + session restored). The Google button waits on this instead
-// of failing with "initializing" when the user taps during boot.
-let supabaseInitPromise = null;
-let supabaseInitDone = false;
-
-// Create the Supabase client from the built-in config (the URL + anon
-// key are hardcoded in the page, so there is never a reason to wait
-// for a network fetch before having a client). Falls back to the
-// local adapter only when the real library is unavailable.
-function ensureSupabaseClient(force) {
-  if (supabaseClient && !force) return supabaseClient;
-  if (supabaseConfig.configured && window.supabase && window.supabase.createClient) {
-    try {
-      supabaseClient = window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true
-        }
-      });
-      console.log('Real Supabase client connected successfully');
-      return supabaseClient;
-    } catch(err) {
-      console.warn('Supabase initialization note:', err);
-    }
-  }
-  if (!supabaseClient) {
-    supabaseClient = createLocalSupabaseAdapter();
-    console.log('ReelFlow Supabase adapter initialized');
-  }
-  return supabaseClient;
-}
 let currentAuthUser = null;
 let currentPendingEmail = '';
 let setupAvatarFile = null;
@@ -4052,10 +3982,7 @@ pruneAllExpiredChatMessages();
   applyForYouRanking();
   buildFeed();
 
-  // The init promise is kept so the login buttons can wait for auth
-  // to be ready instead of failing while it is still starting up.
-  supabaseInitPromise = initSupabase();
-  await supabaseInitPromise;
+  await initSupabase();
   switchChatThreadsForCurrentUser();
   applyProfile();
   await loadPostsFromSupabase();
@@ -4546,23 +4473,13 @@ function createLocalSupabaseAdapter() {
 }
 
 async function initSupabase() {
-  // The client is created FIRST from the built-in config, so the auth
-  // buttons work from the first tap. Waiting on /api/config before
-  // creating the client left supabaseClient null for the whole fetch
-  // — on a slow mobile connection that is exactly when users tapped
-  // Google and got "Authentication service is initializing."
-  ensureSupabaseClient();
-
-  // Refresh the config in the background; only re-create the client
-  // if the server actually reports different credentials.
   try {
     const res = await fetch('/api/config');
     const data = await res.json();
-    if (data.supabaseUrl && data.supabaseAnonKey && (data.supabaseUrl !== supabaseConfig.url || data.supabaseAnonKey !== supabaseConfig.anonKey)) {
+    if (data.supabaseUrl && data.supabaseAnonKey) {
       supabaseConfig.url = data.supabaseUrl;
       supabaseConfig.anonKey = data.supabaseAnonKey;
       supabaseConfig.configured = true;
-      ensureSupabaseClient(true);
     }
   } catch(e) {
     console.warn('Could not read /api/config', e);
@@ -4574,8 +4491,28 @@ async function initSupabase() {
     supabaseConfig.anonKey = localStorage.getItem('reelflow_supabase_anon_key') || '';
     if (supabaseConfig.url && supabaseConfig.anonKey) {
       supabaseConfig.configured = true;
-      ensureSupabaseClient(true);
     }
+  }
+
+  if (supabaseConfig.configured && window.supabase && window.supabase.createClient) {
+    try {
+      supabaseClient = window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true
+        }
+      });
+      console.log('Real Supabase client connected successfully');
+    } catch(err) {
+      console.warn('Supabase initialization note:', err);
+    }
+  }
+
+  // Fallback to seamlessly integrated client adapter so users are never blocked or prompted for keys
+  if (!supabaseClient) {
+    supabaseClient = createLocalSupabaseAdapter();
+    console.log('ReelFlow Supabase adapter initialized');
   }
 
   try {
@@ -4652,7 +4589,6 @@ async function initSupabase() {
   }
 
   updateAuthStatusUI();
-  supabaseInitDone = true;
 }
 
 function extractGoogleUserMetadata(user) {
@@ -4949,26 +4885,8 @@ function openAuthPage() {
   if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
   if (succBox) { succBox.style.display = 'none'; succBox.textContent = ''; }
   if (googleBtn) {
-    // While auth is still initializing, show a loading state on the
-    // button instead of letting the tap fail; enable it the moment
-    // init finishes. The button is never left permanently disabled.
-    if (supabaseInitPromise && !supabaseInitDone) {
-      googleBtn.disabled = true;
-      googleBtn.innerHTML = `
-    <span class="loading-ring-sm" style="border-color:#1f1f1f;border-top-color:transparent;width:18px;height:18px;"></span>
-    <span class="auth-google-btn-text">Loading…</span>
-  `;
-      supabaseInitPromise.then(() => {
-        googleBtn.disabled = false;
-        googleBtn.innerHTML = googleBtnDefaultHtml;
-      }).catch(() => {
-        googleBtn.disabled = false;
-        googleBtn.innerHTML = googleBtnDefaultHtml;
-      });
-    } else {
-      googleBtn.disabled = false;
-      googleBtn.innerHTML = googleBtnDefaultHtml;
-    }
+    googleBtn.disabled = false;
+    googleBtn.innerHTML = googleBtnDefaultHtml;
   }
   const page = document.getElementById('page-auth');
   if (page) page.style.display = 'flex';
@@ -5372,31 +5290,11 @@ async function handleGoogleSignIn() {
   const googleBtn = document.getElementById('auth-google-btn');
   if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
 
-  // Wait for auth initialization to finish (at most 10s) instead of
-  // failing the tap with "initializing" when the user is quick. The
-  // button shows a spinner while waiting and is restored afterwards.
-  if (supabaseInitPromise && !supabaseInitDone) {
-    if (googleBtn) {
-      googleBtn.disabled = true;
-      googleBtn.innerHTML = `
-    <span class="loading-ring-sm" style="border-color:#1f1f1f;border-top-color:transparent;width:18px;height:18px;"></span>
-    <span class="auth-google-btn-text">Loading…</span>
-  `;
-    }
-    try {
-      await Promise.race([
-        supabaseInitPromise,
-        new Promise(r => setTimeout(r, 10000))
-      ]);
-    } catch (_) {}
-  }
-
   if (!supabaseClient) {
     if (errBox) {
       errBox.textContent = 'Authentication service is initializing. Please try again.';
       errBox.style.display = 'block';
     }
-    if (googleBtn) { googleBtn.disabled = false; googleBtn.innerHTML = googleBtnDefaultHtml; }
     return;
   }
 
@@ -8861,39 +8759,17 @@ async function loadPostsFromSupabase() {
       .order('created_at', { ascending: false });
 
     if (error) {
-      // One retry on a transient failure (mobile network flap), then
-      // a visible error state on Home — never a silent empty feed.
       console.warn('loadPostsFromSupabase note:', error.message);
-      if (!loadPostsFromSupabase._retried) {
-        loadPostsFromSupabase._retried = true;
-        await new Promise(r => setTimeout(r, 1500));
-        return loadPostsFromSupabase();
-      }
-      // Reset the retry flag so a manual retry can try again.
-      loadPostsFromSupabase._retried = false;
-      homePostsLoadFailed = true;
-      homePostsLoadFailedAt = Date.now();
-      renderHomeFeed();
       return;
     }
-    loadPostsFromSupabase._retried = false;
-    homePostsLoadFailed = false;
 
     if (data && Array.isArray(data) && data.length > 0) {
       const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : (profile.id ? String(profile.id).toLowerCase() : null);
       // Fetch the authors' real profiles FIRST (one query), so every
       // post is mapped with its author's actual username / display
-      // name instead of the generic fallback. The fetch has a 5s cap:
-      // a slow or hung profile request must NEVER hold the feed hostage
-      // — the posts map and render with the fallback names, and the
-      // real names refresh in place when the profiles arrive.
+      // name instead of the generic fallback.
       const authorIds = [...new Set(data.map(p => p.user_id).filter(Boolean))];
-      try {
-        await Promise.race([
-          loadAuthorProfiles(authorIds),
-          new Promise(r => setTimeout(r, 5000))
-        ]);
-      } catch (_) {}
+      await loadAuthorProfiles(authorIds);
       const dbVids = data.filter(p => p.video_url).map(p => mapPostToVideo(p, myId));
 
       // Merge cleanly: new posts prepend, already-loaded posts stay
@@ -8910,27 +8786,11 @@ async function loadPostsFromSupabase() {
         rebuildFeedPreservingPosition(currentId);
         renderProfileGrid();
       }
-      // Render the Home feed NOW, with the merged list — never wait
-      // for the engagement counts below. The merge above only rebuilds
-      // when the length changed, so without this the Home cards could
-      // keep showing the pre-load render (or nothing at all).
-      renderHomeFeed();
-      // If the profile fetch was still running when the timeout fired,
-      // refresh the names in place once it lands.
-      authorIds.forEach(id => refreshAuthorNames(id));
     }
-    // Real like / comment counts and this user's liked state. A failure
-    // here must never block the feed render above.
-    try {
-      await loadEngagementForVideos();
-    } catch (e) {
-      console.warn('loadEngagementForVideos note:', e && e.message);
-    }
+    // Real like / comment counts and this user's liked state.
+    await loadEngagementForVideos();
   } catch(err) {
     console.warn('loadPostsFromSupabase error:', err);
-    homePostsLoadFailed = true;
-    homePostsLoadFailedAt = Date.now();
-    renderHomeFeed();
   }
 }
 
@@ -11089,11 +10949,6 @@ function homePostCardHTML(v, idx) {
     + '</article>';
 }
 
-function retryLoadHomePosts() {
-  homePostsLoadFailed = false;
-  return loadPostsFromSupabase();
-}
-
 function renderHomeFeed() {
   const feed = document.getElementById('home-feed');
   if (!feed) return;
@@ -11103,32 +10958,10 @@ function renderHomeFeed() {
   if (homeVideoObserver) { try { homeVideoObserver.disconnect(); } catch (_) {} homeVideoObserver = null; }
   const order = videos.map((v, i) => ({ v, i })).filter(o => o.v).sort((a, b) => (b.v.ts || 0) - (a.v.ts || 0));
   if (order.length === 0) {
-    // A failed load is not "no posts": show a retry button so the
-    // error is visible instead of silently looking like an empty feed.
-    if (homePostsLoadFailed) {
-      feed.innerHTML = '<div class="home-post-empty"><b>Couldn&rsquo;t load posts</b>Check your connection and try again.<br><button class="home-post-retry" onclick="retryLoadHomePosts()">Try again</button></div>';
-    } else {
-      feed.innerHTML = '<div class="home-post-empty"><b>No posts yet</b>Be the first to share a video — tap the + at the top to upload.</div>';
-    }
+    feed.innerHTML = '<div class="home-post-empty"><b>No posts yet</b>Be the first to share a video — tap the + at the top to upload.</div>';
     return;
   }
-  // One bad post must never blank the whole feed: render each card
-  // on its own and skip (with a log) any card that fails.
-  const cards = [];
-  order.forEach(o => {
-    try {
-      cards.push(homePostCardHTML(o.v, o.i));
-    } catch (e) {
-      console.warn('homePostCardHTML failed for post', o.v && o.v.id, e);
-    }
-  });
-  // If the server posts failed to load, the cards above are only the
-  // videos saved on THIS phone (the user's own uploads) — say so
-  // plainly, with a retry, instead of silently showing only own videos.
-  const banner = homePostsLoadFailed
-    ? '<div class="home-post-error-banner">Couldn&rsquo;t load other people&rsquo;s posts from the server — showing only videos saved on this phone.<br><button class="home-post-retry" onclick="retryLoadHomePosts()">Try again</button></div>'
-    : '';
-  feed.innerHTML = banner + cards.join('');
+  feed.innerHTML = order.map(o => homePostCardHTML(o.v, o.i)).join('');
   hydrateAvatars(feed);
   refreshAllVerifiedBadgeSlots();
   setupHomeVideos();
@@ -11143,10 +10976,6 @@ function renderHomeFeed() {
 // so memory / network stay bounded on low-end phones.
 let homeVideoObserver = null;
 let currentHomeVideo = null;
-// Set when the posts query fails: the Home feed shows a retry state
-// instead of "No posts yet" (which would wrongly imply no posts exist).
-let homePostsLoadFailed = false;
-let homePostsLoadFailedAt = 0;
 
 function ensureHomeVideoObserver() {
   if (homeVideoObserver) return homeVideoObserver;
@@ -11446,12 +11275,6 @@ function goPage(page, navEl) {
     if (page === 'home') {
       renderHomeStories();
       renderHomeFeed();
-      // If the server posts failed to load earlier, try again when the
-      // user comes back to Home (throttled to once per 15s, so a bad
-      // connection does not spin the loader on every tap).
-      if (homePostsLoadFailed && Date.now() - (homePostsLoadFailedAt || 0) > 15000) {
-        retryLoadHomePosts();
-      }
     } else {
       pauseAllHomeVideos();
       if (page === 'profile') {
