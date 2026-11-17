@@ -371,7 +371,7 @@
     .home-post-media video {
       width: 100%;
       height: 100%;
-      object-fit: contain;
+      object-fit: cover;
       display: block;
       background: #000;
     }
@@ -7960,6 +7960,13 @@ function fillSlide(slide, v, i) {
   // Right action buttons & Bottom info
   slide.appendChild(makeActions(v, i));
   slide.appendChild(makeInfo(v));
+  // If this video's author is not in the profile cache yet, fetch it
+  // now and refresh the slide in place — otherwise the avatar stays
+  // initials and the username stays a fallback handle, and the video
+  // looks like it has no user info at all.
+  if (v.user_id && !authorProfiles.has(String(v.user_id).toLowerCase())) {
+    loadAuthorProfiles([v.user_id]).then(() => refreshAuthorNames(v.user_id));
+  }
   // Resolve the author avatar cache-first (initials until it loads).
   hydrateAvatars(slide);
   return slide;
@@ -11040,7 +11047,7 @@ function renderHomeFeed() {
 // so memory / network stay bounded on low-end phones.
 let homeVideoObserver = null;
 let currentHomeVideo = null;
-let homeEmptyRetryAt = 0;
+let homePostsRefreshAt = 0;
 
 function ensureHomeVideoObserver() {
   if (homeVideoObserver) return homeVideoObserver;
@@ -11068,6 +11075,8 @@ function ensureHomeVideoObserver() {
         updateHomePlayIcon(currentHomeVideo.parentElement);
       }
       currentHomeVideo = best;
+      // The video that autoplays follows the global mute state.
+      best.muted = !!window._muted;
       best.play().catch(() => {});
       updateHomePlayIcon(best.parentElement);
     }
@@ -11143,22 +11152,41 @@ function setupHomeVideo(mediaEl) {
   const vid = mediaEl.querySelector('video');
   if (!vid) return;
   mediaEl.dataset.homeSetup = '1';
+  // Every Home video follows the single global mute state.
+  vid.muted = !!window._muted;
   const postId = vid.getAttribute('data-post-id') || '';
   const v = postId ? videos.find(x => String(x.id) === String(postId)) : null;
-  // True aspect ratio once the metadata arrives (no crop, no bars).
-  vid.addEventListener('loadedmetadata', () => {
-    if (vid.videoWidth > 0 && vid.videoHeight > 0) {
-      mediaEl.style.aspectRatio = vid.videoWidth + ' / ' + vid.videoHeight;
-    }
-  });
+  const spinner = () => mediaEl.querySelector('.home-video-spinner');
+  const setSpinner = (on) => { const s = spinner(); if (s) s.style.display = on ? 'flex' : 'none'; };
+  // The container stays a fixed 4:5 Instagram-style box (the video
+  // covers it, object-fit: cover in CSS) — the true ratio is NOT
+  // applied here, so there are no tall/wide boxes or black bars.
   // First frame ready: hide the spinner.
-  vid.addEventListener('canplay', () => {
-    const spinner = mediaEl.querySelector('.home-video-spinner');
-    if (spinner) spinner.style.display = 'none';
+  vid.addEventListener('canplay', () => setSpinner(false));
+  // Actually playing: hide the spinner and the play icon. (canplay
+  // alone is not enough — a video can be playable yet still paused,
+  // and a video that started before this listener attached would
+  // leave the spinner stuck on.)
+  vid.addEventListener('playing', () => { setSpinner(false); updateHomePlayIcon(mediaEl); });
+  // Buffering mid-play: show the spinner again.
+  vid.addEventListener('waiting', () => setSpinner(true));
+  // Keep the play overlay in sync with real playback state, and make
+  // single-video playback bulletproof: whenever any Home video starts
+  // playing, pause every other one (the observer handles scrolling,
+  // this guards every other path — tap, unmute, programmatic play).
+  vid.addEventListener('play', () => {
+    updateHomePlayIcon(mediaEl);
+    currentHomeVideo = vid;
+    document.querySelectorAll('#home-feed video').forEach(other => {
+      if (other !== vid && !other.paused) { other.pause(); updateHomePlayIcon(other.parentElement); }
+    });
   });
-  // Keep the play overlay in sync with real playback state.
-  vid.addEventListener('play', () => updateHomePlayIcon(mediaEl));
   vid.addEventListener('pause', () => updateHomePlayIcon(mediaEl));
+  // Sync the overlays to the video's CURRENT state right now (a video
+  // that is already playing or already buffered must not show a
+  // stuck play icon or spinner).
+  if (vid.readyState >= 3 || !vid.paused) setSpinner(false);
+  updateHomePlayIcon(mediaEl);
   // Broken URL: walk the fallbacks, then show the error state.
   vid.addEventListener('error', () => {
     if (v && tryNextHomeVideoSrc(vid, v)) return;
@@ -11196,10 +11224,24 @@ function toggleHomeSound(ev, btn) {
   const media = btn ? homeMediaOf(btn) : null;
   const vid = media ? media.querySelector('video') : null;
   if (!vid) return;
-  vid.muted = !vid.muted;
-  btn.innerHTML = lucideIcon(vid.muted ? 'volume-x' : 'volume-2', 20);
+  // Global mute state: flip the tapped video's state and apply it to
+  // every Home video (unmuting one unmutes them all, muting one mutes
+  // them all). The single window._muted flag is the app-wide state,
+  // so Reels stays in sync too. The new state comes from the tapped
+  // video itself, so it is always the flip the user expects even if
+  // the global flag and this video had drifted apart.
+  const muted = !vid.muted;
+  window._muted = muted;
+  // The tapped video and its own button always update directly, then
+  // the bulk query applies the same state to every other Home video.
+  vid.muted = muted;
+  btn.innerHTML = lucideIcon(muted ? 'volume-x' : 'volume-2', 20);
+  document.querySelectorAll('#home-feed video').forEach(other => { other.muted = muted; });
+  document.querySelectorAll('#home-feed .home-post-sound').forEach(b => {
+    b.innerHTML = lucideIcon(muted ? 'volume-x' : 'volume-2', 20);
+  });
   // Unmuting a paused video starts it so the user hears it.
-  if (!vid.muted && vid.paused) {
+  if (!muted && vid.paused) {
     delete vid.dataset.homeManualPaused;
     currentHomeVideo = vid;
     vid.play().catch(() => {});
@@ -11340,12 +11382,12 @@ function goPage(page, navEl) {
     if (page === 'home') {
       renderHomeStories();
       renderHomeFeed();
-      // If Home is empty, the posts may never have loaded (slow or
-      // failed fetch at boot) — fetch them now so Home shows the same
-      // posts as Reels, instead of sitting on "No posts yet".
-      // Throttled to once per 15s; the load re-renders Home itself.
-      if (videos.length === 0 && supabaseClient && Date.now() - homeEmptyRetryAt > 15000) {
-        homeEmptyRetryAt = Date.now();
+      // Refresh the posts whenever Home is opened (throttled to once
+      // per 15s), so Home always shows every user's latest posts —
+      // not only the videos saved on this phone. The load re-renders
+      // Home itself when it arrives.
+      if (supabaseClient && Date.now() - homePostsRefreshAt > 15000) {
+        homePostsRefreshAt = Date.now();
         loadPostsFromSupabase();
       }
     } else {
