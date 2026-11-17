@@ -3214,8 +3214,6 @@
   </div>
 </div>
 
-</div>
-
 <!-- ADMIN — BAN USERS MODAL -->
 <div id="admin-ban-modal" onclick="closeOnBackdrop(event,'admin-ban-modal')">
   <div class="modal-sheet" onclick="event.stopPropagation()">
@@ -3656,6 +3654,7 @@ async function loadAuthorProfiles(userIds) {
         is_verified: p.is_verified === true,
         profile_color: normalizeProfileColor(p.profile_color),
       });
+      cacheVerified(uid, p.is_verified === true);
     });
     // Remember authors with no profile row so we don't re-query them
     // on every load (a later Realtime profile insert clears it).
@@ -8058,6 +8057,7 @@ function verifiedBadgeSlotHTML(userId, isVerified, handle, large) {
   const h = handle ? String(handle).replace(/^@/, '') : '';
   return '<span class="verified-badge-slot" data-uid="' + escapeHtml(uid) + '" data-handle="' + escapeHtml(h) + '"' + (large ? ' data-large="1"' : '') + '>' + (isVerified ? verifiedBadgeHTML(large) : '') + '</span>';
 }
+const verifiedCache = {};
 function verifiedCacheKey(id) {
   return id ? String(id).toLowerCase() : '';
 }
@@ -8071,7 +8071,9 @@ function isUserVerified(userId) {
   if (!k) return false;
   // The local profile is the freshest copy for the current user.
   if (profile && profile.id && verifiedCacheKey(profile.id) === k) return profile.is_verified === true;
-  return verifiedCache[k] === true;
+  if (k in verifiedCache) return verifiedCache[k] === true;
+  const ap = authorProfileFor(userId);
+  return !!(ap && ap.is_verified === true);
 }
 function isHandleVerified(handle) {
   if (!handle) return false;
