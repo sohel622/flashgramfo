@@ -785,6 +785,16 @@
       color: #fff;
       text-shadow: 0 1px 4px rgba(0,0,0,.8);
     }
+    .author-display-name {
+      font-weight: 500;
+      font-size: 15px;
+      color: #fff;
+      text-shadow: 0 1px 4px rgba(0,0,0,.8);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 38vw;
+    }
     /* Verified badge (Supabase profiles.is_verified): a pink circle
        with a white check, shown next to a verified user's name. One
        reusable component (verifiedBadgeHTML), used in the feed,
@@ -3682,6 +3692,22 @@ function refreshAuthorNames(userId) {
       if (String(el.getAttribute('data-author-uid') || '').toLowerCase() !== uid) return;
       const nameEl = el.querySelector('.author-name') || el.querySelector('.home-post-username');
       if (nameEl && author.username) nameEl.textContent = '@' + author.username;
+      // Display name (Reels author row): shown after the username.
+      const dispEl = el.querySelector('.author-display-name');
+      if (dispEl) {
+        const dn = author.display_name || author.full_name || '';
+        if (dn) dispEl.textContent = dn;
+      }
+      // Avatar: a slide rendered before the profile arrived has an
+      // empty data-av-url, so hydration skipped it (and marked it
+      // done). Point it at the real avatar URL and clear the done
+      // flag, so the real picture loads in place.
+      const avEl = el.querySelector('.av');
+      if (avEl && author.avatar_url) {
+        avEl.setAttribute('data-av-url', author.avatar_url);
+        avEl.setAttribute('data-av-name', author.display_name || author.full_name || author.username || '');
+        if (avEl.dataset) delete avEl.dataset.avDone;
+      }
       if (el.querySelector) hydrateAvatars(el);
     });
   };
@@ -8210,10 +8236,17 @@ function makeInfo(v) {
   const tags = (v.hashtags || []).map(t => `<span class="hashtag" onclick="searchTag('${t}')">${t}</span>`).join(' ');
 
   const authorAvatarUrl = avatarUrlForUserId(v.user_id, v.username);
+  // Reels info order: avatar, @username, display name (the video
+  // title/caption sits below in .caption). The display name is shown
+  // only when it is present and differs from the username, so it is
+  // never a duplicate of the @handle.
+  const dispName = (v.userDisplayName || '').trim();
+  const dispHtml = (dispName && dispName.toLowerCase() !== String(v.username || '').toLowerCase())
+    ? `<span class="author-display-name">${escapeHtml(dispName)}</span>` : '';
   wrap.innerHTML = `
     <div class="author-row" data-author-uid="${escapeHtml(String(v.user_id || ''))}">
       ${avatarHTML(v.user_id, v.userDisplayName || v.username, authorAvatarUrl, 28)}
-      <span class="author-name">@${v.username || 'user'}</span>${verifiedBadgeSlotHTML(v.user_id, isUserVerified(v.user_id) || isHandleVerified(v.username), v.username)}
+      <span class="author-name">@${v.username || 'user'}</span>${verifiedBadgeSlotHTML(v.user_id, isUserVerified(v.user_id) || isHandleVerified(v.username), v.username)}${dispHtml}
       ${(v.created_at || v.ts) ? `<span class="post-time">· ${formatRelativeTime(v.created_at || v.ts)}</span>` : ''}
     </div>
     <div class="caption">${v.caption || ''}</div>
@@ -8767,9 +8800,17 @@ async function loadPostsFromSupabase() {
       const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : (profile.id ? String(profile.id).toLowerCase() : null);
       // Fetch the authors' real profiles FIRST (one query), so every
       // post is mapped with its author's actual username / display
-      // name instead of the generic fallback.
+      // name instead of the generic fallback. Capped at 5s: a slow or
+      // hung profile fetch must never hold the feed hostage — the
+      // posts map and render with the fallback names, and the real
+      // names refresh in place when the profiles arrive.
       const authorIds = [...new Set(data.map(p => p.user_id).filter(Boolean))];
-      await loadAuthorProfiles(authorIds);
+      try {
+        await Promise.race([
+          loadAuthorProfiles(authorIds),
+          new Promise(r => setTimeout(r, 5000))
+        ]);
+      } catch (_) {}
       const dbVids = data.filter(p => p.video_url).map(p => mapPostToVideo(p, myId));
 
       // Merge cleanly: new posts prepend, already-loaded posts stay
@@ -8786,9 +8827,23 @@ async function loadPostsFromSupabase() {
         rebuildFeedPreservingPosition(currentId);
         renderProfileGrid();
       }
+      // Render the Home feed NOW with the merged list — never wait for
+      // the engagement counts below. The merge above only rebuilds
+      // when the length changed, so without this the Home cards could
+      // keep showing the pre-load render (or nothing at all).
+      renderHomeFeed();
+      // Refresh the author info on any slide/card that was already
+      // mounted before the profiles arrived (name + avatar + display
+      // name, in place, without rebuilding the feed).
+      authorIds.forEach(id => refreshAuthorNames(id));
     }
-    // Real like / comment counts and this user's liked state.
-    await loadEngagementForVideos();
+    // Real like / comment counts and this user's liked state. A failure
+    // here must never block the feed render above.
+    try {
+      await loadEngagementForVideos();
+    } catch (e) {
+      console.warn('loadEngagementForVideos note:', e && e.message);
+    }
   } catch(err) {
     console.warn('loadPostsFromSupabase error:', err);
   }
