@@ -493,6 +493,8 @@
       cursor: pointer;
     }
     .home-post-retry:active { opacity: 0.85; }
+    .home-post-error-banner { margin: 12px 16px; padding: 12px 14px; border-radius: 12px; background: #fff7ed; border: 1px solid #fdba74; color: #7c2d12; font-size: 13px; line-height: 1.5; text-align: center; }
+    .home-post-error-banner .home-post-retry { margin-top: 8px; background: #ea580c; }
     /* Notifications list (real activity). */
     .notif-list { display: flex; flex-direction: column; }
     .notif-item {
@@ -8870,6 +8872,7 @@ async function loadPostsFromSupabase() {
       // Reset the retry flag so a manual retry can try again.
       loadPostsFromSupabase._retried = false;
       homePostsLoadFailed = true;
+      homePostsLoadFailedAt = Date.now();
       renderHomeFeed();
       return;
     }
@@ -8926,6 +8929,7 @@ async function loadPostsFromSupabase() {
   } catch(err) {
     console.warn('loadPostsFromSupabase error:', err);
     homePostsLoadFailed = true;
+    homePostsLoadFailedAt = Date.now();
     renderHomeFeed();
   }
 }
@@ -11118,7 +11122,13 @@ function renderHomeFeed() {
       console.warn('homePostCardHTML failed for post', o.v && o.v.id, e);
     }
   });
-  feed.innerHTML = cards.join('');
+  // If the server posts failed to load, the cards above are only the
+  // videos saved on THIS phone (the user's own uploads) — say so
+  // plainly, with a retry, instead of silently showing only own videos.
+  const banner = homePostsLoadFailed
+    ? '<div class="home-post-error-banner">Couldn&rsquo;t load other people&rsquo;s posts from the server — showing only videos saved on this phone.<br><button class="home-post-retry" onclick="retryLoadHomePosts()">Try again</button></div>'
+    : '';
+  feed.innerHTML = banner + cards.join('');
   hydrateAvatars(feed);
   refreshAllVerifiedBadgeSlots();
   setupHomeVideos();
@@ -11136,6 +11146,7 @@ let currentHomeVideo = null;
 // Set when the posts query fails: the Home feed shows a retry state
 // instead of "No posts yet" (which would wrongly imply no posts exist).
 let homePostsLoadFailed = false;
+let homePostsLoadFailedAt = 0;
 
 function ensureHomeVideoObserver() {
   if (homeVideoObserver) return homeVideoObserver;
@@ -11435,6 +11446,12 @@ function goPage(page, navEl) {
     if (page === 'home') {
       renderHomeStories();
       renderHomeFeed();
+      // If the server posts failed to load earlier, try again when the
+      // user comes back to Home (throttled to once per 15s, so a bad
+      // connection does not spin the loader on every tap).
+      if (homePostsLoadFailed && Date.now() - (homePostsLoadFailedAt || 0) > 15000) {
+        retryLoadHomePosts();
+      }
     } else {
       pauseAllHomeVideos();
       if (page === 'profile') {
