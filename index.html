@@ -2275,8 +2275,8 @@
       padding: 0 16px 16px;
     }
 
-    /* ── MODALS (Upload, Share, Comments, Likes, Edit Profile) ── */
-    #upload-modal, #share-modal, #comments-modal, #likes-modal, #edit-profile-modal, #more-modal, #admin-ban-modal, #notif-modal {
+    /* ── MODALS (Upload, Share, Comments, Likes, Edit Profile, Verify Confirm) ── */
+    #upload-modal, #share-modal, #comments-modal, #likes-modal, #edit-profile-modal, #more-modal, #admin-ban-modal, #notif-modal, #verify-confirm-modal {
       position: fixed;
       inset: 0;
       z-index: 200;
@@ -2289,7 +2289,7 @@
       pointer-events: none;
       transition: opacity .22s;
     }
-    #upload-modal.open, #share-modal.open, #comments-modal.open, #likes-modal.open, #edit-profile-modal.open, #more-modal.open, #admin-ban-modal.open, #notif-modal.open {
+    #upload-modal.open, #share-modal.open, #comments-modal.open, #likes-modal.open, #edit-profile-modal.open, #more-modal.open, #admin-ban-modal.open, #notif-modal.open, #verify-confirm-modal.open {
       opacity: 1;
       pointer-events: auto;
     }
@@ -2304,6 +2304,132 @@
       transition: transform .28s cubic-bezier(.4,0,.2,1);
     }
     .open .modal-sheet { transform: translateY(0); }
+    #verify-confirm-modal { z-index: 220; }
+    .verify-confirm-sheet {
+      width: 100%;
+      max-height: 92vh;
+      overflow-y: auto;
+      background: radial-gradient(ellipse 95% 36% at 50% 0%, rgba(255, 45, 118, 0.24) 0%, rgba(22, 18, 22, 0.98) 58%, #121214 100%);
+      border-radius: 26px 26px 0 0;
+      padding: 18px max(20px, env(safe-area-inset-right, 0px)) calc(26px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+      transform: translateY(100%);
+      transition: transform .28s cubic-bezier(.4,0,.2,1);
+      color: #fff;
+      position: relative;
+    }
+    @media (min-width: 600px) {
+      .verify-confirm-sheet {
+        max-width: 480px;
+        box-shadow: 0 0 50px rgba(0,0,0,0.85);
+      }
+    }
+    .open .verify-confirm-sheet { transform: translateY(0); }
+    .vc-close {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255,255,255,0.09);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .vc-close:active { background: rgba(255,255,255,0.18); }
+    .vc-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-top: 2px;
+      margin-bottom: 24px;
+    }
+    .vc-seal {
+      width: 52px;
+      height: 52px;
+      margin-bottom: 14px;
+    }
+    .vc-title {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+    .vc-sub {
+      font-size: 14.5px;
+      color: rgba(255,255,255,0.75);
+      line-height: 1.4;
+    }
+    .vc-section-label {
+      font-size: 15.5px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 12px;
+      text-align: left;
+    }
+    .vc-card {
+      background: rgba(255,255,255,0.055);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .vc-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 15px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .vc-row:last-child { border-bottom: none; }
+    .vc-row-icon {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .vc-row-body { flex: 1; min-width: 0; text-align: left; }
+    .vc-row-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 2px;
+    }
+    .vc-row-desc {
+      font-size: 13px;
+      line-height: 1.38;
+      color: rgba(255,255,255,0.58);
+    }
+    .vc-confirm-btn {
+      width: 100%;
+      height: 50px;
+      border-radius: 999px;
+      border: none;
+      background: #ff2e7a;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+      font-family: var(--font);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity .15s, transform .1s;
+    }
+    .vc-confirm-btn:active { opacity: 0.88; transform: scale(0.99); }
+    .vc-credit {
+      margin-top: 12px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 500;
+      color: rgba(255,255,255,0.55);
+    }
     .modal-handle {
       width: 38px;
       height: 4px;
@@ -3244,6 +3370,55 @@
   </div>
 </div>
 
+<!-- VERIFICATION CONFIRMATION POPUP -->
+<div id="verify-confirm-modal" onclick="if(event.target.id==='verify-confirm-modal')closeVerifyConfirmModal()">
+  <div class="verify-confirm-sheet" onclick="event.stopPropagation()">
+    <button type="button" class="vc-close" onclick="closeVerifyConfirmModal()" aria-label="Close">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <div class="vc-hero">
+      <svg class="vc-seal" viewBox="0 0 48 48" aria-hidden="true">
+        <path fill="#ff2e7a" d="M24 2.5l4.4 3.4 5.5-.6 2.6 4.9 5.2 1.8.3 5.5 3.9 3.9-2 5.1 1.6 5.3-3.9 3.9-.3 5.5-5.2 1.8-2.6 4.9-5.5-.6L24 45.5l-4.4-3.4-5.5.6-2.6-4.9-5.2-1.8-.3-5.5L2.1 26.6l2-5.1-1.6-5.3 3.9-3.9.3-5.5 5.2-1.8 2.6-4.9 5.5.6z"/>
+        <path d="M16.5 24.5l5 5 10.5-10.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="vc-title">Get verified on ReelFlow</div>
+      <div class="vc-sub">Show people your profile is the real one.</div>
+    </div>
+    <div class="vc-section-label">Show your authentic profile</div>
+    <div class="vc-card">
+      <div class="vc-row">
+        <div class="vc-row-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+        </div>
+        <div class="vc-row-body">
+          <div class="vc-row-title">Verified badge</div>
+          <div class="vc-row-desc">Shown next to your name on your profile, posts and comments.</div>
+        </div>
+      </div>
+      <div class="vc-row">
+        <div class="vc-row-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+        </div>
+        <div class="vc-row-body">
+          <div class="vc-row-title">Extra trust</div>
+          <div class="vc-row-desc">People can see at a glance that this is really you.</div>
+        </div>
+      </div>
+      <div class="vc-row">
+        <div class="vc-row-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+        </div>
+        <div class="vc-row-body">
+          <div class="vc-row-title">Stand out</div>
+          <div class="vc-row-desc">Easier to recognise for followers, brands and customers.</div>
+        </div>
+      </div>
+    </div>
+    <button type="button" class="vc-confirm-btn" onclick="confirmVerifiedBadge()">Confirm</button>
+    <div class="vc-credit">Sohel</div>
+  </div>
+</div>
+
 <!-- EDIT PROFILE MODAL -->
 <div id="edit-profile-modal" onclick="closeOnBackdrop(event,'edit-profile-modal')">
   <div class="modal-sheet" onclick="event.stopPropagation()">
@@ -4080,7 +4255,12 @@ pruneAllExpiredChatMessages();
 
     // Load profile
     const prows = await dbGetAll('profile');
-    prows.forEach(r => { if (r.key in profile) profile[r.key] = r.val; });
+    prows.forEach(r => {
+      if (r.key in profile) profile[r.key] = r.val;
+      if (typeof r.key === 'string' && r.key.indexOf('verified_confirmed_') === 0 && r.val) {
+        verifiedConfirmedUsers[r.key.slice('verified_confirmed_'.length)] = true;
+      }
+    });
   } catch(e) {
     console.warn('DB initialization error', e);
     videos = [];
@@ -6895,6 +7075,7 @@ function applyProfile() {
   if (adminBanBtn) adminBanBtn.style.display = isCurrentUserAdmin() ? 'flex' : 'none';
 
   updateAuthStatusUI();
+  maybeShowVerifyConfirmPopup();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -8146,8 +8327,57 @@ function verifiedBadgeSlotHTML(userId, isVerified, handle, large) {
   return '<span class="verified-badge-slot" data-uid="' + escapeHtml(uid) + '" data-handle="' + escapeHtml(h) + '"' + (large ? ' data-large="1"' : '') + '>' + (isVerified ? verifiedBadgeHTML(large) : '') + '</span>';
 }
 const verifiedCache = {};
+const verifiedConfirmedUsers = {};
+let verifyConfirmDismissedInSession = false;
 function verifiedCacheKey(id) {
   return id ? String(id).toLowerCase() : '';
+}
+function isVerifiedBadgeConfirmed(userId) {
+  const k = verifiedCacheKey(userId);
+  if (!k) return true;
+  if (verifiedConfirmedUsers[k] === true) return true;
+  try {
+    if (localStorage.getItem('reelflow_verified_confirmed_' + k) === '1') {
+      verifiedConfirmedUsers[k] = true;
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
+function markVerifiedBadgeConfirmed(userId) {
+  const k = verifiedCacheKey(userId);
+  if (!k) return;
+  verifiedConfirmedUsers[k] = true;
+  try { localStorage.setItem('reelflow_verified_confirmed_' + k, '1'); } catch (_) {}
+  try { const p = dbPut('profile', { key: 'verified_confirmed_' + k, val: true }); if (p && p.catch) p.catch(function(){}); } catch (_) {}
+}
+function openVerifyConfirmModal() {
+  const modal = document.getElementById('verify-confirm-modal');
+  if (modal) modal.classList.add('open');
+}
+function closeVerifyConfirmModal() {
+  verifyConfirmDismissedInSession = true;
+  const modal = document.getElementById('verify-confirm-modal');
+  if (modal) modal.classList.remove('open');
+}
+function confirmVerifiedBadge() {
+  const uid = (profile && profile.id) || (currentAuthUser && currentAuthUser.id) || '';
+  if (uid) markVerifiedBadgeConfirmed(uid);
+  verifyConfirmDismissedInSession = false;
+  const modal = document.getElementById('verify-confirm-modal');
+  if (modal) modal.classList.remove('open');
+  applyProfile();
+  refreshAllVerifiedBadgeSlots();
+  showToast('Verified badge activated!');
+}
+function maybeShowVerifyConfirmPopup(forceCheck) {
+  const uid = profile && profile.id ? String(profile.id) : '';
+  if (!uid || profile.is_verified !== true) return;
+  if (isVerifiedBadgeConfirmed(uid)) return;
+  const profilePage = document.getElementById('page-profile');
+  if (!profilePage || !profilePage.classList.contains('active')) return;
+  if (verifyConfirmDismissedInSession && !forceCheck) return;
+  openVerifyConfirmModal();
 }
 function cacheVerified(userId, isVerified) {
   const k = verifiedCacheKey(userId);
@@ -8158,7 +8388,9 @@ function isUserVerified(userId) {
   const k = verifiedCacheKey(userId);
   if (!k) return false;
   // The local profile is the freshest copy for the current user.
-  if (profile && profile.id && verifiedCacheKey(profile.id) === k) return profile.is_verified === true;
+  if (profile && profile.id && verifiedCacheKey(profile.id) === k) {
+    return profile.is_verified === true && isVerifiedBadgeConfirmed(profile.id);
+  }
   if (k in verifiedCache) return verifiedCache[k] === true;
   const ap = authorProfileFor(userId);
   return !!(ap && ap.is_verified === true);
@@ -8166,7 +8398,9 @@ function isUserVerified(userId) {
 function isHandleVerified(handle) {
   if (!handle) return false;
   const h = String(handle).replace(/^@/, '').toLowerCase();
-  if (profile && profile.handle && String(profile.handle).replace(/^@/, '').toLowerCase() === h) return profile.is_verified === true;
+  if (profile && profile.handle && String(profile.handle).replace(/^@/, '').toLowerCase() === h) {
+    return profile.is_verified === true && isVerifiedBadgeConfirmed(profile.id);
+  }
   if (typeof creators !== 'undefined' && creators) {
     const c = creators.find(x => (x.handle || '').toLowerCase() === h);
     if (c) return c.is_verified === true;
@@ -8239,6 +8473,9 @@ function handleProfilesRealtimeUpdate(row) {
     }
   }
   refreshAllVerifiedBadgeSlots();
+  if (profile && profile.id && verifiedCacheKey(profile.id) === verifiedCacheKey(row.user_id) && isV) {
+    maybeShowVerifyConfirmPopup(true);
+  }
 }
 let profilesRealtimeChannel = null;
 function subscribeToProfilesRealtime() {
@@ -11975,6 +12212,7 @@ function goPage(page, navEl) {
     } else {
       pauseAllHomeVideos();
       if (page === 'profile') {
+      verifyConfirmDismissedInSession = false;
       if (currentAuthUser && supabaseClient) {
         loadUserProfileFromSupabase(currentAuthUser.id);
         // Pull my videos fresh from the database, then re-render.
