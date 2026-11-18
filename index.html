@@ -9016,6 +9016,9 @@ function moderationUploadErrorMessage(data, status) {
   if (data && typeof data.error === 'string' && data.error) return data.error;
   // The endpoint rejects a flagged video with HTTP 400; 403 is kept
   // for older servers that still used it.
+  if (status === 0) return (typeof navigator !== 'undefined' && navigator.onLine === false)
+    ? 'No internet connection — please check your network and try again'
+    : 'Network connection interrupted during upload — please try again';
   if (status === 400) return 'Video rejected: Contains inappropriate content violating community guidelines.';
   if (status === 403) return 'Video violates community guidelines due to sensitive content';
   if (status === 503) return 'Moderation service is unavailable — please try again later';
@@ -9048,6 +9051,17 @@ function updateUploadBarFromEvent(e) {
 // published unchecked.
 function uploadViaModeration(file, caption) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+    const succeed = (data) => {
+      if (settled) return;
+      settled = true;
+      resolve(data);
+    };
     const formData = new FormData();
     formData.append('file', file);
     formData.append('caption', caption);
@@ -9069,38 +9083,60 @@ function uploadViaModeration(file, caption) {
       );
     });
 
+    xhr.onerror = () => {
+      console.error('[upload] Network connection error during moderation upload');
+      const err = new Error('Network connection error during upload');
+      err.isNetworkError = true;
+      fail(err);
+    };
+    xhr.onabort = () => {
+      const err = new Error('Upload was cancelled');
+      err.isNetworkError = true;
+      fail(err);
+    };
+    xhr.ontimeout = () => {
+      console.error('[upload] Moderation upload request timed out after', xhr.timeout, 'ms');
+      const err = new Error('Upload request timed out');
+      err.isNetworkError = true;
+      fail(err);
+    };
+
     xhr.onreadystatechange = () => {
       if (xhr.readyState === XMLHttpRequest.DONE) {
+        if (xhr.status === 0) {
+          // Wait one tick so onerror/ontimeout/onabort can fire with the exact reason first.
+          setTimeout(() => {
+            if (settled) return;
+            const msg = (typeof navigator !== 'undefined' && navigator.onLine === false)
+              ? 'No internet connection — please check your network and try again'
+              : 'Network connection interrupted during upload';
+            const err = new Error(msg);
+            err.isNetworkError = true;
+            fail(err);
+          }, 0);
+          return;
+        }
         let data = {};
         try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { data = {}; }
         if (xhr.status >= 200 && xhr.status < 300) {
           if (data.ok === false) {
             const detail = moderationUploadErrorMessage(data, xhr.status);
             console.error('[upload] Moderation refused the video:', detail);
-            reject(new Error(detail));
+            fail(new Error(detail));
             return;
           }
           if (data.video_url) {
-            resolve({ secure_url: data.video_url, thumbnail_url: data.thumbnail_url || '' });
+            succeed({ secure_url: data.video_url, thumbnail_url: data.thumbnail_url || '' });
           } else {
             console.error('[upload] Moderation server returned no video URL:', JSON.stringify(data));
-            reject(new Error('Moderation server returned no video URL'));
+            fail(new Error('Moderation server returned no video URL'));
           }
         } else {
           const detail = moderationUploadErrorMessage(data, xhr.status);
           console.error('[upload] Moderation upload failed:', xhr.status, detail);
-          reject(new Error(detail));
+          fail(new Error(detail));
         }
       }
-    };
-
-    xhr.onerror = () => {
-      console.error('[upload] Network connection error during moderation upload');
-      reject(new Error('Network connection error during upload'));
-    };
-    xhr.ontimeout = () => {
-      console.error('[upload] Moderation upload request timed out after', xhr.timeout, 'ms');
-      reject(new Error('Upload request timed out'));
     };
 
     xhr.send(formData);
@@ -9190,89 +9226,346 @@ async function retryPendingPostUploads() {
   return done;
 }
 
-// Upload one video file to Cloudinary (a single attempt). Resolves
-// to the Cloudinary response ({secure_url, ...}). Rejects with an
-// Error whose `isNetworkError` is true when the connection broke
-// before Cloudinary could answer (status 0 / network error) —
-// that is the only failure worth retrying.
-function uploadVideoToCloudinary(file) {
+// Safely materialize a file slice into an in-memory Blob. On Android
+// WebView, Facebook in-app browser and mobile browsers, passing a raw
+// <input type="file"> File handle from a content:// URI directly into
+// XHR FormData frequently fails mid-transfer with net::ERR_UPLOAD_FILE_CHANGED
+// (xhr.status === 0). Reading the small slice into memory avoids that.
+const CLOUDINARY_CHUNK_SIZE = 6 * 1024 * 1024; // 6 MB (Cloudinary min chunk is 5 MB)
+async function readSliceAsBlob(file, start, end) {
+  const s = Math.max(0, start || 0);
+  const e = Math.min(file.size, end !== undefined ? end : file.size);
+  const slice = (s === 0 && e === file.size) ? file : file.slice(s, e);
+  if (slice && typeof slice.arrayBuffer === 'function') {
+    try {
+      const buf = await slice.arrayBuffer();
+      return new Blob([buf], { type: file.type || 'video/mp4' });
+    } catch (_) {}
+  }
+  return slice;
+}
+
+// Send one single-request or one Content-Range chunk to Cloudinary.
+// Handles xhr.status === 0 cleanly via onerror/ontimeout/onabort + a
+// microtask defer so "Upload failed with status 0" is never shown.
+function sendCloudinaryUploadRequest(blob, fileName, options) {
+  const opts = options || {};
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+    const succeed = (data) => {
+      if (settled) return;
+      settled = true;
+      resolve(data);
+    };
+
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', blob, fileName || 'video.mp4');
     formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', CLOUDINARY_UPLOAD_URL, true);
-    // A stalled upload must fail loudly instead of spinning forever:
-    // the ontimeout handler below only fires when this is set.
-    xhr.timeout = 600000; // 10 minutes
+    if (opts.uniqueUploadId && opts.contentRange) {
+      xhr.setRequestHeader('X-Unique-Upload-Id', opts.uniqueUploadId);
+      xhr.setRequestHeader('Content-Range', opts.contentRange);
+    }
+    xhr.timeout = opts.timeoutMs || 180000;
 
-    xhr.upload.addEventListener('progress', updateUploadBarFromEvent);
-
-    xhr.upload.addEventListener('load', () => {
-      // Bytes are on Cloudinary now; it is preparing the video.
-      updateUploadProgress(
-        85,
-        'Processing on Cloudinary (85%)…',
-        'Cloudinary is preparing your video…'
-      );
-    });
-
-    xhr.onreadystatechange = () => {
-      if (xhr.readyState === XMLHttpRequest.DONE) {
-        let data = {};
-        try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { data = {}; }
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(data);
-        } else {
-          // Cloudinary answers errors as {error: {message}}.
-          const cloudErr = cloudinaryUploadErrorMessage(data);
-          let detail = cloudErr || (data.reason ? `Flagged: ${data.reason}` : '');
-          if (!detail) detail = xhr.status === 413 ? 'Video file exceeds maximum size' : `Upload failed with status ${xhr.status}`;
-          console.error('[upload] Cloudinary upload failed:', xhr.status, detail);
-          const err = new Error(detail);
-          // Status 0 = no HTTP response at all: the connection broke
-          // after the bytes were sent (phone network dropped while
-          // waiting for Cloudinary's reply). That is a network
-          // failure, not a Cloudinary rejection, so it is safe to
-          // retry.
-          err.isNetworkError = (xhr.status === 0);
-          reject(err);
-        }
-      }
-    };
+    if (typeof opts.onProgress === 'function') {
+      xhr.upload.addEventListener('progress', opts.onProgress);
+    }
+    if (typeof opts.onTransferDone === 'function') {
+      xhr.upload.addEventListener('load', opts.onTransferDone);
+    }
 
     xhr.onerror = () => {
-      console.error('[upload] Network connection error during upload');
-      const err = new Error('Network connection error during upload');
+      console.error('[upload] Network connection error during Cloudinary upload');
+      const err = new Error(
+        (typeof navigator !== 'undefined' && navigator.onLine === false)
+          ? 'No internet connection — please check your network and try again'
+          : 'Network connection error during upload'
+      );
       err.isNetworkError = true;
-      reject(err);
+      fail(err);
+    };
+    xhr.onabort = () => {
+      const err = new Error('Upload connection was interrupted');
+      err.isNetworkError = true;
+      fail(err);
     };
     xhr.ontimeout = () => {
       console.error('[upload] Upload request timed out after', xhr.timeout, 'ms');
-      reject(new Error('Upload request timed out'));
+      const err = new Error('Upload request timed out');
+      err.isNetworkError = true;
+      fail(err);
+    };
+
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === XMLHttpRequest.DONE) {
+        if (xhr.status === 0) {
+          setTimeout(() => {
+            if (settled) return;
+            const err = new Error(
+              (typeof navigator !== 'undefined' && navigator.onLine === false)
+                ? 'No internet connection — please check your network and try again'
+                : 'Connection interrupted during upload'
+            );
+            err.isNetworkError = true;
+            fail(err);
+          }, 0);
+          return;
+        }
+        let data = {};
+        try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { data = {}; }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          succeed(data);
+        } else {
+          const cloudErr = cloudinaryUploadErrorMessage(data);
+          let detail = cloudErr || (data.reason ? `Flagged: ${data.reason}` : '');
+          if (!detail) detail = xhr.status === 413 ? 'Video file exceeds maximum size' : `Upload failed with HTTP status ${xhr.status}`;
+          console.error('[upload] Cloudinary upload failed:', xhr.status, detail);
+          const err = new Error(detail);
+          err.status = xhr.status;
+          err.isNetworkError = (xhr.status >= 500 || xhr.status === 408 || xhr.status === 429);
+          fail(err);
+        }
+      }
     };
 
     xhr.send(formData);
   });
 }
-// Retry a Cloudinary upload when the connection breaks (status 0 /
-// network error). A real Cloudinary answer (400/413/…) is final and
-// is not retried. Up to 3 attempts, 2 seconds apart.
+
+// Upload one video file to Cloudinary. Uses chunked upload (6 MB slices)
+// whenever file.size > 6 MB so shaky mobile/Facebook-WebView networks
+// and large videos only retry individual chunks instead of dropping
+// with status 0 from 0%.
 async function uploadVideoToCloudinaryWithRetry(file) {
-  const maxAttempts = 3;
-  let lastErr = null;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await uploadVideoToCloudinary(file);
-    } catch (err) {
-      lastErr = err;
-      if (!err.isNetworkError || attempt === maxAttempts) throw err;
-      console.warn('[upload] Connection dropped during upload, retrying (attempt ' + (attempt + 1) + ' of ' + maxAttempts + ')…');
-      updateUploadProgress(0, 'Connection dropped — retrying upload…', 'Attempt ' + (attempt + 1) + ' of ' + maxAttempts);
-      await new Promise(r => setTimeout(r, 2000));
+  const totalSize = Number(file.size) || 0;
+  const fileName = file.name || 'video.mp4';
+  const maxChunkAttempts = 3;
+
+  // Small video (<= 6 MB): single request from materialized Blob + retry
+  if (totalSize <= CLOUDINARY_CHUNK_SIZE) {
+    let lastErr = null;
+    for (let attempt = 1; attempt <= maxChunkAttempts; attempt++) {
+      try {
+        const blob = await readSliceAsBlob(file, 0, totalSize);
+        return await sendCloudinaryUploadRequest(blob, fileName, {
+          timeoutMs: 240000,
+          onProgress: updateUploadBarFromEvent,
+          onTransferDone: () => {
+            updateUploadProgress(85, 'Processing on Cloudinary (85%)…', 'Cloudinary is preparing your video…');
+          }
+        });
+      } catch (err) {
+        lastErr = err;
+        if (!err.isNetworkError || attempt === maxChunkAttempts) throw err;
+        console.warn('[upload] Connection dropped during upload, retrying (attempt ' + (attempt + 1) + ' of ' + maxChunkAttempts + ')…');
+        updateUploadProgress(5, 'Connection dropped — retrying upload…', 'Attempt ' + (attempt + 1) + ' of ' + maxChunkAttempts);
+        await new Promise(r => setTimeout(r, 1500 * attempt));
+      }
     }
+    throw lastErr;
   }
-  throw lastErr;
+
+  // Larger video (> 6 MB): chunked upload with per-chunk retry
+  const uniqueUploadId = 'rf_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+  const totalChunks = Math.ceil(totalSize / CLOUDINARY_CHUNK_SIZE);
+  let finalResponse = null;
+
+  for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+    const start = chunkIdx * CLOUDINARY_CHUNK_SIZE;
+    const end = Math.min(totalSize, start + CLOUDINARY_CHUNK_SIZE);
+    const contentRange = `bytes ${start}-${end - 1}/${totalSize}`;
+    const chunkBlob = await readSliceAsBlob(file, start, end);
+
+    let chunkErr = null;
+    let chunkResult = null;
+    for (let attempt = 1; attempt <= maxChunkAttempts; attempt++) {
+      try {
+        chunkResult = await sendCloudinaryUploadRequest(chunkBlob, fileName, {
+          uniqueUploadId,
+          contentRange,
+          timeoutMs: 180000,
+          onProgress: (e) => {
+            if (e.lengthComputable && e.total > 0) {
+              const overallLoaded = start + Math.min(e.loaded, end - start);
+              const ratio = overallLoaded / totalSize;
+              const currentPct = Math.min(78, Math.max(8, Math.round(8 + ratio * 70)));
+              const mbUp = (overallLoaded / (1024 * 1024)).toFixed(1);
+              const mbTot = (totalSize / (1024 * 1024)).toFixed(1);
+              updateUploadProgress(
+                currentPct,
+                `Uploading video (${currentPct}%)…`,
+                `${mbUp} MB of ${mbTot} MB transferred (part ${chunkIdx + 1}/${totalChunks})`
+              );
+            }
+          }
+        });
+        chunkErr = null;
+        break;
+      } catch (err) {
+        chunkErr = err;
+        if (!err.isNetworkError || attempt === maxChunkAttempts) throw err;
+        console.warn(`[upload] Chunk ${chunkIdx + 1}/${totalChunks} dropped, retrying (attempt ${attempt + 1}/${maxChunkAttempts})…`);
+        updateUploadProgress(
+          Math.max(8, Math.round(8 + (start / totalSize) * 70)),
+          'Reconnecting upload…',
+          `Retrying part ${chunkIdx + 1} of ${totalChunks} (attempt ${attempt + 1}/${maxChunkAttempts})`
+        );
+        await new Promise(r => setTimeout(r, 1500 * attempt));
+      }
+    }
+    if (chunkErr) throw chunkErr;
+    finalResponse = chunkResult;
+  }
+
+  updateUploadProgress(85, 'Processing on Cloudinary (85%)…', 'Cloudinary is finalizing your video…');
+  return finalResponse || {};
+}
+
+// Tier 2 fallback: same-origin Express /api/upload-video when available
+// (skipped on Capacitor localhost/file origins or files > 95 MB).
+function uploadVideoViaBackendApi(file, caption, hashtags) {
+  return new Promise(async (resolve, reject) => {
+    const isNativeOrigin = !window.location || window.location.protocol === 'capacitor:' || window.location.protocol === 'file:'
+      || (window.location.hostname === 'localhost' && !window.location.port);
+    if (isNativeOrigin) {
+      const err = new Error('Backend upload endpoint unavailable in native shell');
+      err.isUnavailable = true;
+      reject(err);
+      return;
+    }
+    if (file.size > 95 * 1024 * 1024) {
+      const err = new Error('Video exceeds 95 MB backend fallback limit');
+      err.isUnavailable = true;
+      reject(err);
+      return;
+    }
+    let settled = false;
+    const fail = (err) => { if (!settled) { settled = true; reject(err); } };
+    const succeed = (data) => { if (!settled) { settled = true; resolve(data); } };
+    try {
+      const blob = await readSliceAsBlob(file, 0, file.size);
+      const formData = new FormData();
+      formData.append('video', blob, file.name || 'video.mp4');
+      formData.append('caption', caption || '');
+      formData.append('hashtags', Array.isArray(hashtags) ? hashtags.join(' ') : String(hashtags || ''));
+      if (currentAuthUser && currentAuthUser.id) formData.append('user_id', currentAuthUser.id);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload-video', true);
+      xhr.timeout = 300000;
+      xhr.upload.addEventListener('progress', updateUploadBarFromEvent);
+      xhr.upload.addEventListener('load', () => {
+        updateUploadProgress(85, 'Processing upload (85%)…', 'Finalizing on server…');
+      });
+      xhr.onerror = () => {
+        const err = new Error('Backend upload network error');
+        err.isNetworkError = true;
+        fail(err);
+      };
+      xhr.ontimeout = () => {
+        const err = new Error('Backend upload timed out');
+        err.isNetworkError = true;
+        fail(err);
+      };
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === XMLHttpRequest.DONE) {
+          if (xhr.status === 0) {
+            setTimeout(() => {
+              if (!settled) {
+                const err = new Error('Backend upload connection failed');
+                err.isNetworkError = true;
+                fail(err);
+              }
+            }, 0);
+            return;
+          }
+          let data = {};
+          try { data = JSON.parse(xhr.responseText || '{}'); } catch (_) { data = {}; }
+          if (xhr.status >= 200 && xhr.status < 300 && data && data.video_url && !data.local_fallback) {
+            succeed(data);
+          } else if (data && (data.rejected || data.approved === false)) {
+            const rejErr = new Error(data.error || data.reason || 'Video rejected: Inappropriate content detected.');
+            rejErr.isModerationRejection = true;
+            fail(rejErr);
+          } else {
+            const err = new Error((data && data.error) || ('Backend upload returned status ' + xhr.status));
+            err.isUnavailable = (xhr.status === 404 || xhr.status === 405 || xhr.status === 413);
+            fail(err);
+          }
+        }
+      };
+      xhr.send(formData);
+    } catch (e) {
+      fail(e);
+    }
+  });
+}
+
+// Tier 3 fallback: direct authenticated upload to Supabase Storage
+// (works from any WebView/APK/Facebook in-app browser when Cloudinary
+// is blocked or dropped on mobile carrier networks).
+async function uploadVideoViaSupabaseStorage(file) {
+  if (!supabaseClient || !currentAuthUser) {
+    throw new Error('Please sign in to use cloud storage backup upload');
+  }
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  const token = sessionData && sessionData.session && sessionData.session.access_token;
+  if (!token) throw new Error('Session expired — please sign in again');
+
+  const rawName = String(file.name || 'video.mp4');
+  const extMatch = rawName.match(/\.[a-z0-9]{1,8}$/i);
+  const ext = extMatch ? extMatch[0].toLowerCase() : '.mp4';
+  const fileId = 'vid_' + currentAuthUser.id + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  const storagePath = `videos/${fileId}${ext}`;
+  const contentType = file.type || 'video/mp4';
+  const blob = await readSliceAsBlob(file, 0, file.size);
+
+  const uploadUrl = `${supabaseConfig.url}/storage/v1/object/avatars/${storagePath}`;
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (err) => { if (!settled) { settled = true; reject(err); } };
+    const succeed = () => { if (!settled) { settled = true; resolve(); } };
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', uploadUrl, true);
+    xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+    xhr.setRequestHeader('apikey', supabaseConfig.anonKey);
+    xhr.setRequestHeader('Content-Type', contentType);
+    xhr.setRequestHeader('x-upsert', 'true');
+    xhr.timeout = 300000;
+
+    xhr.upload.addEventListener('progress', updateUploadBarFromEvent);
+    xhr.onerror = () => fail(new Error('Cloud storage network error'));
+    xhr.ontimeout = () => fail(new Error('Cloud storage upload timed out'));
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === XMLHttpRequest.DONE) {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          succeed();
+        } else {
+          setTimeout(() => {
+            if (settled) return;
+            let errMsg = '';
+            try {
+              const parsed = JSON.parse(xhr.responseText || '{}');
+              errMsg = parsed.message || parsed.error || '';
+            } catch (_) {}
+            fail(new Error(errMsg || (xhr.status === 0 ? 'Network connection error during backup upload' : `Backup upload failed (${xhr.status})`)));
+          }, 0);
+        }
+      }
+    };
+    xhr.send(blob);
+  });
+
+  const { data: pubData } = supabaseClient.storage.from('avatars').getPublicUrl(storagePath);
+  const publicUrl = pubData && pubData.publicUrl ? pubData.publicUrl : `${supabaseConfig.url}/storage/v1/object/public/avatars/${storagePath}`;
+  return { secure_url: publicUrl, thumbnail_url: '' };
 }
 
 async function submitUpload() {
@@ -9280,6 +9573,10 @@ async function submitUpload() {
   const file = document.getElementById('fileInput').files[0];
   if (!file) {
     showToast('Please select a video file first');
+    return;
+  }
+  if (!file.size) {
+    showToast('Selected video file appears empty or unreadable — please choose another file');
     return;
   }
 
@@ -9308,16 +9605,34 @@ async function submitUpload() {
   updateUploadProgress(5, 'Starting upload (5%)…', 'Preparing video stream…');
 
   try {
-    // 1. Get the video onto Cloudinary. When the moderation endpoint is
-    // configured (MODERATION_UPLOAD_URL), the file goes there first --
-    // it checks the frames, then forwards the SAME file to Cloudinary
-    // with the unsigned preset. Otherwise the old direct upload runs.
-    // Either way the result is a Cloudinary-shaped {secure_url,
-    // thumbnail_url}, so everything below runs unchanged. A video the
-    // moderator refuses (403) or cannot check (503) is never published.
-    const resData = MODERATION_UPLOAD_URL
-      ? await uploadViaModeration(file, caption)
-      : await uploadVideoToCloudinaryWithRetry(file);
+    // 1. Get the video onto Cloudinary (with chunked transfer + per-chunk
+    // retry), or when a network/WebView block hits Cloudinary, fall back
+    // seamlessly to /api/upload-video and then direct Supabase Storage.
+    // If MODERATION_UPLOAD_URL is configured, fail closed through moderation.
+    let resData = null;
+    if (MODERATION_UPLOAD_URL) {
+      resData = await uploadViaModeration(file, caption);
+    } else {
+      try {
+        resData = await uploadVideoToCloudinaryWithRetry(file);
+      } catch (cloudErr) {
+        if (!cloudErr || !cloudErr.isNetworkError) throw cloudErr;
+        console.warn('[upload] Direct Cloudinary failed with network error, trying fallback:', cloudErr.message);
+        updateUploadProgress(10, 'Switching upload route…', 'Retrying via backup server…');
+        try {
+          resData = await uploadVideoViaBackendApi(file, caption, hashtags);
+        } catch (backendErr) {
+          if (backendErr && backendErr.isModerationRejection) throw backendErr;
+          console.warn('[upload] Backend upload fallback unavailable/failed, trying cloud storage:', backendErr && backendErr.message);
+          if (supabaseClient && currentAuthUser) {
+            updateUploadProgress(10, 'Switching to cloud backup…', 'Uploading via secure backup storage…');
+            resData = await uploadVideoViaSupabaseStorage(file);
+          } else {
+            throw cloudErr;
+          }
+        }
+      }
+    }
 
     // Check if video was rejected by AI content moderation (18+ or inappropriate)
     if (resData.approved === false || resData.rejected) {

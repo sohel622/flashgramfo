@@ -251,7 +251,17 @@ const upload = multer({
 });
 
 // Video Upload endpoint with Cloudinary AWS Rekognition AI Moderation and Supabase cloud fallback
-app.post('/api/upload-video', upload.single('video'), async (req, res) => {
+app.post('/api/upload-video', (req, res, next) => {
+  upload.single('video')(req, res, (err) => {
+    if (err) {
+      const msg = err.code === 'LIMIT_FILE_SIZE'
+        ? 'Video file exceeds 100 MB upload limit.'
+        : (err.message || 'Upload parsing error');
+      return res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: msg });
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No video file provided' });
