@@ -471,7 +471,12 @@
     .home-post-act.liked svg { fill: #ff3040; }
     .home-post-act.save.saved svg { fill: #111; }
     .home-post-act.save { margin-left: auto; }
-    .home-post-likes { font-size: 14px; font-weight: 700; color: #111; padding: 2px 12px 0; }
+    .home-post-likes {
+      font-size: 14px; font-weight: 700; color: #111; padding: 2px 12px 0;
+      cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+      display: inline-block;
+    }
+    .home-post-likes:active { opacity: 0.6; }
     .home-post-caption { font-size: 14px; line-height: 1.4; color: #111; padding: 3px 12px 0; word-wrap: break-word; }
     .home-post-caption b { font-weight: 700; margin-right: 5px; }
     .home-post-comments {
@@ -2270,20 +2275,21 @@
       padding: 0 16px 16px;
     }
 
-    /* ── MODALS (Upload, Share, Comments, Edit Profile) ── */
-    #upload-modal, #share-modal, #comments-modal, #edit-profile-modal, #more-modal, #admin-ban-modal, #notif-modal {
+    /* ── MODALS (Upload, Share, Comments, Likes, Edit Profile) ── */
+    #upload-modal, #share-modal, #comments-modal, #likes-modal, #edit-profile-modal, #more-modal, #admin-ban-modal, #notif-modal {
       position: fixed;
       inset: 0;
       z-index: 200;
       display: flex;
       align-items: flex-end;
+      justify-content: center;
       background: rgba(0,0,0,0.7);
       backdrop-filter: blur(4px);
       opacity: 0;
       pointer-events: none;
       transition: opacity .22s;
     }
-    #upload-modal.open, #share-modal.open, #comments-modal.open, #edit-profile-modal.open, #more-modal.open, #admin-ban-modal.open, #notif-modal.open {
+    #upload-modal.open, #share-modal.open, #comments-modal.open, #likes-modal.open, #edit-profile-modal.open, #more-modal.open, #admin-ban-modal.open, #notif-modal.open {
       opacity: 1;
       pointer-events: auto;
     }
@@ -2717,8 +2723,8 @@
       100% { background-position: 200% 50%; }
     }
 
-    /* Comments Sheet */
-    .comments-sheet {
+    /* Comments & Likes Bottom Sheets */
+    .comments-sheet, .likes-sheet {
       width: 100%;
       height: 64vh;
       background: var(--bg3);
@@ -2729,14 +2735,25 @@
       transition: transform .28s cubic-bezier(.4,0,.2,1);
       overflow: hidden;
     }
-    .open .comments-sheet { transform: translateY(0); }
-    .comments-header {
+    .likes-sheet {
+      height: 56vh;
+      max-height: 75vh;
+    }
+    @media (min-width: 600px) {
+      .likes-sheet {
+        max-width: 480px;
+        box-shadow: 0 0 50px rgba(0,0,0,0.85);
+      }
+    }
+    .open .comments-sheet, .open .likes-sheet { transform: translateY(0); }
+    .comments-header, .likes-header {
       padding: 14px 20px 10px;
       font-weight: 700;
       font-size: 15px;
       border-bottom: 1px solid rgba(255,255,255,0.08);
       text-align: center;
       position: relative;
+      flex-shrink: 0;
     }
     .cm-close {
       position: absolute;
@@ -2747,13 +2764,72 @@
       color: #fff;
       cursor: pointer;
     }
-    .comments-list {
+    .comments-list, .likes-list {
       flex: 1;
       overflow-y: auto;
       padding: 14px 16px;
       display: flex;
       flex-direction: column;
       gap: 14px;
+    }
+    .likes-list {
+      gap: 4px;
+      padding: 8px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+    }
+    .likes-user-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 2px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .likes-user-row:last-child { border-bottom: none; }
+    .likes-user-meta {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .likes-user-name-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      min-width: 0;
+    }
+    .likes-user-display {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .likes-user-handle {
+      font-size: 12.5px;
+      color: var(--fg2);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .likes-you-pill {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--fg2);
+      background: rgba(255,255,255,0.08);
+      padding: 3px 9px;
+      border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .likes-state-box {
+      padding: 36px 16px;
+      text-align: center;
+      color: var(--fg2);
+      font-size: 13.5px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
     }
     .comment-item { display: flex; gap: 10px; align-items: flex-start; }
     .comment-avatar {
@@ -3153,6 +3229,18 @@
       <input class="comment-input" id="commentInput" placeholder="Add a comment…" onkeydown="if(event.key==='Enter')postComment()">
       <button class="comment-send" onclick="postComment()"><span class="material-symbols-rounded">send</span></button>
     </div>
+  </div>
+</div>
+
+<!-- LIKES LIST MODAL (Home feed) -->
+<div id="likes-modal" onclick="closeOnBackdrop(event,'likes-modal')">
+  <div class="likes-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle" style="margin:10px auto 0;flex-shrink:0;"></div>
+    <div class="likes-header">
+      <span id="likesModalTitle">Likes</span>
+      <button class="cm-close" onclick="closeFeedModal('likes-modal')" aria-label="Close likes list"><span class="material-symbols-rounded">close</span></button>
+    </div>
+    <div class="likes-list" id="likesModalList"></div>
   </div>
 </div>
 
@@ -11327,7 +11415,7 @@ function homePostCardHTML(v, idx) {
     + '<button class="home-post-act" onclick="openShare(\'' + escapeHtml(String(v.id)) + '\')" title="Share">' + lucideIcon('send', 26) + '</button>'
     + '<button class="home-post-act save' + (isSaved ? ' saved' : '') + '" id="hsave-' + escapeHtml(String(v.id)) + '" onclick="toggleHomeSave(\'' + escapeHtml(String(v.id)) + '\')" title="Save">' + lucideIcon('bookmark', 26) + '</button>'
     + '</div>'
-    + '<div class="home-post-likes" id="hlc-' + escapeHtml(String(v.id)) + '">' + homeLikesText(v) + '</div>'
+    + '<div class="home-post-likes" id="hlc-' + escapeHtml(String(v.id)) + '" data-post-id="' + escapeHtml(String(v.id)) + '" onclick="openLikesList(this.getAttribute(\'data-post-id\'))" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openLikesList(this.getAttribute(\'data-post-id\'));}" role="button" tabindex="0">' + homeLikesText(v) + '</div>'
     + caption
     + commentsLink
     + '</article>';
@@ -11593,6 +11681,142 @@ async function toggleHomeLike(btn, id, idx) {
   await syncLikeToSupabase(v, isLiked, btn);
 }
 
+let activeLikesRequestId = 0;
+async function openLikesList(postId) {
+  if (!postId) return;
+  const modal = document.getElementById('likes-modal');
+  const titleEl = document.getElementById('likesModalTitle');
+  const listEl = document.getElementById('likesModalList');
+  if (!modal || !listEl) return;
+
+  const reqId = ++activeLikesRequestId;
+  const v = videos.find(x => x && String(x.id) === String(postId));
+  const initialCount = v ? (v.likes || 0) : 0;
+  if (titleEl) titleEl.textContent = initialCount > 0 ? `Likes (${fmtN(initialCount)})` : 'Likes';
+  listEl.innerHTML = '<div class="likes-state-box"><span class="loading-ring-sm"></span><span>Loading likes…</span></div>';
+  modal.classList.add('open');
+
+  try {
+    let likerRows = [];
+    if (supabaseClient && isSupabasePostId(postId)) {
+      if (supabaseClient.isLocalAdapter) {
+        const res = await supabaseClient.from('likes').select('post_id, user_id, created_at');
+        const all = Array.isArray(res && res.data) ? res.data : [];
+        likerRows = all
+          .filter(r => String(r.post_id) === String(postId))
+          .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+      } else {
+        const { data, error } = await supabaseClient
+          .from('likes')
+          .select('user_id, created_at')
+          .eq('post_id', String(postId))
+          .order('created_at', { ascending: false })
+          .limit(200);
+        if (error) throw new Error(error.message);
+        likerRows = Array.isArray(data) ? data : [];
+      }
+    } else if (v && v.liked && ((currentAuthUser && currentAuthUser.id) || profile.id)) {
+      likerRows = [{ user_id: (currentAuthUser && currentAuthUser.id) || profile.id, created_at: new Date().toISOString() }];
+    }
+
+    if (reqId !== activeLikesRequestId) return;
+
+    // Deduplicate user IDs while keeping most recent like first.
+    const seen = new Set();
+    const userIds = [];
+    likerRows.forEach(r => {
+      if (!r || !r.user_id) return;
+      const uid = String(r.user_id);
+      const key = uid.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      userIds.push(uid);
+    });
+
+    // Keep post like count in sync with the live DB rows if < 200.
+    if (v && supabaseClient && isSupabasePostId(postId) && likerRows.length < 200) {
+      v.likes = userIds.length;
+      const hlc = document.getElementById('hlc-' + v.id);
+      if (hlc) hlc.textContent = homeLikesText(v);
+      const lc = document.getElementById('lc-' + v.id);
+      if (lc) lc.textContent = fmtC(v.likes);
+    }
+
+    if (titleEl) {
+      const displayTotal = v ? Math.max(v.likes || 0, userIds.length) : userIds.length;
+      titleEl.textContent = displayTotal > 0 ? `Likes (${fmtN(displayTotal)})` : 'Likes';
+    }
+
+    if (userIds.length === 0) {
+      listEl.innerHTML = '<div class="likes-state-box">No likes yet.<br>Be the first to like this video!</div>';
+      return;
+    }
+
+    // Fetch fresh profile records (avatars, usernames, display names) for all likers.
+    const profileByUid = {};
+    if (supabaseClient) {
+      if (supabaseClient.isLocalAdapter) {
+        await loadAuthorProfiles(userIds);
+      } else {
+        const { data: profData, error: profErr } = await supabaseClient
+          .from('profiles')
+          .select('user_id, username, display_name, full_name, avatar_url, is_verified, profile_color')
+          .in('user_id', userIds);
+        if (!profErr && Array.isArray(profData)) {
+          profData.forEach(p => {
+            if (!p || !p.user_id) return;
+            const uidLower = String(p.user_id).toLowerCase();
+            const entry = {
+              user_id: uidLower,
+              username: (p.username || '').replace(/^@/, ''),
+              display_name: p.display_name || p.full_name || '',
+              full_name: p.full_name || '',
+              avatar_url: p.avatar_url || '',
+              is_verified: p.is_verified === true,
+              profile_color: normalizeProfileColor(p.profile_color),
+            };
+            profileByUid[uidLower] = entry;
+            authorProfiles.set(uidLower, entry);
+            cacheVerified(uidLower, entry.is_verified);
+          });
+        }
+      }
+    }
+
+    if (reqId !== activeLikesRequestId) return;
+
+    const myUidLower = currentAuthUser && currentAuthUser.id
+      ? String(currentAuthUser.id).toLowerCase()
+      : (profile && profile.id ? String(profile.id).toLowerCase() : '');
+
+    listEl.innerHTML = userIds.map(uid => {
+      const uidLower = uid.toLowerCase();
+      const isMe = !!(myUidLower && uidLower === myUidLower);
+      const prof = profileByUid[uidLower] || authorProfileFor(uid) || null;
+      const username = ((prof && prof.username) || (isMe ? (profile.handle || '') : '') || authorFallbackHandle(uid)).replace(/^@/, '');
+      const displayName = (prof && (prof.display_name || prof.full_name))
+        || (isMe ? (profile.name || '') : '')
+        || username;
+      const avatarUrl = (prof && prof.avatar_url) || (isMe ? (profile.avatar_url || '') : '') || avatarUrlForUserId(uid, username);
+      const verified = verifiedBadgeSlotHTML(uid, isUserVerified(uid) || isHandleVerified(username), username);
+
+      return '<div class="likes-user-row">'
+        + avatarHTML(uid, displayName, avatarUrl, 40)
+        + '<div class="likes-user-meta">'
+        + '<div class="likes-user-name-row"><span class="likes-user-display">' + escapeHtml(String(displayName)) + '</span>' + verified + '</div>'
+        + '<div class="likes-user-handle">@' + escapeHtml(String(username)) + '</div>'
+        + '</div>'
+        + (isMe ? '<span class="likes-you-pill">You</span>' : '')
+        + '</div>';
+    }).join('');
+    hydrateAvatars(listEl);
+  } catch (err) {
+    if (reqId !== activeLikesRequestId) return;
+    console.warn('openLikesList error:', err);
+    listEl.innerHTML = '<div class="likes-state-box"><span>Could not load likes list.</span><button class="copy-btn" onclick="openLikesList(\'' + escapeHtml(String(postId)) + '\')">Retry</button></div>';
+  }
+}
+
 async function toggleHomeSave(id) {
   await toggleSave(id);
   const on = (profile.saved || []).includes(id);
@@ -11794,7 +12018,7 @@ function closeOnBackdrop(e, id) {
   if (e.target.id === id) {
     document.getElementById(id).classList.remove('open');
     if (id === 'upload-modal') pauseUploadPreview();
-    if (['chat-modal', 'comments-modal', 'share-modal', 'more-modal', 'upload-modal'].indexOf(id) !== -1) resumeActiveFeedVideo();
+    if (['chat-modal', 'comments-modal', 'likes-modal', 'share-modal', 'more-modal', 'upload-modal'].indexOf(id) !== -1) resumeActiveFeedVideo();
   }
 }
 
