@@ -371,11 +371,6 @@
       background: #000;
       overflow: hidden;
       cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .home-post-media.has-aspect {
       display: block;
     }
     .home-post-media video {
@@ -386,10 +381,6 @@
       object-fit: contain;
       display: block;
       background: #000;
-    }
-    .home-post-media.has-aspect video {
-      width: 100%;
-      height: auto;
     }
     /* Loading spinner (shown until the first frame can play). */
     .home-video-spinner {
@@ -11667,6 +11658,7 @@ function homePostCardHTML(v, idx) {
   const isSaved = (profile.saved || []).includes(v.id);
   const src = bestVideoSrc(v) || '';
   const poster = videoPosterFor(v) || '';
+  const cachedAspect = homeMediaAspectCache[String(v.id)] || (v && v.width && v.height ? `${v.width} / ${v.height}` : '');
   return '<article class="home-post" data-home-post-id="' + escapeHtml(String(v.id)) + '">'
     + '<div class="home-post-head" data-author-uid="' + escapeHtml(String(v.user_id || '')) + '">'
     + avatarHTML(v.user_id, displayName, authorAvatarUrl, 36)
@@ -11674,7 +11666,7 @@ function homePostCardHTML(v, idx) {
     + (time ? '<span class="home-post-time">' + escapeHtml(time) + '</span>' : '')
     + '<button class="home-post-more" onclick="openInFeed(' + idx + ')" title="Open in Reels">' + lucideIcon('more-horizontal', 20) + '</button>'
     + '</div>'
-    + '<div class="home-post-media" onclick="toggleHomeVideo(this)">'
+    + '<div class="home-post-media"' + (cachedAspect ? ' style="aspect-ratio:' + escapeHtml(cachedAspect) + '"' : '') + ' onclick="toggleHomeVideo(this)">'
     + '<video data-post-id="' + escapeHtml(String(v.id)) + '" src="' + escapeHtml(src) + '" poster="' + escapeHtml(poster) + '" muted loop playsinline preload="metadata"></video>'
     + '<span class="home-video-spinner"><span class="home-spinner-ring"></span></span>'
     + '<span class="home-post-play">' + lucideIcon('play', 56, true) + '</span>'
@@ -11728,6 +11720,7 @@ function renderHomeFeed() {
 let homeVideoObserver = null;
 let currentHomeVideo = null;
 let homePostsRefreshAt = 0;
+const homeMediaAspectCache = {};
 
 function ensureHomeVideoObserver() {
   if (homeVideoObserver) return homeVideoObserver;
@@ -11838,16 +11831,36 @@ function setupHomeVideo(mediaEl) {
   const v = postId ? videos.find(x => String(x.id) === String(postId)) : null;
   const spinner = () => mediaEl.querySelector('.home-video-spinner');
   const setSpinner = (on) => { const s = spinner(); if (s) s.style.display = on ? 'flex' : 'none'; };
-  // Dynamically adapt the Home post container to each video's natural
-  // aspect ratio (portrait, square, and landscape keep their natural
-  // dimensions) with object-fit: contain on a black background.
-  const applyHomeMediaAspect = () => {
-    const w = vid.videoWidth;
-    const h = vid.videoHeight;
+  // Keep the Home post container's aspect ratio locked to the media's
+  // natural dimensions across loading/thumbnail and playback states so
+  // there is no layout jump when the video starts playing.
+  const applyHomeMediaAspect = (w, h, fromVideo) => {
     if (!w || !h) return;
-    mediaEl.style.aspectRatio = `${w} / ${h}`;
-    mediaEl.classList.add('has-aspect');
+    if (!fromVideo && mediaEl.dataset.videoAspect) return;
+    const ratio = w / h;
+    const prev = parseFloat(mediaEl.dataset.appliedRatio || '0');
+    if (fromVideo) mediaEl.dataset.videoAspect = '1';
+    if (prev && Math.abs(ratio - prev) < 0.005) return;
+    const aspectStr = `${w} / ${h}`;
+    mediaEl.dataset.appliedRatio = String(ratio);
+    mediaEl.style.aspectRatio = aspectStr;
+    if (postId) homeMediaAspectCache[String(postId)] = aspectStr;
   };
+  const applyVideoAspect = () => applyHomeMediaAspect(vid.videoWidth, vid.videoHeight, true);
+  const posterUrl = vid.getAttribute('poster') || '';
+  if (posterUrl && typeof Image !== 'undefined' && !(vid.videoWidth && vid.videoHeight) && !mediaEl.style.aspectRatio) {
+    const posterProbe = new Image();
+    const applyPosterAspect = () => {
+      if (posterProbe.naturalWidth && posterProbe.naturalHeight) {
+        applyHomeMediaAspect(posterProbe.naturalWidth, posterProbe.naturalHeight, false);
+      }
+    };
+    posterProbe.onload = applyPosterAspect;
+    posterProbe.src = posterUrl;
+    if (posterProbe.complete && posterProbe.naturalWidth && posterProbe.naturalHeight) {
+      applyPosterAspect();
+    }
+  }
   const durBadge = mediaEl.querySelector('.home-post-duration');
   let durHideTimer = null;
   let pendingDurReveal = false;
@@ -11872,23 +11885,19 @@ function setupHomeVideo(mediaEl) {
       durBadge.classList.remove('show');
     }, 2000);
   };
-  if (vid.videoWidth && vid.videoHeight) applyHomeMediaAspect();
-  // The aspect ratio is set ONLY here, synchronously at setup (before
-  // first paint), when the metadata is already available. It is NOT
-  // re-applied on loadedmetadata / loadeddata / resize / canplay:
-  // changing the container's aspect ratio after the card is already
-  // displayed resizes the box and shifts the whole feed — the layout
-  // jump. The container keeps its first ratio from loading through
-  // playback, and the video (absolutely positioned, inset: 0) always
-  // fills it exactly, so the poster matches the video size.
+  if (vid.videoWidth && vid.videoHeight) applyVideoAspect();
   vid.addEventListener('loadedmetadata', () => {
+    applyVideoAspect();
     if (pendingDurReveal && !vid.paused) showHomeDurationBadge();
   });
+  vid.addEventListener('loadeddata', applyVideoAspect);
+  vid.addEventListener('resize', applyVideoAspect);
   vid.addEventListener('durationchange', () => {
     if (pendingDurReveal && !vid.paused) showHomeDurationBadge();
   });
   // First frame ready: hide the spinner.
   vid.addEventListener('canplay', () => {
+    applyVideoAspect();
     setSpinner(false);
   });
   // Actually playing: hide the spinner and the play icon. (canplay
@@ -11896,6 +11905,7 @@ function setupHomeVideo(mediaEl) {
   // and a video that started before this listener attached would
   // leave the spinner stuck on.)
   vid.addEventListener('playing', () => {
+    applyVideoAspect();
     setSpinner(false);
     updateHomePlayIcon(mediaEl);
     showHomeDurationBadge();
