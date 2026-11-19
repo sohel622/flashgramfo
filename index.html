@@ -368,17 +368,26 @@
       position: relative;
       width: 100%;
       aspect-ratio: 4 / 5;
-      max-height: 85vh;
       background: #000;
       overflow: hidden;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .home-post-media.has-aspect {
+      display: block;
     }
     .home-post-media video {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       display: block;
       background: #000;
+    }
+    .home-post-media.has-aspect video {
+      width: 100%;
+      height: auto;
     }
     /* Loading spinner (shown until the first frame can play). */
     .home-video-spinner {
@@ -444,6 +453,30 @@
       padding: 0;
     }
     .home-post-sound svg { width: 20px; height: 20px; }
+    /* Top-right video duration badge (shows on play, fades out after 2s). */
+    .home-post-duration {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.65);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.02em;
+      line-height: 1.2;
+      pointer-events: none;
+      z-index: 3;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.25s ease, visibility 0.25s ease;
+    }
+    .home-post-duration.show {
+      opacity: 1;
+      visibility: visible;
+    }
     .home-post-play {
       position: absolute;
       inset: 0;
@@ -11644,6 +11677,7 @@ function homePostCardHTML(v, idx) {
     + '<span class="home-video-spinner"><span class="home-spinner-ring"></span></span>'
     + '<span class="home-post-play">' + lucideIcon('play', 56, true) + '</span>'
     + '<div class="home-video-error" style="display:none"><span>Video couldn&rsquo;t load.</span><button onclick="retryHomeVideo(event, this)">Retry</button></div>'
+    + '<span class="home-post-duration"></span>'
     + '<button class="home-post-sound" onclick="toggleHomeSound(event, this)" title="Sound">' + lucideIcon('volume-x', 20) + '</button>'
     + '</div>'
     + '<div class="home-post-actions">'
@@ -11802,16 +11836,65 @@ function setupHomeVideo(mediaEl) {
   const v = postId ? videos.find(x => String(x.id) === String(postId)) : null;
   const spinner = () => mediaEl.querySelector('.home-video-spinner');
   const setSpinner = (on) => { const s = spinner(); if (s) s.style.display = on ? 'flex' : 'none'; };
-  // The container stays a fixed 4:5 Instagram-style box (the video
-  // covers it, object-fit: cover in CSS) — the true ratio is NOT
-  // applied here, so there are no tall/wide boxes or black bars.
+  // Dynamically adapt the Home post container to each video's natural
+  // aspect ratio (portrait, square, and landscape keep their natural
+  // dimensions) with object-fit: contain on a black background.
+  const applyHomeMediaAspect = () => {
+    const w = vid.videoWidth;
+    const h = vid.videoHeight;
+    if (!w || !h) return;
+    mediaEl.style.aspectRatio = `${w} / ${h}`;
+    mediaEl.classList.add('has-aspect');
+  };
+  const durBadge = mediaEl.querySelector('.home-post-duration');
+  let durHideTimer = null;
+  let pendingDurReveal = false;
+  const hideHomeDurationBadge = () => {
+    clearTimeout(durHideTimer);
+    durHideTimer = null;
+    if (durBadge) durBadge.classList.remove('show');
+  };
+  const showHomeDurationBadge = () => {
+    if (!durBadge) return;
+    const dur = vid.duration;
+    if (!dur || !isFinite(dur) || dur <= 0) {
+      pendingDurReveal = true;
+      return;
+    }
+    pendingDurReveal = false;
+    durBadge.textContent = fmtTime(dur);
+    durBadge.classList.add('show');
+    clearTimeout(durHideTimer);
+    durHideTimer = setTimeout(() => {
+      durHideTimer = null;
+      durBadge.classList.remove('show');
+    }, 2000);
+  };
+  if (vid.videoWidth && vid.videoHeight) applyHomeMediaAspect();
+  vid.addEventListener('loadedmetadata', () => {
+    applyHomeMediaAspect();
+    if (pendingDurReveal && !vid.paused) showHomeDurationBadge();
+  });
+  vid.addEventListener('loadeddata', applyHomeMediaAspect);
+  vid.addEventListener('resize', applyHomeMediaAspect);
+  vid.addEventListener('durationchange', () => {
+    if (pendingDurReveal && !vid.paused) showHomeDurationBadge();
+  });
   // First frame ready: hide the spinner.
-  vid.addEventListener('canplay', () => setSpinner(false));
+  vid.addEventListener('canplay', () => {
+    applyHomeMediaAspect();
+    setSpinner(false);
+  });
   // Actually playing: hide the spinner and the play icon. (canplay
   // alone is not enough — a video can be playable yet still paused,
   // and a video that started before this listener attached would
   // leave the spinner stuck on.)
-  vid.addEventListener('playing', () => { setSpinner(false); updateHomePlayIcon(mediaEl); });
+  vid.addEventListener('playing', () => {
+    applyHomeMediaAspect();
+    setSpinner(false);
+    updateHomePlayIcon(mediaEl);
+    showHomeDurationBadge();
+  });
   // Buffering mid-play: show the spinner again.
   vid.addEventListener('waiting', () => setSpinner(true));
   // Keep the play overlay in sync with real playback state, and make
@@ -11825,11 +11908,16 @@ function setupHomeVideo(mediaEl) {
       if (other !== vid && !other.paused) { other.pause(); updateHomePlayIcon(other.parentElement); }
     });
   });
-  vid.addEventListener('pause', () => updateHomePlayIcon(mediaEl));
+  vid.addEventListener('pause', () => {
+    pendingDurReveal = false;
+    hideHomeDurationBadge();
+    updateHomePlayIcon(mediaEl);
+  });
   // Sync the overlays to the video's CURRENT state right now (a video
   // that is already playing or already buffered must not show a
   // stuck play icon or spinner).
   if (vid.readyState >= 3 || !vid.paused) setSpinner(false);
+  if (!vid.paused) showHomeDurationBadge();
   updateHomePlayIcon(mediaEl);
   // Broken URL: walk the fallbacks, then show the error state.
   vid.addEventListener('error', () => {
