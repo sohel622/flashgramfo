@@ -3066,6 +3066,178 @@
     }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+    /* ── HOME THEATRE ──
+       Dedicated full-screen viewer for a Home video. A separate,
+       self-contained section, combined into this single file (the APK
+       only ships index.html, so a separate file would never load on
+       the phone). Tapping a Home video opens this overlay — it never
+       navigates to the Reels tab. The 9:16 stage fills the screen
+       with object-fit: cover, so there are no letterbox bars like the
+       strip in the screenshot. z-index 150 sits above the pages,
+       topbar (100) and bottom nav (100) and below the comment/share
+       sheets (200), so those sheets can open above the theatre. */
+    #home-theatre {
+      position: fixed;
+      inset: 0;
+      z-index: 150;
+      background: #000;
+      display: none;
+    }
+    #home-theatre.open { display: block; }
+    .ht-stage {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      margin: 0 auto;
+      width: min(100vw, calc(100vh * 9 / 16));
+      min-width: min(100vw, 300px);
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+    .ht-stage video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      background: #000;
+    }
+    .ht-play {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255,255,255,0.9);
+      pointer-events: none;
+      z-index: 2;
+    }
+    .ht-back, .ht-sound {
+      position: absolute;
+      top: calc(env(safe-area-inset-top, 0px) + 10px);
+      z-index: 3;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.25);
+      background: rgba(0,0,0,0.45);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+    }
+    .ht-back { left: 12px; }
+    .ht-sound { right: 12px; }
+    .ht-actions {
+      position: absolute;
+      right: 12px;
+      bottom: 178px;
+      z-index: 3;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: center;
+    }
+    .ht-act-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    .ht-act {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(0,0,0,0.35);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+    }
+    .ht-act svg { width: 26px; height: 26px; }
+    .ht-act.liked { color: #ff3040; }
+    .ht-act.liked svg { fill: #ff3040; }
+    .ht-count { font-size: 12px; font-weight: 600; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.8); min-height: 14px; }
+    .ht-info {
+      position: absolute;
+      left: 16px;
+      right: 88px;
+      bottom: 116px;
+      z-index: 3;
+      color: #fff;
+    }
+    .ht-user { display: flex; align-items: center; gap: 10px; }
+    .ht-user .av { --av-size: 44px; }
+    .ht-name { font-size: 15px; font-weight: 700; line-height: 1.25; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+    .ht-handle { font-size: 12.5px; color: rgba(255,255,255,0.75); text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+    .ht-caption { margin-top: 8px; font-size: 14px; line-height: 1.4; text-shadow: 0 1px 3px rgba(0,0,0,0.8); word-break: break-word; }
+    .ht-time {
+      position: absolute;
+      right: 14px;
+      bottom: 74px;
+      z-index: 3;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    }
+    .ht-progress {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 64px;
+      height: 3px;
+      background: rgba(255,255,255,0.3);
+      z-index: 3;
+    }
+    .ht-progress-fill { height: 100%; width: 0%; background: #fff; }
+    .ht-commentbar {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 3;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+      background: linear-gradient(transparent, rgba(0,0,0,0.78));
+    }
+    .ht-commentbar input {
+      flex: 1;
+      min-width: 0;
+      background: rgba(255,255,255,0.14);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 22px;
+      padding: 10px 16px;
+      color: #fff;
+      font-size: 14px;
+      font-family: var(--font);
+      outline: none;
+    }
+    .ht-commentbar input::placeholder { color: rgba(255,255,255,0.65); }
+    .ht-send {
+      flex-shrink: 0;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+    }
+    /* While the theatre is open the bottom nav (and the Reels topbar)
+       are hidden — the viewer is a screen of its own, not a tab. */
+    body.ht-open #bottomnav, body.ht-open #topbar { display: none !important; }
+
   </style>
 </head>
 <body>
@@ -3190,6 +3362,55 @@
   </header>
   <div class="home-stories" id="home-stories"></div>
   <div id="home-feed"></div>
+</div>
+
+<!-- HOME THEATRE — dedicated full-screen viewer for a Home video.
+     Opens on tap of a Home video; never navigates to the Reels tab.
+     Back returns to Home and restarts that Home video from 0:00. -->
+<div id="home-theatre" aria-hidden="true">
+  <div class="ht-stage">
+    <video id="ht-video" loop playsinline preload="metadata" onclick="toggleHomeTheatreVideo()"></video>
+    <span class="ht-play" id="ht-play"><svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6 3 20 12 6 21 6 3"/></svg></span>
+    <button class="ht-back" onclick="closeHomeTheatre()" title="Back" aria-label="Back">
+      <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    <button class="ht-sound" id="ht-sound-btn" onclick="toggleHomeTheatreSound(event)" title="Sound" aria-label="Sound"></button>
+    <div class="ht-actions">
+      <div class="ht-act-wrap">
+        <button class="ht-act" id="ht-like-btn" onclick="toggleHomeTheatreLike()" title="Like" aria-label="Like"></button>
+        <span class="ht-count" id="ht-like-count"></span>
+      </div>
+      <div class="ht-act-wrap">
+        <button class="ht-act" onclick="openHomeTheatreComments()" title="Comment" aria-label="Comment"></button>
+        <span class="ht-count" id="ht-comment-count"></span>
+      </div>
+      <div class="ht-act-wrap">
+        <button class="ht-act" onclick="openHomeTheatreShare()" title="Share" aria-label="Share"></button>
+        <span class="ht-count" id="ht-share-count"></span>
+      </div>
+      <div class="ht-act-wrap">
+        <button class="ht-act" onclick="openHomeTheatreMore()" title="More" aria-label="More"></button>
+      </div>
+    </div>
+    <div class="ht-info">
+      <div class="ht-user">
+        <span id="ht-avatar"></span>
+        <div>
+          <div class="ht-name" id="ht-name"></div>
+          <div class="ht-handle" id="ht-handle"></div>
+        </div>
+      </div>
+      <div class="ht-caption" id="ht-caption"></div>
+    </div>
+    <div class="ht-time" id="ht-time">0:00 / 0:00</div>
+    <div class="ht-progress"><div class="ht-progress-fill" id="ht-progress-fill"></div></div>
+    <div class="ht-commentbar">
+      <input id="ht-comment-input" type="text" placeholder="Add a comment..." autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();postHomeTheatreComment();}">
+      <button class="ht-send" onclick="postHomeTheatreComment()" title="Send comment" aria-label="Send comment">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+      </button>
+    </div>
+  </div>
 </div>
 
 <!-- 3. DISCOVER PAGE -->
@@ -11666,7 +11887,7 @@ function homePostCardHTML(v, idx) {
     + (time ? '<span class="home-post-time">' + escapeHtml(time) + '</span>' : '')
     + '<button class="home-post-more" onclick="openInFeed(' + idx + ')" title="Open in Reels">' + lucideIcon('more-horizontal', 20) + '</button>'
     + '</div>'
-    + '<div class="home-post-media"' + (cachedAspect ? ' style="aspect-ratio:' + escapeHtml(cachedAspect) + '"' : '') + ' onclick="toggleHomeVideo(this)">'
+    + '<div class="home-post-media"' + (cachedAspect ? ' style="aspect-ratio:' + escapeHtml(cachedAspect) + '"' : '') + ' onclick="openHomeTheatre(this)">'
     + '<video data-post-id="' + escapeHtml(String(v.id)) + '" src="' + escapeHtml(src) + '" poster="' + escapeHtml(poster) + '" muted loop playsinline preload="metadata"></video>'
     + '<span class="home-video-spinner"><span class="home-spinner-ring"></span></span>'
     + '<span class="home-post-play">' + lucideIcon('play', 56, true) + '</span>'
@@ -11999,6 +12220,235 @@ function pauseAllHomeVideos() {
   document.querySelectorAll('#home-feed video').forEach(v => { try { v.pause(); } catch (_) {} });
   document.querySelectorAll('#home-feed .home-post-play').forEach(el => { el.style.display = 'flex'; });
   currentHomeVideo = null;
+}
+
+// ── HOME THEATRE ──
+// Dedicated full-screen viewer for a Home video. A separate,
+// self-contained section (this is the "separate folder" Sohel asked
+// for, kept inside the single index.html the APK ships — a separate
+// file would never load on the phone). Tapping a Home video opens
+// this overlay instead of navigating to the Reels tab; the back
+// button returns to Home. Playback always starts from 0:00, both
+// when the theatre opens and when returning to Home.
+let homeTheatrePostId = null;
+let homeTheatreReturnVideo = null;
+let homeTheatreJustOpened = false;
+
+function homeTheatreVideo() { return document.getElementById('ht-video'); }
+function homeTheatrePost() {
+  return homeTheatrePostId ? videos.find(x => String(x.id) === String(homeTheatrePostId)) : null;
+}
+
+function updateHomeTheatreTime() {
+  const ht = homeTheatreVideo();
+  if (!ht) return;
+  const cur = ht.currentTime || 0;
+  const dur = ht.duration || 0;
+  const t = document.getElementById('ht-time');
+  if (t) t.textContent = fmtTime(cur) + ' / ' + fmtTime(dur);
+  const fill = document.getElementById('ht-progress-fill');
+  if (fill) fill.style.width = (dur > 0 ? Math.min(100, (cur / dur) * 100) : 0) + '%';
+}
+
+function updateHomeTheatrePlayIcon() {
+  const ht = homeTheatreVideo();
+  const icon = document.getElementById('ht-play');
+  if (!ht || !icon) return;
+  icon.style.display = ht.paused ? 'flex' : 'none';
+}
+
+function updateHomeTheatreSoundIcon() {
+  const btn = document.getElementById('ht-sound-btn');
+  if (!btn) return;
+  btn.innerHTML = lucideIcon(window._muted ? 'volume-x' : 'volume-2', 22);
+}
+
+function syncHomeTheatreCounts() {
+  const v = homeTheatrePost();
+  if (!v) return;
+  const likeBtn = document.getElementById('ht-like-btn');
+  if (likeBtn) likeBtn.classList.toggle('liked', !!v.liked);
+  const likeCount = document.getElementById('ht-like-count');
+  if (likeCount) likeCount.textContent = fmtC(v.likes || 0);
+  const commentCount = document.getElementById('ht-comment-count');
+  if (commentCount) commentCount.textContent = fmtC(cmCount(v));
+  const shareCount = document.getElementById('ht-share-count');
+  if (shareCount) shareCount.textContent = fmtC(v.shares || 0);
+}
+
+function setupHomeTheatreVideo() {
+  const ht = homeTheatreVideo();
+  if (!ht || ht.dataset.htSetup) return;
+  ht.dataset.htSetup = '1';
+  ht.addEventListener('timeupdate', updateHomeTheatreTime);
+  ht.addEventListener('loadedmetadata', () => {
+    // Metadata arrived after open: the seek to 0:00 in openHomeTheatre
+    // may have been ignored while the video had no duration yet.
+    if (homeTheatreJustOpened && ht.currentTime > 0) { try { ht.currentTime = 0; } catch (_) {} }
+    homeTheatreJustOpened = false;
+    updateHomeTheatreTime();
+  });
+  ht.addEventListener('play', updateHomeTheatrePlayIcon);
+  ht.addEventListener('pause', updateHomeTheatrePlayIcon);
+  ht.addEventListener('error', () => {
+    const v = homeTheatrePost();
+    if (v && tryNextHomeVideoSrc(ht, v)) { ht.play().catch(() => {}); }
+  });
+}
+
+function openHomeTheatre(mediaEl) {
+  const vid = mediaEl ? mediaEl.querySelector('video') : null;
+  if (!vid) return;
+  const postId = vid.getAttribute('data-post-id') || '';
+  const v = postId ? videos.find(x => String(x.id) === String(postId)) : null;
+  if (!v) return;
+  homeTheatrePostId = String(v.id);
+  homeTheatreReturnVideo = vid;
+  // Only the theatre plays: pause Home and Reels behind it.
+  pauseAllHomeVideos();
+  pauseAllFeedVideos();
+  // Author info, Home-card style (real profile cache, never '@creator').
+  const author = authorProfileFor(v.user_id);
+  const username = (author && author.username) || v.username || authorFallbackHandle(v.user_id);
+  const displayName = (author && (author.display_name || author.full_name)) || v.userDisplayName || username;
+  const authorAvatarUrl = avatarUrlForUserId(v.user_id, username);
+  const verified = verifiedBadgeSlotHTML(v.user_id, isUserVerified(v.user_id) || isHandleVerified(username), username);
+  const time = (v.created_at || v.ts) ? formatRelativeTime(v.created_at || v.ts) : '';
+  const avatarEl = document.getElementById('ht-avatar');
+  if (avatarEl) avatarEl.innerHTML = avatarHTML(v.user_id, displayName, authorAvatarUrl, 44);
+  const nameEl = document.getElementById('ht-name');
+  if (nameEl) nameEl.innerHTML = escapeHtml(String(displayName)) + verified;
+  const handleEl = document.getElementById('ht-handle');
+  if (handleEl) handleEl.textContent = '@' + username + (time ? ' · ' + time : '');
+  const captionEl = document.getElementById('ht-caption');
+  if (captionEl) captionEl.textContent = (v.caption && String(v.caption).trim() && String(v.caption).trim() !== 'Video') ? String(v.caption) : '';
+  // Action icons (same Lucide icons as the Home card).
+  const likeBtn = document.getElementById('ht-like-btn');
+  if (likeBtn) likeBtn.innerHTML = lucideIcon('heart', 26);
+  const acts = document.querySelectorAll('#home-theatre .ht-act');
+  if (acts[1]) acts[1].innerHTML = lucideIcon('message-circle', 26);
+  if (acts[2]) acts[2].innerHTML = lucideIcon('send', 26);
+  if (acts[3]) acts[3].innerHTML = lucideIcon('more-horizontal', 26);
+  updateHomeTheatreSoundIcon();
+  syncHomeTheatreCounts();
+  // The theatre video always starts from the beginning (0:00).
+  const ht = homeTheatreVideo();
+  setupHomeTheatreVideo();
+  homeTheatreJustOpened = true;
+  ht.muted = !!window._muted;
+  ht.poster = videoPosterFor(v) || '';
+  const src = bestVideoSrc(v) || vid.getAttribute('src') || '';
+  if (src && ht.getAttribute('src') !== src) { ht.src = src; ht.load(); }
+  try { ht.currentTime = 0; } catch (_) {}
+  document.getElementById('home-theatre').classList.add('open');
+  document.getElementById('home-theatre').setAttribute('aria-hidden', 'false');
+  document.body.classList.add('ht-open');
+  hydrateAvatars(document.getElementById('home-theatre'));
+  updateHomeTheatreTime();
+  updateHomeTheatrePlayIcon();
+  const p = ht.play();
+  if (p && p.catch) p.catch(() => { ht.muted = true; ht.play().catch(() => {}); });
+}
+
+function closeHomeTheatre() {
+  const ht = homeTheatreVideo();
+  if (ht) { try { ht.pause(); } catch (_) {} }
+  const viewer = document.getElementById('home-theatre');
+  if (viewer) {
+    viewer.classList.remove('open');
+    viewer.setAttribute('aria-hidden', 'true');
+  }
+  document.body.classList.remove('ht-open');
+  // Returning to Home restarts the same Home video from 0:00.
+  const homeVid = homeTheatreReturnVideo;
+  homeTheatrePostId = null;
+  homeTheatreReturnVideo = null;
+  homeTheatreJustOpened = false;
+  if (homeVid && document.contains && document.contains(homeVid)) {
+    try { homeVid.currentTime = 0; } catch (_) {}
+    delete homeVid.dataset.homeManualPaused;
+    homeVid.muted = !!window._muted;
+    currentHomeVideo = homeVid;
+    homeVid.play().catch(() => {});
+    updateHomePlayIcon(homeVid.parentElement);
+  }
+}
+
+function toggleHomeTheatreVideo() {
+  const ht = homeTheatreVideo();
+  if (!ht) return;
+  if (ht.paused) { ht.play().catch(() => {}); }
+  else { ht.pause(); }
+  updateHomeTheatrePlayIcon();
+}
+
+function toggleHomeTheatreSound(ev) {
+  if (ev) ev.stopPropagation();
+  const ht = homeTheatreVideo();
+  if (!ht) return;
+  // Same single global mute state as Home/Reels: flip it here and
+  // apply it to every Home video too, so the theatre and the feed
+  // never disagree about sound.
+  const muted = !ht.muted;
+  window._muted = muted;
+  ht.muted = muted;
+  updateHomeTheatreSoundIcon();
+  document.querySelectorAll('#home-feed video').forEach(other => { other.muted = muted; });
+  document.querySelectorAll('#home-feed .home-post-sound').forEach(b => {
+    b.innerHTML = lucideIcon(muted ? 'volume-x' : 'volume-2', 20);
+  });
+  if (!muted && ht.paused) { ht.play().catch(() => {}); }
+}
+
+async function toggleHomeTheatreLike() {
+  const v = homeTheatrePost();
+  if (!v) return;
+  if (isCurrentUserBanned()) { showToast('Your account is suspended.'); return; }
+  const idx = videos.findIndex(x => String(x.id) === String(v.id));
+  const homeBtn = document.getElementById('hlike-' + v.id);
+  if (!homeBtn || idx < 0) return;
+  // Reuse the Home like path (count, Supabase sync, Reels sync), then
+  // mirror the result onto the theatre button/count.
+  await toggleHomeLike(homeBtn, String(v.id), idx);
+  syncHomeTheatreCounts();
+}
+
+function openHomeTheatreComments() {
+  if (!homeTheatrePostId) return;
+  const ht = homeTheatreVideo();
+  if (ht) { try { ht.pause(); } catch (_) {} }
+  // The comments sheet (z-index 200) opens above the theatre; tap
+  // the theatre video to resume when the sheet closes.
+  openComments(homeTheatrePostId);
+}
+
+function openHomeTheatreShare() {
+  if (!homeTheatrePostId) return;
+  const ht = homeTheatreVideo();
+  if (ht) { try { ht.pause(); } catch (_) {} }
+  openShare(homeTheatrePostId);
+}
+
+function openHomeTheatreMore() {
+  if (!homeTheatrePostId) return;
+  const ht = homeTheatreVideo();
+  if (ht) { try { ht.pause(); } catch (_) {} }
+  openMore(homeTheatrePostId);
+}
+
+async function postHomeTheatreComment() {
+  const input = document.getElementById('ht-comment-input');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text || !homeTheatrePostId) return;
+  // Reuse the existing comment path (local + Supabase): feed it the
+  // theatre text through the comments input it already reads.
+  const main = document.getElementById('commentInput');
+  if (main) main.value = text;
+  activeCommentsId = homeTheatrePostId;
+  await postComment();
+  input.value = '';
+  syncHomeTheatreCounts();
 }
 
 async function toggleHomeLike(btn, id, idx) {
