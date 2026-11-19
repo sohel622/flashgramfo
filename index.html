@@ -4508,6 +4508,9 @@ pruneAllExpiredChatMessages();
 //  INIT
 // ═══════════════════════════════════════════════════════
 (async () => {
+  // Attach push listeners first, so a notification tap that
+  // cold-started the app is never missed.
+  attachPushNotificationListeners();
   try {
     await openDB();
     storageOk = true;
@@ -4564,6 +4567,9 @@ pruneAllExpiredChatMessages();
   // a separate tab under the bottom nav).
   setupHomeHeaderScroll();
   setupFeedTopbarScroll();
+  // First launch: ask the Android 13+ notification permission
+  // once (native dialog), then register for the FCM token.
+  setupPushNotifications();
   goPage('home', document.getElementById('nav-home'));
 })();
 
@@ -5106,6 +5112,8 @@ async function initSupabase() {
       console.log('Supabase Auth Event:', event, session?.user?.id);
       if (session && session.user) {
         currentAuthUser = session.user;
+        // A push token saved while signed out now belongs to this user.
+        flushPendingPushToken();
         switchChatThreadsForCurrentUser();
         // Fresh Realtime join with the new login token, so the channel
         // is authenticated as this user from the start.
@@ -7760,6 +7768,9 @@ async function saveProfile() {
 }
 
 async function handleSignOut() {
+  // Stop push notifications on this device (before sign-out, while
+  // the token row is still deletable as this user).
+  removePushToken();
   if (supabaseClient) {
     await supabaseClient.auth.signOut();
   }
@@ -9529,6 +9540,8 @@ async function loadPostsFromSupabase() {
   } catch(err) {
     console.warn('loadPostsFromSupabase error:', err);
   }
+  // A follow notification tapped before posts loaded waits here.
+  tryOpenFollowerFromNotification();
 }
 
 // Smooth Real-Time Upload Progress Tracker
@@ -10779,6 +10792,142 @@ async function followUser(event, uid) {
     syncFollowButtons();
     showToast('Could not save follow: ' + (err.message || 'try again'));
   }
+}
+
+// ── Android push notifications (FCM) for follows ──
+// The app never sends a notification itself: sending needs the
+// Firebase server credentials, which must never live in the app.
+// Flow: (1) on first launch the native Android 13+ permission
+// dialog is requested once; (2) the FCM token is saved to Supabase
+// (device_tokens, via the register_device_token RPC, so one token
+// belongs to exactly one user); (3) when someone follows, a
+// Database Webhook on followers INSERT calls the
+// send-follow-notification Edge Function, which looks up the
+// follower's profile and the followed user's tokens and sends the
+// FCM message ("[Name] started following you."). A duplicate
+// follow can never notify twice: the followers unique index
+// blocks the duplicate row, the webhook only fires on INSERT,
+// and the Edge Function dedupes by follow row in
+// notification_log, so a retried webhook still sends once.
+// Tapping the notification opens the follower's latest video in
+// Reels (there is no other-user profile page yet).
+const PUSH_PERMISSION_ASKED_KEY = 'pushPermissionAsked';
+const PENDING_PUSH_TOKEN_KEY = 'pendingPushToken';
+const PENDING_FOLLOW_OPEN_KEY = 'pendingFollowOpen';
+let currentPushToken = null;
+let pushListenersAttached = false;
+
+function getPushNotificationsPlugin() {
+  const plugins = capacitorPlugins();
+  return (plugins && plugins.PushNotifications) || null;
+}
+function isPushNotificationsAvailable() {
+  return !!getPushNotificationsPlugin();
+}
+
+// Listeners only (no permission prompt): attached at boot start,
+// so a tap that cold-started the app is never missed.
+function attachPushNotificationListeners() {
+  const plugin = getPushNotificationsPlugin();
+  if (!plugin || pushListenersAttached) return;
+  pushListenersAttached = true;
+  try {
+    plugin.addListener('registration', (t) => { if (t && t.value) savePushToken(t.value); });
+    plugin.addListener('registrationError', (e) => console.warn('Push registration error:', e && e.error));
+    plugin.addListener('pushNotificationReceived', (n) => {
+      // Foreground: the system shows no banner, so say it in-app.
+      const title = n && n.title ? String(n.title) : '';
+      if (title) showToast(title);
+    });
+    plugin.addListener('pushNotificationActionPerformed', (a) => {
+      const data = (a && a.notification && a.notification.data) || {};
+      handleFollowNotificationTap(data);
+    });
+  } catch (e) { console.warn('Push listeners note:', e && e.message); }
+}
+
+// First-launch setup: the native permission dialog once
+// (Android 13+), then register for the FCM token. Safe no-op in
+// the browser / without the Capacitor plugin.
+async function setupPushNotifications() {
+  const plugin = getPushNotificationsPlugin();
+  if (!plugin) return;
+  attachPushNotificationListeners();
+  let asked = false;
+  try { asked = localStorage.getItem(PUSH_PERMISSION_ASKED_KEY) === '1'; } catch (_) {}
+  try {
+    let state = null;
+    if (typeof plugin.checkPermissions === 'function') {
+      const status = await plugin.checkPermissions();
+      state = status && status.receive;
+    }
+    if (state === 'granted') {
+      await plugin.register();
+    } else if ((state === 'prompt' || state === null) && !asked) {
+      // Android 13+: this shows the native permission dialog.
+      try { localStorage.setItem(PUSH_PERMISSION_ASKED_KEY, '1'); } catch (_) {}
+      const res = await plugin.requestPermissions();
+      if (res && res.receive === 'granted') await plugin.register();
+    }
+    // 'denied': respect it — never ask again on our own.
+  } catch (e) { console.warn('Push permission note:', e && e.message); }
+}
+
+// Save the FCM token for the signed-in user (one token, one user —
+// the RPC upserts by token, so a re-registration never duplicates
+// it). Signed out? Keep it pending and save it after sign-in.
+async function savePushToken(token) {
+  if (!token) return;
+  currentPushToken = String(token);
+  const me = currentFollowUserId();
+  if (!supabaseClient || !me) {
+    try { localStorage.setItem(PENDING_PUSH_TOKEN_KEY, currentPushToken); } catch (_) {}
+    return;
+  }
+  try {
+    const { error } = await supabaseClient.rpc('register_device_token', { p_token: currentPushToken });
+    if (error) throw new Error(error.message);
+    try { localStorage.removeItem(PENDING_PUSH_TOKEN_KEY); } catch (_) {}
+  } catch (e) { console.warn('savePushToken note:', e && e.message); }
+}
+async function flushPendingPushToken() {
+  let pending = null;
+  try { pending = localStorage.getItem(PENDING_PUSH_TOKEN_KEY); } catch (_) {}
+  if (pending) await savePushToken(pending);
+  else if (currentPushToken) await savePushToken(currentPushToken);
+}
+
+// Best-effort: stop notifying this device after sign-out.
+async function removePushToken() {
+  const token = currentPushToken;
+  currentPushToken = null;
+  try { localStorage.removeItem(PENDING_PUSH_TOKEN_KEY); } catch (_) {}
+  if (!supabaseClient || !token) return;
+  try { await supabaseClient.from('device_tokens').delete().eq('token', token); } catch (e) { console.warn('removePushToken note:', e && e.message); }
+}
+
+// Tapping a follow notification opens the follower's latest video
+// in Reels (newest first, so the first match is the latest).
+function handleFollowNotificationTap(data) {
+  const followerId = data && (data.follower_id || data.followerId);
+  if (!followerId) return;
+  try { localStorage.setItem(PENDING_FOLLOW_OPEN_KEY, String(followerId)); } catch (_) {}
+  tryOpenFollowerFromNotification();
+}
+function tryOpenFollowerFromNotification() {
+  let followerId = null;
+  try { followerId = localStorage.getItem(PENDING_FOLLOW_OPEN_KEY); } catch (_) {}
+  if (!followerId) return;
+  const idx = videos.findIndex(v => v && String(v.user_id) === String(followerId));
+  if (idx >= 0) {
+    try { localStorage.removeItem(PENDING_FOLLOW_OPEN_KEY); } catch (_) {}
+    openInFeed(idx);
+  } else if (videos.length > 0) {
+    // Posts are loaded and this follower has no video to open.
+    try { localStorage.removeItem(PENDING_FOLLOW_OPEN_KEY); } catch (_) {}
+  }
+  // videos empty: posts not loaded yet — keep the pending flag for
+  // the next loadPostsFromSupabase() completion.
 }
 
 function renderCreators() {

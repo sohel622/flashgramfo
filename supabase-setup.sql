@@ -1085,3 +1085,71 @@ DROP POLICY IF EXISTS "Users can unfollow their own follows" ON public.followers
 CREATE POLICY "Users can unfollow their own follows"
   ON public.followers FOR DELETE
   USING (auth.uid()::text = follower_id::text);
+
+-- ========================================================
+-- 12) PUSH NOTIFICATION DEVICE TOKENS (FCM, Android)
+-- Follow notifications: the app saves its FCM token here, and
+-- the send-follow-notification Edge Function reads the followed
+-- user's tokens to send "[Name] started following you."
+-- Run this file once (same pending run as the other sections)
+-- and token saving starts working.
+-- ========================================================
+CREATE TABLE IF NOT EXISTS public.device_tokens (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  token TEXT NOT NULL,
+  platform TEXT NOT NULL DEFAULT 'android',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT device_tokens_token_unique UNIQUE (token)
+);
+CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON public.device_tokens (user_id);
+
+-- The app reads/deletes only its own tokens. Inserts go through
+-- the register_device_token RPC below (SECURITY DEFINER), so a
+-- token can never be registered for another user, and one token
+-- belongs to exactly one user (re-registration moves it).
+GRANT SELECT, DELETE ON public.device_tokens TO anon, authenticated;
+
+ALTER TABLE public.device_tokens ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view their own device tokens" ON public.device_tokens;
+CREATE POLICY "Users can view their own device tokens"
+  ON public.device_tokens FOR SELECT
+  USING (auth.uid()::text = user_id::text);
+
+DROP POLICY IF EXISTS "Users can remove their own device tokens" ON public.device_tokens;
+CREATE POLICY "Users can remove their own device tokens"
+  ON public.device_tokens FOR DELETE
+  USING (auth.uid()::text = user_id::text);
+
+-- One token, one user: upsert by token, always owned by the
+-- caller. The client calls this after FCM registration (and
+-- again on token refresh, which never creates a second row).
+CREATE OR REPLACE FUNCTION public.register_device_token(p_token TEXT)
+RETURNS public.device_tokens
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_row public.device_tokens;
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not signed in'; END IF;
+  IF p_token IS NULL OR length(trim(p_token)) = 0 THEN RAISE EXCEPTION 'Empty token'; END IF;
+  INSERT INTO public.device_tokens (user_id, token, platform)
+  VALUES (auth.uid(), trim(p_token), 'android')
+  ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id, updated_at = now()
+  RETURNING * INTO v_row;
+  RETURN v_row;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.register_device_token(TEXT) TO anon, authenticated;
+
+-- Idempotency log for sent follow notifications (used only by
+-- the Edge Function with the service-role key, never by the app):
+-- one row per follow, so a retried webhook still sends once.
+CREATE TABLE IF NOT EXISTS public.notification_log (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  dedupe_key TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'follow',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT notification_log_dedupe_key_unique UNIQUE (dedupe_key)
+);
+ALTER TABLE public.notification_log ENABLE ROW LEVEL SECURITY;
