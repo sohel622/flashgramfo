@@ -1032,3 +1032,56 @@ AS $$
       WHERE user_id = auth.uid() AND role = 'admin'
     );
 $$;
+
+-- ========================================================
+-- 11. FOLLOWS (public.followers) — one follow per user,
+-- synced across Search and Home feed.
+-- The table already exists live with columns follower_id,
+-- following_id, created_at (verified 2026-11-19 — there is
+-- no id / user_id / followed_id column). This section is
+-- idempotent: it creates the table only if missing, adds a
+-- unique index so the same user can never follow the same
+-- person twice, and wires the grants + RLS the app needs.
+-- Before this, the app got "permission denied for table
+-- followers" (42501) on every read and write, because the
+-- anon role had no privileges on the table at all.
+-- Run this file once (same pending run as the likes, bans
+-- and quota sections) and follows start syncing.
+-- ========================================================
+CREATE TABLE IF NOT EXISTS public.followers (
+  follower_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  following_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (follower_id, following_id)
+);
+
+-- One follow per user per person (duplicate follows are
+-- rejected by the database itself, not just by the app).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_followers_pair_unique
+  ON public.followers (follower_id, following_id);
+CREATE INDEX IF NOT EXISTS idx_followers_follower ON public.followers (follower_id);
+CREATE INDEX IF NOT EXISTS idx_followers_following ON public.followers (following_id);
+
+-- The app reads and writes this table with the anon key, so
+-- both roles need the privileges (RLS below still limits
+-- every write to the signed-in user's own follower_id).
+GRANT SELECT, INSERT, DELETE ON public.followers TO anon, authenticated;
+
+-- RLS: anyone can read follows; only the signed-in user can
+-- write a row with their own follower_id — and never a row
+-- where they follow themselves.
+ALTER TABLE public.followers ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Follows are viewable by everyone" ON public.followers;
+CREATE POLICY "Follows are viewable by everyone"
+  ON public.followers FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Users can follow as themselves" ON public.followers;
+CREATE POLICY "Users can follow as themselves"
+  ON public.followers FOR INSERT
+  WITH CHECK (auth.uid()::text = follower_id::text AND follower_id::text <> following_id::text);
+
+DROP POLICY IF EXISTS "Users can unfollow their own follows" ON public.followers;
+CREATE POLICY "Users can unfollow their own follows"
+  ON public.followers FOR DELETE
+  USING (auth.uid()::text = follower_id::text);

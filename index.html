@@ -364,6 +364,21 @@
       padding: 0; border-radius: 50%;
     }
     .home-post-more:active { background: rgba(0,0,0,0.06); }
+    /* Follow button in the Home card author row — same accent pill
+       as the Search creator-card Follow button. Hidden (display
+       none) for your own posts and for people you already follow. */
+    .home-follow-btn {
+      flex-shrink: 0;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    .home-follow-btn:active { transform: scale(0.97); }
     .home-post-media {
       position: relative;
       width: 100%;
@@ -1838,7 +1853,7 @@
       object-fit: cover;
       display: block;
     }
-    .creator-message-btn {
+    .creator-message-btn, .creator-follow-btn {
       margin-top: 6px;
       width: 100%;
       height: 30px;
@@ -1855,10 +1870,10 @@
       gap: 5px;
       transition: opacity .15s, transform .1s, background .15s;
     }
-    .creator-message-btn:hover {
+    .creator-message-btn:hover, .creator-follow-btn:hover {
       background: #ff335b;
     }
-    .creator-message-btn:active {
+    .creator-message-btn:active, .creator-follow-btn:active {
       transform: scale(0.97);
     }
     .creator-message-btn .material-symbols-rounded {
@@ -9430,6 +9445,13 @@ async function loadPostsFromSupabase() {
     } catch (e) {
       console.warn('loadEngagementForVideos note:', e && e.message);
     }
+    // Who I follow, so Follow buttons hide in Search and Home.
+    // A failure here must never block the feed render above either.
+    try {
+      await loadFollowedUserIds();
+    } catch (e) {
+      console.warn('loadFollowedUserIds note:', e && e.message);
+    }
   } catch(err) {
     console.warn('loadPostsFromSupabase error:', err);
   }
@@ -10606,6 +10628,83 @@ async function loadCreatorsFromSupabase() {
   }
 }
 
+// ── Follow (Supabase public.followers) ──
+// One follow per user, never your own account, synced across the
+// Search (Discover) creator cards and the Home feed author rows.
+// The live table has columns follower_id, following_id, created_at
+// (verified 2026-11-19 — no id / user_id / followed_id columns).
+// Source of truth is Supabase; the in-memory set below only mirrors
+// it so both places can hide the button without re-rendering (a
+// Home re-render would restart the playing video).
+const followedUserIds = new Set();
+
+function currentFollowUserId() {
+  const id = (currentAuthUser && currentAuthUser.id) || (profile && profile.id) || '';
+  return id ? String(id) : '';
+}
+function isOwnFollowUid(uid) {
+  const me = currentFollowUserId();
+  return !!uid && !!me && String(uid).toLowerCase() === me.toLowerCase();
+}
+function isFollowing(uid) {
+  return !!uid && followedUserIds.has(String(uid).toLowerCase());
+}
+// The Follow button for one user id. Empty (no button at all) for
+// your own account and for people you already follow.
+function followButtonHTML(uid) {
+  if (!uid || isOwnFollowUid(uid) || isFollowing(uid)) return '';
+  return '<button class="home-follow-btn" data-follow-uid="' + escapeHtml(String(uid)) + '" onclick="followUser(event, \'' + escapeHtml(String(uid)) + '\')" title="Follow">Follow</button>';
+}
+// Hide every Follow button whose user is now followed (or is you).
+// Called after loading follows and after each follow, so Search and
+// Home update together without any re-render.
+function syncFollowButtons() {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  document.querySelectorAll('[data-follow-uid]').forEach(btn => {
+    const uid = btn.getAttribute('data-follow-uid');
+    btn.style.display = (!uid || isOwnFollowUid(uid) || isFollowing(uid)) ? 'none' : '';
+  });
+}
+// Load who I follow, then hide their Follow buttons everywhere.
+async function loadFollowedUserIds() {
+  const me = currentFollowUserId();
+  if (!supabaseClient || !me) return;
+  try {
+    const { data, error } = await supabaseClient.from('followers').select('following_id').eq('follower_id', me);
+    if (error) { console.warn('loadFollowedUserIds note:', error.message); return; }
+    followedUserIds.clear();
+    (data || []).forEach(r => { if (r && r.following_id) followedUserIds.add(String(r.following_id).toLowerCase()); });
+    syncFollowButtons();
+  } catch (e) { console.warn('loadFollowedUserIds note:', e && e.message); }
+}
+async function followUser(event, uid) {
+  if (event && event.stopPropagation) event.stopPropagation();
+  if (!uid) return;
+  const me = currentFollowUserId();
+  if (!me) { showToast('Sign in to follow'); return; }
+  if (isOwnFollowUid(uid)) return; // never follow your own account
+  if (isFollowing(uid)) { syncFollowButtons(); return; } // one follow only
+  const key = String(uid).toLowerCase();
+  followedUserIds.add(key);
+  syncFollowButtons(); // hide the button in Search and Home at once
+  if (!supabaseClient) return;
+  try {
+    const { error } = await supabaseClient.from('followers').insert({ follower_id: me, following_id: String(uid) });
+    if (error) {
+      // 23505 / 409 = already followed (unique index) — keep hidden.
+      if (String(error.code) === '23505' || String(error.code) === '409' || /duplicate/i.test(error.message || '')) return;
+      throw new Error(error.message);
+    }
+  } catch (err) {
+    // Supabase could not save it (e.g. the followers grants/RLS in
+    // supabase-setup.sql have not been run yet): undo, so the button
+    // coming back tells the truth instead of pretending to follow.
+    followedUserIds.delete(key);
+    syncFollowButtons();
+    showToast('Could not save follow: ' + (err.message || 'try again'));
+  }
+}
+
 function renderCreators() {
   const container = document.getElementById('creatorsContainer');
   if (!container) return;
@@ -10649,9 +10748,7 @@ function renderCreators() {
       <div class="creator-card-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}${verifiedBadgeSlotHTML(c.user_id || c.id, c.is_verified === true, c.handle)}</div>
       <div class="creator-card-handle" title="@${escapeHtml(handleClean)}">@${escapeHtml(handleClean)}</div>
       <div class="creator-card-followers">${escapeHtml(c.followers || 'Creator')}</div>
-      <button class="creator-message-btn" onclick="openDirectMessageWithCreator('${escapeHtml(c.id)}')" title="Direct Message with ${escapeHtml(c.name)}">
-        <span class="material-symbols-rounded">chat_bubble</span> Message
-      </button>
+      <button class="creator-follow-btn" data-follow-uid="${escapeHtml(c.user_id || c.id)}" onclick="followUser(event, '${escapeHtml(c.user_id || c.id)}')" title="Follow ${escapeHtml(c.name)}" style="display:${(isOwnFollowUid(c.user_id || c.id) || isFollowing(c.user_id || c.id)) ? 'none' : ''}">Follow</button>
     `;
     container.appendChild(card);
   });
@@ -11884,6 +11981,7 @@ function homePostCardHTML(v, idx) {
     + '<div class="home-post-head" data-author-uid="' + escapeHtml(String(v.user_id || '')) + '">'
     + avatarHTML(v.user_id, displayName, authorAvatarUrl, 36)
     + '<div class="home-post-user"><span class="home-post-username">@' + escapeHtml(String(username)) + '</span>' + verified + '</div>'
+    + followButtonHTML(v.user_id)
     + (time ? '<span class="home-post-time">' + escapeHtml(time) + '</span>' : '')
     + '<button class="home-post-more" onclick="openInFeed(' + idx + ')" title="Open in Reels">' + lucideIcon('more-horizontal', 20) + '</button>'
     + '</div>'
