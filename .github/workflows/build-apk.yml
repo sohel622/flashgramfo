@@ -71,13 +71,13 @@ jobs:
           def patch_file(filepath, patterns):
               p = pathlib.Path(filepath)
               if not p.exists():
-                  print(f"Skipping missing file: {filepath}")
+                  print(f"Skipping {filepath}, not found.")
                   return
               content = p.read_text()
               updated = content
               for pattern, repl in patterns:
                   updated, count = re.subn(pattern, repl, updated)
-                  print(f"{filepath}: replaced {count} occurrence(s) of pattern: {pattern}")
+                  print(f"{filepath}: replaced {pattern} -> {repl} ({count} matches)")
               if updated != content:
                   p.write_text(updated)
 
