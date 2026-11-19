@@ -926,15 +926,18 @@
     .nav-item .nav-icon { display: flex; align-items: center; justify-content: center; color: inherit; }
     .nav-item .nav-icon svg { width: 24px; height: 24px; }
     .nav-item .material-symbols-rounded { font-size: 24px; color: rgba(255,255,255,0.4); transition: color .18s; }
-    .nav-item.active { color: #fff; }
-    .nav-item.active .material-symbols-rounded { color: #fff; }
+    /* The selected icon uses the app accent color — the same on the
+       dark nav and on the light Home nav, so the active state is
+       always the same color. */
+    .nav-item.active { color: var(--accent); }
+    .nav-item.active .material-symbols-rounded { color: var(--accent); }
     /* Light bottom nav while the white Home page is showing. */
     body.home-light #bottomnav {
       background: rgba(255,255,255,0.97);
       border-top: 1px solid rgba(0,0,0,0.08);
     }
     body.home-light .nav-item { color: rgba(0,0,0,0.45); }
-    body.home-light .nav-item.active { color: #111; }
+    body.home-light .nav-item.active { color: var(--accent); }
     .nav-badge-dot {
       position: absolute;
       top: 4px;
@@ -3313,18 +3316,24 @@
       </div>
     </div>
 
-    <!-- Stats counters -->
+    <!-- Stats counters: real Supabase counts, never hardcoded.
+         Posts is the 4th counter; all four are filled by
+         loadProfileStats() whenever the Profile page opens. -->
     <div class="profile-stats">
-      <div class="profile-stat" onclick="showToast('148 Following')">
-        <div class="profile-stat-num" id="stat-following">148</div>
-        <div class="profile-stat-label">Following</div>
+      <div class="profile-stat" onclick="showProfileStatToast('posts')">
+        <div class="profile-stat-num" id="stat-posts">0</div>
+        <div class="profile-stat-label">Posts</div>
       </div>
-      <div class="profile-stat" onclick="showToast('18.4K Followers')">
-        <div class="profile-stat-num" id="stat-followers">18.4K</div>
+      <div class="profile-stat" onclick="showProfileStatToast('followers')">
+        <div class="profile-stat-num" id="stat-followers">0</div>
         <div class="profile-stat-label">Followers</div>
       </div>
-      <div class="profile-stat" onclick="showToast('Total video likes')">
-        <div class="profile-stat-num" id="stat-likes">54.2K</div>
+      <div class="profile-stat" onclick="showProfileStatToast('following')">
+        <div class="profile-stat-num" id="stat-following">0</div>
+        <div class="profile-stat-label">Following</div>
+      </div>
+      <div class="profile-stat" onclick="showProfileStatToast('likes')">
+        <div class="profile-stat-num" id="stat-likes">0</div>
         <div class="profile-stat-label">Likes</div>
       </div>
     </div>
@@ -7302,6 +7311,66 @@ async function adminEditBanReason(banId) {
   }
 }
 
+// ── Profile counters (Posts / Followers / Following / Likes) ──
+// Real counts from Supabase — never hardcoded. The stats row used
+// to say 148 Following / 18.4K Followers / 54.2K Likes, and
+// applyProfile() read profile.following / profile.followers, which
+// Supabase never fills (profiles has no such columns), while Likes
+// summed only the videos saved on this phone.
+let profileStats = { posts: null, followers: null, following: null, likes: null };
+let profileStatsTimer = null;
+
+function renderProfileStats() {
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el && val !== null && val !== undefined) el.textContent = fmtN(val);
+  };
+  set('stat-posts', profileStats.posts);
+  set('stat-followers', profileStats.followers);
+  set('stat-following', profileStats.following);
+  set('stat-likes', profileStats.likes);
+}
+function showProfileStatToast(kind) {
+  const labels = { posts: 'Posts', followers: 'Followers', following: 'Following', likes: 'Total video likes' };
+  const val = profileStats[kind];
+  showToast(val === null || val === undefined ? (labels[kind] || kind) : fmtN(val) + ' ' + (labels[kind] || kind));
+}
+// Fetch the four real counts from Supabase and repaint the profile
+// stats. `count` is exact when the query asks for it; the
+// `count ?? data.length` fallback keeps the harness fake client
+// (which returns rows and no count) working the same way.
+async function loadProfileStats() {
+  const me = currentFollowUserId();
+  if (!supabaseClient || !me) return;
+  // Capture the client: a sign-out mid-load must not break this run.
+  const sb = supabaseClient;
+  try {
+    const countOf = (res) => (res && typeof res.count === 'number' ? res.count : (res && Array.isArray(res.data) ? res.data.length : 0));
+    const postsRes = await sb.from('posts').select('id', { count: 'exact' }).eq('user_id', me);
+    if (postsRes.error) throw new Error(postsRes.error.message);
+    const myPostIds = Array.isArray(postsRes.data) ? postsRes.data.map(r => String(r.id)) : [];
+    // Likes on my videos: count likes rows whose post is mine.
+    // Counting by my post ids is exact even for likes saved before
+    // the post_owner_id trigger existed; post_owner_id is the fallback.
+    let likesCount = 0;
+    if (myPostIds.length > 0) {
+      const likesRes = await sb.from('likes').select('id', { count: 'exact', head: true }).in('post_id', myPostIds);
+      if (!likesRes.error) likesCount = countOf(likesRes);
+      else {
+        const alt = await sb.from('likes').select('id', { count: 'exact', head: true }).eq('post_owner_id', me);
+        if (!alt.error) likesCount = countOf(alt);
+      }
+    }
+    const followersRes = await sb.from('followers').select('follower_id', { count: 'exact', head: true }).eq('following_id', me);
+    const followingRes = await sb.from('followers').select('following_id', { count: 'exact', head: true }).eq('follower_id', me);
+    profileStats.posts = countOf(postsRes);
+    profileStats.followers = followersRes.error ? (profileStats.followers ?? 0) : countOf(followersRes);
+    profileStats.following = followingRes.error ? (profileStats.following ?? 0) : countOf(followingRes);
+    profileStats.likes = likesCount;
+    renderProfileStats();
+  } catch (e) { console.warn('loadProfileStats note:', e && e.message); }
+}
+
 function applyProfile() {
   // The real display name from the loaded profile. Never the generic
   // "Creator" placeholder: if the name hasn't loaded yet, show the
@@ -7317,8 +7386,10 @@ function applyProfile() {
   }
   document.getElementById('profile-handle').textContent = '@' + (profile.handle || 'user');
   document.getElementById('profile-bio').textContent = profile.bio || '';
-  document.getElementById('stat-following').textContent = fmtN(profile.following || 0);
-  document.getElementById('stat-followers').textContent = fmtN(profile.followers || 0);
+  // Real Supabase counts (loadProfileStats fills profileStats).
+  // The old code read profile.following / profile.followers, which
+  // Supabase never fills, so the numbers were wrong.
+  renderProfileStats();
 
   // Profile Avatar in top-right area of header (cache-first; a dead
   // URL shows initials, never a broken image + "Profile picture").
@@ -7328,9 +7399,8 @@ function applyProfile() {
     profile.id, profile.name || profile.handle, profile.avatar_url
   );
 
-  const ownVideos = videos.filter(v => !v.isSeed || v.username === profile.handle);
-  const totalLikes = ownVideos.reduce((sum, v) => sum + (v.likes || 0), 0) + (profile.likes || 0);
-  document.getElementById('stat-likes').textContent = fmtN(totalLikes);
+  // Likes come from Supabase too (renderProfileStats above) — the
+  // old code summed only the videos saved on this phone.
 
   // Admin-only: show the "Admin — Ban Users" button on the profile page.
   const adminBanBtn = document.getElementById('profile-admin-ban-btn');
@@ -9038,6 +9108,8 @@ async function toggleLike(btn, id, idx) {
 
   // Sync the like / unlike to Supabase (real posts, signed in only).
   await syncLikeToSupabase(v, isLiked, btn);
+  // My own video's like count changed — refresh the profile counters.
+  if (v && v.user_id && currentFollowUserId() && String(v.user_id).toLowerCase() === currentFollowUserId().toLowerCase()) loadProfileStats();
 }
 
 function toggleFollow(e, id) {
@@ -9274,6 +9346,8 @@ async function handleIncomingPost(p) {
   videos.unshift(mapPostToVideo(p, myId));
   rebuildFeedPreservingPosition(currentId);
   renderProfileGrid();
+  // A new post of mine arrived live — my Posts count just changed.
+  if (p.user_id && currentFollowUserId() && String(p.user_id).toLowerCase() === currentFollowUserId().toLowerCase()) loadProfileStats();
 }
 
 // Load posts from Supabase posts table
@@ -10415,6 +10489,7 @@ async function submitUpload() {
     retryPendingPostUploads();
     setTimeout(() => feedEl.scrollTo({ top: 0, behavior: 'smooth' }), 100);
     if (postSaved) showToast('Video approved by AI & published to feed! 🎉');
+    if (postSaved) loadProfileStats(); // my Posts count just changed
 
   } catch(err) {
     console.error('submitUpload exception:', err);
@@ -10695,6 +10770,7 @@ async function followUser(event, uid) {
       if (String(error.code) === '23505' || String(error.code) === '409' || /duplicate/i.test(error.message || '')) return;
       throw new Error(error.message);
     }
+    loadProfileStats(); // my Following count just changed
   } catch (err) {
     // Supabase could not save it (e.g. the followers grants/RLS in
     // supabase-setup.sql have not been run yet): undo, so the button
@@ -12601,6 +12677,8 @@ async function toggleHomeLike(btn, id, idx) {
   if (feedBtn) feedBtn.classList.toggle('liked', isLiked);
   try { if (!v.isSeed) await dbPut('videos', v); } catch (e) {}
   await syncLikeToSupabase(v, isLiked, btn);
+  // My own video's like count changed — refresh the profile counters.
+  if (v && v.user_id && currentFollowUserId() && String(v.user_id).toLowerCase() === currentFollowUserId().toLowerCase()) loadProfileStats();
 }
 
 let activeLikesRequestId = 0;
@@ -12867,8 +12945,17 @@ function goPage(page, navEl) {
     document.getElementById('page-' + p).classList.toggle('active', p === page);
   });
 
+  // Stop the Profile stats refresh when leaving the Profile page.
+  if (profileStatsTimer) { clearInterval(profileStatsTimer); profileStatsTimer = null; }
+  // The active icon is decided by the page itself, not by which
+  // element opened it — every path to a page must highlight the
+  // same icon (Profile opened without its nav element used to leave
+  // the wrong icon lit, or none at all).
+  const navByPage = { home: 'nav-home', feed: 'nav-reels', discover: 'nav-discover', inbox: 'nav-inbox', profile: 'nav-profile' };
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  if (navEl) navEl.classList.add('active');
+  const activeNav = document.getElementById(navByPage[page] || '');
+  if (activeNav) activeNav.classList.add('active');
+  else if (navEl) navEl.classList.add('active');
 
   // White Home page gets the light bottom nav; every other page keeps it dark.
   document.body.classList.toggle('home-light', page === 'home');
@@ -12905,6 +12992,13 @@ function goPage(page, navEl) {
       }
       applyProfile();
       renderProfileGrid();
+      // Real profile counts, refreshed while this page is open
+      // (every 30s, so follows/likes from other people show up
+      // without reopening the page).
+      loadProfileStats();
+      profileStatsTimer = setInterval(() => {
+        if (document.getElementById('page-profile').classList.contains('active')) loadProfileStats();
+      }, 30000);
     } else if (page === 'discover') {
       renderDiscover();
       loadCreatorsFromSupabase();
