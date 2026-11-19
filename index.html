@@ -368,19 +368,28 @@
       position: relative;
       width: 100%;
       aspect-ratio: 4 / 5;
-      max-height: 85vh;
       background: #000;
       overflow: hidden;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .home-post-media.has-aspect {
+      display: block;
     }
     .home-post-media video {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       display: block;
       background: #000;
+    }
+    .home-post-media.has-aspect video {
+      width: 100%;
+      height: auto;
     }
     /* Loading spinner (shown until the first frame can play). */
     .home-video-spinner {
@@ -446,6 +455,30 @@
       padding: 0;
     }
     .home-post-sound svg { width: 20px; height: 20px; }
+    /* Top-right video duration badge (shows on play, fades out after 2s). */
+    .home-post-duration {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.65);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.02em;
+      line-height: 1.2;
+      pointer-events: none;
+      z-index: 3;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.25s ease, visibility 0.25s ease;
+    }
+    .home-post-duration.show {
+      opacity: 1;
+      visibility: visible;
+    }
     .home-post-play {
       position: absolute;
       inset: 0;
@@ -473,7 +506,12 @@
     .home-post-act.liked svg { fill: #ff3040; }
     .home-post-act.save.saved svg { fill: #111; }
     .home-post-act.save { margin-left: auto; }
-    .home-post-likes { font-size: 14px; font-weight: 700; color: #111; padding: 2px 12px 0; }
+    .home-post-likes {
+      font-size: 14px; font-weight: 700; color: #111; padding: 2px 12px 0;
+      cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+      display: inline-block;
+    }
+    .home-post-likes:active { opacity: 0.6; }
     .home-post-caption { font-size: 14px; line-height: 1.4; color: #111; padding: 3px 12px 0; word-wrap: break-word; }
     .home-post-caption b { font-weight: 700; margin-right: 5px; }
     .home-post-comments {
@@ -2272,20 +2310,21 @@
       padding: 0 16px 16px;
     }
 
-    /* ── MODALS (Upload, Share, Comments, Edit Profile) ── */
-    #upload-modal, #share-modal, #comments-modal, #edit-profile-modal, #more-modal, #admin-ban-modal, #notif-modal {
+    /* ── MODALS (Upload, Share, Comments, Likes, Edit Profile, Verify Confirm) ── */
+    #upload-modal, #share-modal, #comments-modal, #likes-modal, #edit-profile-modal, #more-modal, #admin-ban-modal, #notif-modal, #verify-confirm-modal {
       position: fixed;
       inset: 0;
       z-index: 200;
       display: flex;
       align-items: flex-end;
+      justify-content: center;
       background: rgba(0,0,0,0.7);
       backdrop-filter: blur(4px);
       opacity: 0;
       pointer-events: none;
       transition: opacity .22s;
     }
-    #upload-modal.open, #share-modal.open, #comments-modal.open, #edit-profile-modal.open, #more-modal.open, #admin-ban-modal.open, #notif-modal.open {
+    #upload-modal.open, #share-modal.open, #comments-modal.open, #likes-modal.open, #edit-profile-modal.open, #more-modal.open, #admin-ban-modal.open, #notif-modal.open, #verify-confirm-modal.open {
       opacity: 1;
       pointer-events: auto;
     }
@@ -2300,6 +2339,132 @@
       transition: transform .28s cubic-bezier(.4,0,.2,1);
     }
     .open .modal-sheet { transform: translateY(0); }
+    #verify-confirm-modal { z-index: 220; }
+    .verify-confirm-sheet {
+      width: 100%;
+      max-height: 92vh;
+      overflow-y: auto;
+      background: radial-gradient(ellipse 95% 36% at 50% 0%, rgba(255, 45, 118, 0.24) 0%, rgba(22, 18, 22, 0.98) 58%, #121214 100%);
+      border-radius: 26px 26px 0 0;
+      padding: 18px max(20px, env(safe-area-inset-right, 0px)) calc(26px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+      transform: translateY(100%);
+      transition: transform .28s cubic-bezier(.4,0,.2,1);
+      color: #fff;
+      position: relative;
+    }
+    @media (min-width: 600px) {
+      .verify-confirm-sheet {
+        max-width: 480px;
+        box-shadow: 0 0 50px rgba(0,0,0,0.85);
+      }
+    }
+    .open .verify-confirm-sheet { transform: translateY(0); }
+    .vc-close {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255,255,255,0.09);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .vc-close:active { background: rgba(255,255,255,0.18); }
+    .vc-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-top: 2px;
+      margin-bottom: 24px;
+    }
+    .vc-seal {
+      width: 52px;
+      height: 52px;
+      margin-bottom: 14px;
+    }
+    .vc-title {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+    .vc-sub {
+      font-size: 14.5px;
+      color: rgba(255,255,255,0.75);
+      line-height: 1.4;
+    }
+    .vc-section-label {
+      font-size: 15.5px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 12px;
+      text-align: left;
+    }
+    .vc-card {
+      background: rgba(255,255,255,0.055);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .vc-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 15px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .vc-row:last-child { border-bottom: none; }
+    .vc-row-icon {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .vc-row-body { flex: 1; min-width: 0; text-align: left; }
+    .vc-row-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 2px;
+    }
+    .vc-row-desc {
+      font-size: 13px;
+      line-height: 1.38;
+      color: rgba(255,255,255,0.58);
+    }
+    .vc-confirm-btn {
+      width: 100%;
+      height: 50px;
+      border-radius: 999px;
+      border: none;
+      background: #ff2e7a;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+      font-family: var(--font);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity .15s, transform .1s;
+    }
+    .vc-confirm-btn:active { opacity: 0.88; transform: scale(0.99); }
+    .vc-credit {
+      margin-top: 12px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 500;
+      color: rgba(255,255,255,0.55);
+    }
     .modal-handle {
       width: 38px;
       height: 4px;
@@ -2719,8 +2884,8 @@
       100% { background-position: 200% 50%; }
     }
 
-    /* Comments Sheet */
-    .comments-sheet {
+    /* Comments & Likes Bottom Sheets */
+    .comments-sheet, .likes-sheet {
       width: 100%;
       height: 64vh;
       background: var(--bg3);
@@ -2731,14 +2896,25 @@
       transition: transform .28s cubic-bezier(.4,0,.2,1);
       overflow: hidden;
     }
-    .open .comments-sheet { transform: translateY(0); }
-    .comments-header {
+    .likes-sheet {
+      height: 56vh;
+      max-height: 75vh;
+    }
+    @media (min-width: 600px) {
+      .likes-sheet {
+        max-width: 480px;
+        box-shadow: 0 0 50px rgba(0,0,0,0.85);
+      }
+    }
+    .open .comments-sheet, .open .likes-sheet { transform: translateY(0); }
+    .comments-header, .likes-header {
       padding: 14px 20px 10px;
       font-weight: 700;
       font-size: 15px;
       border-bottom: 1px solid rgba(255,255,255,0.08);
       text-align: center;
       position: relative;
+      flex-shrink: 0;
     }
     .cm-close {
       position: absolute;
@@ -2749,13 +2925,72 @@
       color: #fff;
       cursor: pointer;
     }
-    .comments-list {
+    .comments-list, .likes-list {
       flex: 1;
       overflow-y: auto;
       padding: 14px 16px;
       display: flex;
       flex-direction: column;
       gap: 14px;
+    }
+    .likes-list {
+      gap: 4px;
+      padding: 8px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+    }
+    .likes-user-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 2px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .likes-user-row:last-child { border-bottom: none; }
+    .likes-user-meta {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .likes-user-name-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      min-width: 0;
+    }
+    .likes-user-display {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .likes-user-handle {
+      font-size: 12.5px;
+      color: var(--fg2);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .likes-you-pill {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--fg2);
+      background: rgba(255,255,255,0.08);
+      padding: 3px 9px;
+      border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .likes-state-box {
+      padding: 36px 16px;
+      text-align: center;
+      color: var(--fg2);
+      font-size: 13.5px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
     }
     .comment-item { display: flex; gap: 10px; align-items: flex-start; }
     .comment-avatar {
@@ -3158,6 +3393,67 @@
   </div>
 </div>
 
+<!-- LIKES LIST MODAL (Home feed) -->
+<div id="likes-modal" onclick="closeOnBackdrop(event,'likes-modal')">
+  <div class="likes-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle" style="margin:10px auto 0;flex-shrink:0;"></div>
+    <div class="likes-header">
+      <span id="likesModalTitle">Likes</span>
+      <button class="cm-close" onclick="closeFeedModal('likes-modal')" aria-label="Close likes list"><span class="material-symbols-rounded">close</span></button>
+    </div>
+    <div class="likes-list" id="likesModalList"></div>
+  </div>
+</div>
+
+<!-- VERIFICATION CONFIRMATION POPUP -->
+<div id="verify-confirm-modal" onclick="if(event.target.id==='verify-confirm-modal')closeVerifyConfirmModal()">
+  <div class="verify-confirm-sheet" onclick="event.stopPropagation()">
+    <button type="button" class="vc-close" onclick="closeVerifyConfirmModal()" aria-label="Close">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <div class="vc-hero">
+      <svg class="vc-seal" viewBox="0 0 48 48" aria-hidden="true">
+        <path fill="#ff2e7a" d="M24 2.5l4.4 3.4 5.5-.6 2.6 4.9 5.2 1.8.3 5.5 3.9 3.9-2 5.1 1.6 5.3-3.9 3.9-.3 5.5-5.2 1.8-2.6 4.9-5.5-.6L24 45.5l-4.4-3.4-5.5.6-2.6-4.9-5.2-1.8-.3-5.5L2.1 26.6l2-5.1-1.6-5.3 3.9-3.9.3-5.5 5.2-1.8 2.6-4.9 5.5.6z"/>
+        <path d="M16.5 24.5l5 5 10.5-10.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="vc-title">Get verified on ReelFlow</div>
+      <div class="vc-sub">Show people your profile is the real one.</div>
+    </div>
+    <div class="vc-section-label">Show your authentic profile</div>
+    <div class="vc-card">
+      <div class="vc-row">
+        <div class="vc-row-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+        </div>
+        <div class="vc-row-body">
+          <div class="vc-row-title">Verified badge</div>
+          <div class="vc-row-desc">Shown next to your name on your profile, posts and comments.</div>
+        </div>
+      </div>
+      <div class="vc-row">
+        <div class="vc-row-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+        </div>
+        <div class="vc-row-body">
+          <div class="vc-row-title">Extra trust</div>
+          <div class="vc-row-desc">People can see at a glance that this is really you.</div>
+        </div>
+      </div>
+      <div class="vc-row">
+        <div class="vc-row-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+        </div>
+        <div class="vc-row-body">
+          <div class="vc-row-title">Stand out</div>
+          <div class="vc-row-desc">Easier to recognise for followers, brands and customers.</div>
+        </div>
+      </div>
+    </div>
+    <button type="button" class="vc-confirm-btn" onclick="confirmVerifiedBadge()">Confirm</button>
+    <div class="vc-credit">Sohel</div>
+  </div>
+</div>
+
 <!-- EDIT PROFILE MODAL -->
 <div id="edit-profile-modal" onclick="closeOnBackdrop(event,'edit-profile-modal')">
   <div class="modal-sheet" onclick="event.stopPropagation()">
@@ -3214,8 +3510,6 @@
       Log Out of Account
     </button>
   </div>
-</div>
-
 </div>
 
 <!-- ADMIN — BAN USERS MODAL -->
@@ -3658,6 +3952,7 @@ async function loadAuthorProfiles(userIds) {
         is_verified: p.is_verified === true,
         profile_color: normalizeProfileColor(p.profile_color),
       });
+      cacheVerified(uid, p.is_verified === true);
     });
     // Remember authors with no profile row so we don't re-query them
     // on every load (a later Realtime profile insert clears it).
@@ -3995,7 +4290,12 @@ pruneAllExpiredChatMessages();
 
     // Load profile
     const prows = await dbGetAll('profile');
-    prows.forEach(r => { if (r.key in profile) profile[r.key] = r.val; });
+    prows.forEach(r => {
+      if (r.key in profile) profile[r.key] = r.val;
+      if (typeof r.key === 'string' && r.key.indexOf('verified_confirmed_') === 0 && r.val) {
+        verifiedConfirmedUsers[r.key.slice('verified_confirmed_'.length)] = true;
+      }
+    });
   } catch(e) {
     console.warn('DB initialization error', e);
     videos = [];
@@ -6810,6 +7110,7 @@ function applyProfile() {
   if (adminBanBtn) adminBanBtn.style.display = isCurrentUserAdmin() ? 'flex' : 'none';
 
   updateAuthStatusUI();
+  maybeShowVerifyConfirmPopup();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -8060,8 +8361,58 @@ function verifiedBadgeSlotHTML(userId, isVerified, handle, large) {
   const h = handle ? String(handle).replace(/^@/, '') : '';
   return '<span class="verified-badge-slot" data-uid="' + escapeHtml(uid) + '" data-handle="' + escapeHtml(h) + '"' + (large ? ' data-large="1"' : '') + '>' + (isVerified ? verifiedBadgeHTML(large) : '') + '</span>';
 }
+const verifiedCache = {};
+const verifiedConfirmedUsers = {};
+let verifyConfirmDismissedInSession = false;
 function verifiedCacheKey(id) {
   return id ? String(id).toLowerCase() : '';
+}
+function isVerifiedBadgeConfirmed(userId) {
+  const k = verifiedCacheKey(userId);
+  if (!k) return true;
+  if (verifiedConfirmedUsers[k] === true) return true;
+  try {
+    if (localStorage.getItem('reelflow_verified_confirmed_' + k) === '1') {
+      verifiedConfirmedUsers[k] = true;
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
+function markVerifiedBadgeConfirmed(userId) {
+  const k = verifiedCacheKey(userId);
+  if (!k) return;
+  verifiedConfirmedUsers[k] = true;
+  try { localStorage.setItem('reelflow_verified_confirmed_' + k, '1'); } catch (_) {}
+  try { const p = dbPut('profile', { key: 'verified_confirmed_' + k, val: true }); if (p && p.catch) p.catch(function(){}); } catch (_) {}
+}
+function openVerifyConfirmModal() {
+  const modal = document.getElementById('verify-confirm-modal');
+  if (modal) modal.classList.add('open');
+}
+function closeVerifyConfirmModal() {
+  verifyConfirmDismissedInSession = true;
+  const modal = document.getElementById('verify-confirm-modal');
+  if (modal) modal.classList.remove('open');
+}
+function confirmVerifiedBadge() {
+  const uid = (profile && profile.id) || (currentAuthUser && currentAuthUser.id) || '';
+  if (uid) markVerifiedBadgeConfirmed(uid);
+  verifyConfirmDismissedInSession = false;
+  const modal = document.getElementById('verify-confirm-modal');
+  if (modal) modal.classList.remove('open');
+  applyProfile();
+  refreshAllVerifiedBadgeSlots();
+  showToast('Verified badge activated!');
+}
+function maybeShowVerifyConfirmPopup(forceCheck) {
+  const uid = profile && profile.id ? String(profile.id) : '';
+  if (!uid || profile.is_verified !== true) return;
+  if (isVerifiedBadgeConfirmed(uid)) return;
+  const profilePage = document.getElementById('page-profile');
+  if (!profilePage || !profilePage.classList.contains('active')) return;
+  if (verifyConfirmDismissedInSession && !forceCheck) return;
+  openVerifyConfirmModal();
 }
 function cacheVerified(userId, isVerified) {
   const k = verifiedCacheKey(userId);
@@ -8072,13 +8423,19 @@ function isUserVerified(userId) {
   const k = verifiedCacheKey(userId);
   if (!k) return false;
   // The local profile is the freshest copy for the current user.
-  if (profile && profile.id && verifiedCacheKey(profile.id) === k) return profile.is_verified === true;
-  return verifiedCache[k] === true;
+  if (profile && profile.id && verifiedCacheKey(profile.id) === k) {
+    return profile.is_verified === true && isVerifiedBadgeConfirmed(profile.id);
+  }
+  if (k in verifiedCache) return verifiedCache[k] === true;
+  const ap = authorProfileFor(userId);
+  return !!(ap && ap.is_verified === true);
 }
 function isHandleVerified(handle) {
   if (!handle) return false;
   const h = String(handle).replace(/^@/, '').toLowerCase();
-  if (profile && profile.handle && String(profile.handle).replace(/^@/, '').toLowerCase() === h) return profile.is_verified === true;
+  if (profile && profile.handle && String(profile.handle).replace(/^@/, '').toLowerCase() === h) {
+    return profile.is_verified === true && isVerifiedBadgeConfirmed(profile.id);
+  }
   if (typeof creators !== 'undefined' && creators) {
     const c = creators.find(x => (x.handle || '').toLowerCase() === h);
     if (c) return c.is_verified === true;
@@ -8151,6 +8508,9 @@ function handleProfilesRealtimeUpdate(row) {
     }
   }
   refreshAllVerifiedBadgeSlots();
+  if (profile && profile.id && verifiedCacheKey(profile.id) === verifiedCacheKey(row.user_id) && isV) {
+    maybeShowVerifyConfirmPopup(true);
+  }
 }
 let profilesRealtimeChannel = null;
 function subscribeToProfilesRealtime() {
@@ -9016,6 +9376,9 @@ function moderationUploadErrorMessage(data, status) {
   if (data && typeof data.error === 'string' && data.error) return data.error;
   // The endpoint rejects a flagged video with HTTP 400; 403 is kept
   // for older servers that still used it.
+  if (status === 0) return (typeof navigator !== 'undefined' && navigator.onLine === false)
+    ? 'No internet connection — please check your network and try again'
+    : 'Network connection interrupted during upload — please try again';
   if (status === 400) return 'Video rejected: Contains inappropriate content violating community guidelines.';
   if (status === 403) return 'Video violates community guidelines due to sensitive content';
   if (status === 503) return 'Moderation service is unavailable — please try again later';
@@ -9048,6 +9411,17 @@ function updateUploadBarFromEvent(e) {
 // published unchecked.
 function uploadViaModeration(file, caption) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+    const succeed = (data) => {
+      if (settled) return;
+      settled = true;
+      resolve(data);
+    };
     const formData = new FormData();
     formData.append('file', file);
     formData.append('caption', caption);
@@ -9069,38 +9443,60 @@ function uploadViaModeration(file, caption) {
       );
     });
 
+    xhr.onerror = () => {
+      console.error('[upload] Network connection error during moderation upload');
+      const err = new Error('Network connection error during upload');
+      err.isNetworkError = true;
+      fail(err);
+    };
+    xhr.onabort = () => {
+      const err = new Error('Upload was cancelled');
+      err.isNetworkError = true;
+      fail(err);
+    };
+    xhr.ontimeout = () => {
+      console.error('[upload] Moderation upload request timed out after', xhr.timeout, 'ms');
+      const err = new Error('Upload request timed out');
+      err.isNetworkError = true;
+      fail(err);
+    };
+
     xhr.onreadystatechange = () => {
       if (xhr.readyState === XMLHttpRequest.DONE) {
+        if (xhr.status === 0) {
+          // Wait one tick so onerror/ontimeout/onabort can fire with the exact reason first.
+          setTimeout(() => {
+            if (settled) return;
+            const msg = (typeof navigator !== 'undefined' && navigator.onLine === false)
+              ? 'No internet connection — please check your network and try again'
+              : 'Network connection interrupted during upload';
+            const err = new Error(msg);
+            err.isNetworkError = true;
+            fail(err);
+          }, 0);
+          return;
+        }
         let data = {};
         try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { data = {}; }
         if (xhr.status >= 200 && xhr.status < 300) {
           if (data.ok === false) {
             const detail = moderationUploadErrorMessage(data, xhr.status);
             console.error('[upload] Moderation refused the video:', detail);
-            reject(new Error(detail));
+            fail(new Error(detail));
             return;
           }
           if (data.video_url) {
-            resolve({ secure_url: data.video_url, thumbnail_url: data.thumbnail_url || '' });
+            succeed({ secure_url: data.video_url, thumbnail_url: data.thumbnail_url || '' });
           } else {
             console.error('[upload] Moderation server returned no video URL:', JSON.stringify(data));
-            reject(new Error('Moderation server returned no video URL'));
+            fail(new Error('Moderation server returned no video URL'));
           }
         } else {
           const detail = moderationUploadErrorMessage(data, xhr.status);
           console.error('[upload] Moderation upload failed:', xhr.status, detail);
-          reject(new Error(detail));
+          fail(new Error(detail));
         }
       }
-    };
-
-    xhr.onerror = () => {
-      console.error('[upload] Network connection error during moderation upload');
-      reject(new Error('Network connection error during upload'));
-    };
-    xhr.ontimeout = () => {
-      console.error('[upload] Moderation upload request timed out after', xhr.timeout, 'ms');
-      reject(new Error('Upload request timed out'));
     };
 
     xhr.send(formData);
@@ -9190,89 +9586,346 @@ async function retryPendingPostUploads() {
   return done;
 }
 
-// Upload one video file to Cloudinary (a single attempt). Resolves
-// to the Cloudinary response ({secure_url, ...}). Rejects with an
-// Error whose `isNetworkError` is true when the connection broke
-// before Cloudinary could answer (status 0 / network error) —
-// that is the only failure worth retrying.
-function uploadVideoToCloudinary(file) {
+// Safely materialize a file slice into an in-memory Blob. On Android
+// WebView, Facebook in-app browser and mobile browsers, passing a raw
+// <input type="file"> File handle from a content:// URI directly into
+// XHR FormData frequently fails mid-transfer with net::ERR_UPLOAD_FILE_CHANGED
+// (xhr.status === 0). Reading the small slice into memory avoids that.
+const CLOUDINARY_CHUNK_SIZE = 6 * 1024 * 1024; // 6 MB (Cloudinary min chunk is 5 MB)
+async function readSliceAsBlob(file, start, end) {
+  const s = Math.max(0, start || 0);
+  const e = Math.min(file.size, end !== undefined ? end : file.size);
+  const slice = (s === 0 && e === file.size) ? file : file.slice(s, e);
+  if (slice && typeof slice.arrayBuffer === 'function') {
+    try {
+      const buf = await slice.arrayBuffer();
+      return new Blob([buf], { type: file.type || 'video/mp4' });
+    } catch (_) {}
+  }
+  return slice;
+}
+
+// Send one single-request or one Content-Range chunk to Cloudinary.
+// Handles xhr.status === 0 cleanly via onerror/ontimeout/onabort + a
+// microtask defer so "Upload failed with status 0" is never shown.
+function sendCloudinaryUploadRequest(blob, fileName, options) {
+  const opts = options || {};
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+    const succeed = (data) => {
+      if (settled) return;
+      settled = true;
+      resolve(data);
+    };
+
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', blob, fileName || 'video.mp4');
     formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', CLOUDINARY_UPLOAD_URL, true);
-    // A stalled upload must fail loudly instead of spinning forever:
-    // the ontimeout handler below only fires when this is set.
-    xhr.timeout = 600000; // 10 minutes
+    if (opts.uniqueUploadId && opts.contentRange) {
+      xhr.setRequestHeader('X-Unique-Upload-Id', opts.uniqueUploadId);
+      xhr.setRequestHeader('Content-Range', opts.contentRange);
+    }
+    xhr.timeout = opts.timeoutMs || 180000;
 
-    xhr.upload.addEventListener('progress', updateUploadBarFromEvent);
-
-    xhr.upload.addEventListener('load', () => {
-      // Bytes are on Cloudinary now; it is preparing the video.
-      updateUploadProgress(
-        85,
-        'Processing on Cloudinary (85%)…',
-        'Cloudinary is preparing your video…'
-      );
-    });
-
-    xhr.onreadystatechange = () => {
-      if (xhr.readyState === XMLHttpRequest.DONE) {
-        let data = {};
-        try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { data = {}; }
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(data);
-        } else {
-          // Cloudinary answers errors as {error: {message}}.
-          const cloudErr = cloudinaryUploadErrorMessage(data);
-          let detail = cloudErr || (data.reason ? `Flagged: ${data.reason}` : '');
-          if (!detail) detail = xhr.status === 413 ? 'Video file exceeds maximum size' : `Upload failed with status ${xhr.status}`;
-          console.error('[upload] Cloudinary upload failed:', xhr.status, detail);
-          const err = new Error(detail);
-          // Status 0 = no HTTP response at all: the connection broke
-          // after the bytes were sent (phone network dropped while
-          // waiting for Cloudinary's reply). That is a network
-          // failure, not a Cloudinary rejection, so it is safe to
-          // retry.
-          err.isNetworkError = (xhr.status === 0);
-          reject(err);
-        }
-      }
-    };
+    if (typeof opts.onProgress === 'function') {
+      xhr.upload.addEventListener('progress', opts.onProgress);
+    }
+    if (typeof opts.onTransferDone === 'function') {
+      xhr.upload.addEventListener('load', opts.onTransferDone);
+    }
 
     xhr.onerror = () => {
-      console.error('[upload] Network connection error during upload');
-      const err = new Error('Network connection error during upload');
+      console.error('[upload] Network connection error during Cloudinary upload');
+      const err = new Error(
+        (typeof navigator !== 'undefined' && navigator.onLine === false)
+          ? 'No internet connection — please check your network and try again'
+          : 'Network connection error during upload'
+      );
       err.isNetworkError = true;
-      reject(err);
+      fail(err);
+    };
+    xhr.onabort = () => {
+      const err = new Error('Upload connection was interrupted');
+      err.isNetworkError = true;
+      fail(err);
     };
     xhr.ontimeout = () => {
       console.error('[upload] Upload request timed out after', xhr.timeout, 'ms');
-      reject(new Error('Upload request timed out'));
+      const err = new Error('Upload request timed out');
+      err.isNetworkError = true;
+      fail(err);
+    };
+
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === XMLHttpRequest.DONE) {
+        if (xhr.status === 0) {
+          setTimeout(() => {
+            if (settled) return;
+            const err = new Error(
+              (typeof navigator !== 'undefined' && navigator.onLine === false)
+                ? 'No internet connection — please check your network and try again'
+                : 'Connection interrupted during upload'
+            );
+            err.isNetworkError = true;
+            fail(err);
+          }, 0);
+          return;
+        }
+        let data = {};
+        try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { data = {}; }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          succeed(data);
+        } else {
+          const cloudErr = cloudinaryUploadErrorMessage(data);
+          let detail = cloudErr || (data.reason ? `Flagged: ${data.reason}` : '');
+          if (!detail) detail = xhr.status === 413 ? 'Video file exceeds maximum size' : `Upload failed with HTTP status ${xhr.status}`;
+          console.error('[upload] Cloudinary upload failed:', xhr.status, detail);
+          const err = new Error(detail);
+          err.status = xhr.status;
+          err.isNetworkError = (xhr.status >= 500 || xhr.status === 408 || xhr.status === 429);
+          fail(err);
+        }
+      }
     };
 
     xhr.send(formData);
   });
 }
-// Retry a Cloudinary upload when the connection breaks (status 0 /
-// network error). A real Cloudinary answer (400/413/…) is final and
-// is not retried. Up to 3 attempts, 2 seconds apart.
+
+// Upload one video file to Cloudinary. Uses chunked upload (6 MB slices)
+// whenever file.size > 6 MB so shaky mobile/Facebook-WebView networks
+// and large videos only retry individual chunks instead of dropping
+// with status 0 from 0%.
 async function uploadVideoToCloudinaryWithRetry(file) {
-  const maxAttempts = 3;
-  let lastErr = null;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await uploadVideoToCloudinary(file);
-    } catch (err) {
-      lastErr = err;
-      if (!err.isNetworkError || attempt === maxAttempts) throw err;
-      console.warn('[upload] Connection dropped during upload, retrying (attempt ' + (attempt + 1) + ' of ' + maxAttempts + ')…');
-      updateUploadProgress(0, 'Connection dropped — retrying upload…', 'Attempt ' + (attempt + 1) + ' of ' + maxAttempts);
-      await new Promise(r => setTimeout(r, 2000));
+  const totalSize = Number(file.size) || 0;
+  const fileName = file.name || 'video.mp4';
+  const maxChunkAttempts = 3;
+
+  // Small video (<= 6 MB): single request from materialized Blob + retry
+  if (totalSize <= CLOUDINARY_CHUNK_SIZE) {
+    let lastErr = null;
+    for (let attempt = 1; attempt <= maxChunkAttempts; attempt++) {
+      try {
+        const blob = await readSliceAsBlob(file, 0, totalSize);
+        return await sendCloudinaryUploadRequest(blob, fileName, {
+          timeoutMs: 240000,
+          onProgress: updateUploadBarFromEvent,
+          onTransferDone: () => {
+            updateUploadProgress(85, 'Processing on Cloudinary (85%)…', 'Cloudinary is preparing your video…');
+          }
+        });
+      } catch (err) {
+        lastErr = err;
+        if (!err.isNetworkError || attempt === maxChunkAttempts) throw err;
+        console.warn('[upload] Connection dropped during upload, retrying (attempt ' + (attempt + 1) + ' of ' + maxChunkAttempts + ')…');
+        updateUploadProgress(5, 'Connection dropped — retrying upload…', 'Attempt ' + (attempt + 1) + ' of ' + maxChunkAttempts);
+        await new Promise(r => setTimeout(r, 1500 * attempt));
+      }
     }
+    throw lastErr;
   }
-  throw lastErr;
+
+  // Larger video (> 6 MB): chunked upload with per-chunk retry
+  const uniqueUploadId = 'rf_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+  const totalChunks = Math.ceil(totalSize / CLOUDINARY_CHUNK_SIZE);
+  let finalResponse = null;
+
+  for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+    const start = chunkIdx * CLOUDINARY_CHUNK_SIZE;
+    const end = Math.min(totalSize, start + CLOUDINARY_CHUNK_SIZE);
+    const contentRange = `bytes ${start}-${end - 1}/${totalSize}`;
+    const chunkBlob = await readSliceAsBlob(file, start, end);
+
+    let chunkErr = null;
+    let chunkResult = null;
+    for (let attempt = 1; attempt <= maxChunkAttempts; attempt++) {
+      try {
+        chunkResult = await sendCloudinaryUploadRequest(chunkBlob, fileName, {
+          uniqueUploadId,
+          contentRange,
+          timeoutMs: 180000,
+          onProgress: (e) => {
+            if (e.lengthComputable && e.total > 0) {
+              const overallLoaded = start + Math.min(e.loaded, end - start);
+              const ratio = overallLoaded / totalSize;
+              const currentPct = Math.min(78, Math.max(8, Math.round(8 + ratio * 70)));
+              const mbUp = (overallLoaded / (1024 * 1024)).toFixed(1);
+              const mbTot = (totalSize / (1024 * 1024)).toFixed(1);
+              updateUploadProgress(
+                currentPct,
+                `Uploading video (${currentPct}%)…`,
+                `${mbUp} MB of ${mbTot} MB transferred (part ${chunkIdx + 1}/${totalChunks})`
+              );
+            }
+          }
+        });
+        chunkErr = null;
+        break;
+      } catch (err) {
+        chunkErr = err;
+        if (!err.isNetworkError || attempt === maxChunkAttempts) throw err;
+        console.warn(`[upload] Chunk ${chunkIdx + 1}/${totalChunks} dropped, retrying (attempt ${attempt + 1}/${maxChunkAttempts})…`);
+        updateUploadProgress(
+          Math.max(8, Math.round(8 + (start / totalSize) * 70)),
+          'Reconnecting upload…',
+          `Retrying part ${chunkIdx + 1} of ${totalChunks} (attempt ${attempt + 1}/${maxChunkAttempts})`
+        );
+        await new Promise(r => setTimeout(r, 1500 * attempt));
+      }
+    }
+    if (chunkErr) throw chunkErr;
+    finalResponse = chunkResult;
+  }
+
+  updateUploadProgress(85, 'Processing on Cloudinary (85%)…', 'Cloudinary is finalizing your video…');
+  return finalResponse || {};
+}
+
+// Tier 2 fallback: same-origin Express /api/upload-video when available
+// (skipped on Capacitor localhost/file origins or files > 95 MB).
+function uploadVideoViaBackendApi(file, caption, hashtags) {
+  return new Promise(async (resolve, reject) => {
+    const isNativeOrigin = !window.location || window.location.protocol === 'capacitor:' || window.location.protocol === 'file:'
+      || (window.location.hostname === 'localhost' && !window.location.port);
+    if (isNativeOrigin) {
+      const err = new Error('Backend upload endpoint unavailable in native shell');
+      err.isUnavailable = true;
+      reject(err);
+      return;
+    }
+    if (file.size > 95 * 1024 * 1024) {
+      const err = new Error('Video exceeds 95 MB backend fallback limit');
+      err.isUnavailable = true;
+      reject(err);
+      return;
+    }
+    let settled = false;
+    const fail = (err) => { if (!settled) { settled = true; reject(err); } };
+    const succeed = (data) => { if (!settled) { settled = true; resolve(data); } };
+    try {
+      const blob = await readSliceAsBlob(file, 0, file.size);
+      const formData = new FormData();
+      formData.append('video', blob, file.name || 'video.mp4');
+      formData.append('caption', caption || '');
+      formData.append('hashtags', Array.isArray(hashtags) ? hashtags.join(' ') : String(hashtags || ''));
+      if (currentAuthUser && currentAuthUser.id) formData.append('user_id', currentAuthUser.id);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload-video', true);
+      xhr.timeout = 300000;
+      xhr.upload.addEventListener('progress', updateUploadBarFromEvent);
+      xhr.upload.addEventListener('load', () => {
+        updateUploadProgress(85, 'Processing upload (85%)…', 'Finalizing on server…');
+      });
+      xhr.onerror = () => {
+        const err = new Error('Backend upload network error');
+        err.isNetworkError = true;
+        fail(err);
+      };
+      xhr.ontimeout = () => {
+        const err = new Error('Backend upload timed out');
+        err.isNetworkError = true;
+        fail(err);
+      };
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === XMLHttpRequest.DONE) {
+          if (xhr.status === 0) {
+            setTimeout(() => {
+              if (!settled) {
+                const err = new Error('Backend upload connection failed');
+                err.isNetworkError = true;
+                fail(err);
+              }
+            }, 0);
+            return;
+          }
+          let data = {};
+          try { data = JSON.parse(xhr.responseText || '{}'); } catch (_) { data = {}; }
+          if (xhr.status >= 200 && xhr.status < 300 && data && data.video_url && !data.local_fallback) {
+            succeed(data);
+          } else if (data && (data.rejected || data.approved === false)) {
+            const rejErr = new Error(data.error || data.reason || 'Video rejected: Inappropriate content detected.');
+            rejErr.isModerationRejection = true;
+            fail(rejErr);
+          } else {
+            const err = new Error((data && data.error) || ('Backend upload returned status ' + xhr.status));
+            err.isUnavailable = (xhr.status === 404 || xhr.status === 405 || xhr.status === 413);
+            fail(err);
+          }
+        }
+      };
+      xhr.send(formData);
+    } catch (e) {
+      fail(e);
+    }
+  });
+}
+
+// Tier 3 fallback: direct authenticated upload to Supabase Storage
+// (works from any WebView/APK/Facebook in-app browser when Cloudinary
+// is blocked or dropped on mobile carrier networks).
+async function uploadVideoViaSupabaseStorage(file) {
+  if (!supabaseClient || !currentAuthUser) {
+    throw new Error('Please sign in to use cloud storage backup upload');
+  }
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  const token = sessionData && sessionData.session && sessionData.session.access_token;
+  if (!token) throw new Error('Session expired — please sign in again');
+
+  const rawName = String(file.name || 'video.mp4');
+  const extMatch = rawName.match(/\.[a-z0-9]{1,8}$/i);
+  const ext = extMatch ? extMatch[0].toLowerCase() : '.mp4';
+  const fileId = 'vid_' + currentAuthUser.id + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  const storagePath = `videos/${fileId}${ext}`;
+  const contentType = file.type || 'video/mp4';
+  const blob = await readSliceAsBlob(file, 0, file.size);
+
+  const uploadUrl = `${supabaseConfig.url}/storage/v1/object/avatars/${storagePath}`;
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (err) => { if (!settled) { settled = true; reject(err); } };
+    const succeed = () => { if (!settled) { settled = true; resolve(); } };
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', uploadUrl, true);
+    xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+    xhr.setRequestHeader('apikey', supabaseConfig.anonKey);
+    xhr.setRequestHeader('Content-Type', contentType);
+    xhr.setRequestHeader('x-upsert', 'true');
+    xhr.timeout = 300000;
+
+    xhr.upload.addEventListener('progress', updateUploadBarFromEvent);
+    xhr.onerror = () => fail(new Error('Cloud storage network error'));
+    xhr.ontimeout = () => fail(new Error('Cloud storage upload timed out'));
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === XMLHttpRequest.DONE) {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          succeed();
+        } else {
+          setTimeout(() => {
+            if (settled) return;
+            let errMsg = '';
+            try {
+              const parsed = JSON.parse(xhr.responseText || '{}');
+              errMsg = parsed.message || parsed.error || '';
+            } catch (_) {}
+            fail(new Error(errMsg || (xhr.status === 0 ? 'Network connection error during backup upload' : `Backup upload failed (${xhr.status})`)));
+          }, 0);
+        }
+      }
+    };
+    xhr.send(blob);
+  });
+
+  const { data: pubData } = supabaseClient.storage.from('avatars').getPublicUrl(storagePath);
+  const publicUrl = pubData && pubData.publicUrl ? pubData.publicUrl : `${supabaseConfig.url}/storage/v1/object/public/avatars/${storagePath}`;
+  return { secure_url: publicUrl, thumbnail_url: '' };
 }
 
 async function submitUpload() {
@@ -9280,6 +9933,10 @@ async function submitUpload() {
   const file = document.getElementById('fileInput').files[0];
   if (!file) {
     showToast('Please select a video file first');
+    return;
+  }
+  if (!file.size) {
+    showToast('Selected video file appears empty or unreadable — please choose another file');
     return;
   }
 
@@ -9308,16 +9965,34 @@ async function submitUpload() {
   updateUploadProgress(5, 'Starting upload (5%)…', 'Preparing video stream…');
 
   try {
-    // 1. Get the video onto Cloudinary. When the moderation endpoint is
-    // configured (MODERATION_UPLOAD_URL), the file goes there first --
-    // it checks the frames, then forwards the SAME file to Cloudinary
-    // with the unsigned preset. Otherwise the old direct upload runs.
-    // Either way the result is a Cloudinary-shaped {secure_url,
-    // thumbnail_url}, so everything below runs unchanged. A video the
-    // moderator refuses (403) or cannot check (503) is never published.
-    const resData = MODERATION_UPLOAD_URL
-      ? await uploadViaModeration(file, caption)
-      : await uploadVideoToCloudinaryWithRetry(file);
+    // 1. Get the video onto Cloudinary (with chunked transfer + per-chunk
+    // retry), or when a network/WebView block hits Cloudinary, fall back
+    // seamlessly to /api/upload-video and then direct Supabase Storage.
+    // If MODERATION_UPLOAD_URL is configured, fail closed through moderation.
+    let resData = null;
+    if (MODERATION_UPLOAD_URL) {
+      resData = await uploadViaModeration(file, caption);
+    } else {
+      try {
+        resData = await uploadVideoToCloudinaryWithRetry(file);
+      } catch (cloudErr) {
+        if (!cloudErr || !cloudErr.isNetworkError) throw cloudErr;
+        console.warn('[upload] Direct Cloudinary failed with network error, trying fallback:', cloudErr.message);
+        updateUploadProgress(10, 'Switching upload route…', 'Retrying via backup server…');
+        try {
+          resData = await uploadVideoViaBackendApi(file, caption, hashtags);
+        } catch (backendErr) {
+          if (backendErr && backendErr.isModerationRejection) throw backendErr;
+          console.warn('[upload] Backend upload fallback unavailable/failed, trying cloud storage:', backendErr && backendErr.message);
+          if (supabaseClient && currentAuthUser) {
+            updateUploadProgress(10, 'Switching to cloud backup…', 'Uploading via secure backup storage…');
+            resData = await uploadVideoViaSupabaseStorage(file);
+          } else {
+            throw cloudErr;
+          }
+        }
+      }
+    }
 
     // Check if video was rejected by AI content moderation (18+ or inappropriate)
     if (resData.approved === false || resData.rejected) {
@@ -11004,6 +11679,7 @@ function homePostCardHTML(v, idx) {
     + '<span class="home-video-spinner"><span class="home-spinner-ring"></span></span>'
     + '<span class="home-post-play">' + lucideIcon('play', 56, true) + '</span>'
     + '<div class="home-video-error" style="display:none"><span>Video couldn&rsquo;t load.</span><button onclick="retryHomeVideo(event, this)">Retry</button></div>'
+    + '<span class="home-post-duration"></span>'
     + '<button class="home-post-sound" onclick="toggleHomeSound(event, this)" title="Sound">' + lucideIcon('volume-x', 20) + '</button>'
     + '</div>'
     + '<div class="home-post-actions">'
@@ -11012,7 +11688,7 @@ function homePostCardHTML(v, idx) {
     + '<button class="home-post-act" onclick="openShare(\'' + escapeHtml(String(v.id)) + '\')" title="Share">' + lucideIcon('send', 26) + '</button>'
     + '<button class="home-post-act save' + (isSaved ? ' saved' : '') + '" id="hsave-' + escapeHtml(String(v.id)) + '" onclick="toggleHomeSave(\'' + escapeHtml(String(v.id)) + '\')" title="Save">' + lucideIcon('bookmark', 26) + '</button>'
     + '</div>'
-    + '<div class="home-post-likes" id="hlc-' + escapeHtml(String(v.id)) + '">' + homeLikesText(v) + '</div>'
+    + '<div class="home-post-likes" id="hlc-' + escapeHtml(String(v.id)) + '" data-post-id="' + escapeHtml(String(v.id)) + '" onclick="openLikesList(this.getAttribute(\'data-post-id\'))" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openLikesList(this.getAttribute(\'data-post-id\'));}" role="button" tabindex="0">' + homeLikesText(v) + '</div>'
     + caption
     + commentsLink
     + '</article>';
@@ -11162,16 +11838,68 @@ function setupHomeVideo(mediaEl) {
   const v = postId ? videos.find(x => String(x.id) === String(postId)) : null;
   const spinner = () => mediaEl.querySelector('.home-video-spinner');
   const setSpinner = (on) => { const s = spinner(); if (s) s.style.display = on ? 'flex' : 'none'; };
-  // The container stays a fixed 4:5 Instagram-style box (the video
-  // covers it, object-fit: cover in CSS) — the true ratio is NOT
-  // applied here, so there are no tall/wide boxes or black bars.
+  // Dynamically adapt the Home post container to each video's natural
+  // aspect ratio (portrait, square, and landscape keep their natural
+  // dimensions) with object-fit: contain on a black background.
+  const applyHomeMediaAspect = () => {
+    const w = vid.videoWidth;
+    const h = vid.videoHeight;
+    if (!w || !h) return;
+    mediaEl.style.aspectRatio = `${w} / ${h}`;
+    mediaEl.classList.add('has-aspect');
+  };
+  const durBadge = mediaEl.querySelector('.home-post-duration');
+  let durHideTimer = null;
+  let pendingDurReveal = false;
+  const hideHomeDurationBadge = () => {
+    clearTimeout(durHideTimer);
+    durHideTimer = null;
+    if (durBadge) durBadge.classList.remove('show');
+  };
+  const showHomeDurationBadge = () => {
+    if (!durBadge) return;
+    const dur = vid.duration;
+    if (!dur || !isFinite(dur) || dur <= 0) {
+      pendingDurReveal = true;
+      return;
+    }
+    pendingDurReveal = false;
+    durBadge.textContent = fmtTime(dur);
+    durBadge.classList.add('show');
+    clearTimeout(durHideTimer);
+    durHideTimer = setTimeout(() => {
+      durHideTimer = null;
+      durBadge.classList.remove('show');
+    }, 2000);
+  };
+  if (vid.videoWidth && vid.videoHeight) applyHomeMediaAspect();
+  // The aspect ratio is set ONLY here, synchronously at setup (before
+  // first paint), when the metadata is already available. It is NOT
+  // re-applied on loadedmetadata / loadeddata / resize / canplay:
+  // changing the container's aspect ratio after the card is already
+  // displayed resizes the box and shifts the whole feed — the layout
+  // jump. The container keeps its first ratio from loading through
+  // playback, and the video (absolutely positioned, inset: 0) always
+  // fills it exactly, so the poster matches the video size.
+  vid.addEventListener('loadedmetadata', () => {
+    if (pendingDurReveal && !vid.paused) showHomeDurationBadge();
+  });
+  vid.addEventListener('durationchange', () => {
+    if (pendingDurReveal && !vid.paused) showHomeDurationBadge();
+  });
   // First frame ready: hide the spinner.
-  vid.addEventListener('canplay', () => setSpinner(false));
+  vid.addEventListener('canplay', () => {
+    setSpinner(false);
+  });
   // Actually playing: hide the spinner and the play icon. (canplay
   // alone is not enough — a video can be playable yet still paused,
   // and a video that started before this listener attached would
   // leave the spinner stuck on.)
-  vid.addEventListener('playing', () => { setSpinner(false); updateHomePlayIcon(mediaEl); });
+  vid.addEventListener('playing', () => {
+    setSpinner(false);
+    updateHomePlayIcon(mediaEl);
+    showHomeDurationBadge();
+  });
   // Buffering mid-play: show the spinner again.
   vid.addEventListener('waiting', () => setSpinner(true));
   // Keep the play overlay in sync with real playback state, and make
@@ -11185,11 +11913,16 @@ function setupHomeVideo(mediaEl) {
       if (other !== vid && !other.paused) { other.pause(); updateHomePlayIcon(other.parentElement); }
     });
   });
-  vid.addEventListener('pause', () => updateHomePlayIcon(mediaEl));
+  vid.addEventListener('pause', () => {
+    pendingDurReveal = false;
+    hideHomeDurationBadge();
+    updateHomePlayIcon(mediaEl);
+  });
   // Sync the overlays to the video's CURRENT state right now (a video
   // that is already playing or already buffered must not show a
   // stuck play icon or spinner).
   if (vid.readyState >= 3 || !vid.paused) setSpinner(false);
+  if (!vid.paused) showHomeDurationBadge();
   updateHomePlayIcon(mediaEl);
   // Broken URL: walk the fallbacks, then show the error state.
   vid.addEventListener('error', () => {
@@ -11276,6 +12009,142 @@ async function toggleHomeLike(btn, id, idx) {
   if (feedBtn) feedBtn.classList.toggle('liked', isLiked);
   try { if (!v.isSeed) await dbPut('videos', v); } catch (e) {}
   await syncLikeToSupabase(v, isLiked, btn);
+}
+
+let activeLikesRequestId = 0;
+async function openLikesList(postId) {
+  if (!postId) return;
+  const modal = document.getElementById('likes-modal');
+  const titleEl = document.getElementById('likesModalTitle');
+  const listEl = document.getElementById('likesModalList');
+  if (!modal || !listEl) return;
+
+  const reqId = ++activeLikesRequestId;
+  const v = videos.find(x => x && String(x.id) === String(postId));
+  const initialCount = v ? (v.likes || 0) : 0;
+  if (titleEl) titleEl.textContent = initialCount > 0 ? `Likes (${fmtN(initialCount)})` : 'Likes';
+  listEl.innerHTML = '<div class="likes-state-box"><span class="loading-ring-sm"></span><span>Loading likes…</span></div>';
+  modal.classList.add('open');
+
+  try {
+    let likerRows = [];
+    if (supabaseClient && isSupabasePostId(postId)) {
+      if (supabaseClient.isLocalAdapter) {
+        const res = await supabaseClient.from('likes').select('post_id, user_id, created_at');
+        const all = Array.isArray(res && res.data) ? res.data : [];
+        likerRows = all
+          .filter(r => String(r.post_id) === String(postId))
+          .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+      } else {
+        const { data, error } = await supabaseClient
+          .from('likes')
+          .select('user_id, created_at')
+          .eq('post_id', String(postId))
+          .order('created_at', { ascending: false })
+          .limit(200);
+        if (error) throw new Error(error.message);
+        likerRows = Array.isArray(data) ? data : [];
+      }
+    } else if (v && v.liked && ((currentAuthUser && currentAuthUser.id) || profile.id)) {
+      likerRows = [{ user_id: (currentAuthUser && currentAuthUser.id) || profile.id, created_at: new Date().toISOString() }];
+    }
+
+    if (reqId !== activeLikesRequestId) return;
+
+    // Deduplicate user IDs while keeping most recent like first.
+    const seen = new Set();
+    const userIds = [];
+    likerRows.forEach(r => {
+      if (!r || !r.user_id) return;
+      const uid = String(r.user_id);
+      const key = uid.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      userIds.push(uid);
+    });
+
+    // Keep post like count in sync with the live DB rows if < 200.
+    if (v && supabaseClient && isSupabasePostId(postId) && likerRows.length < 200) {
+      v.likes = userIds.length;
+      const hlc = document.getElementById('hlc-' + v.id);
+      if (hlc) hlc.textContent = homeLikesText(v);
+      const lc = document.getElementById('lc-' + v.id);
+      if (lc) lc.textContent = fmtC(v.likes);
+    }
+
+    if (titleEl) {
+      const displayTotal = v ? Math.max(v.likes || 0, userIds.length) : userIds.length;
+      titleEl.textContent = displayTotal > 0 ? `Likes (${fmtN(displayTotal)})` : 'Likes';
+    }
+
+    if (userIds.length === 0) {
+      listEl.innerHTML = '<div class="likes-state-box">No likes yet.<br>Be the first to like this video!</div>';
+      return;
+    }
+
+    // Fetch fresh profile records (avatars, usernames, display names) for all likers.
+    const profileByUid = {};
+    if (supabaseClient) {
+      if (supabaseClient.isLocalAdapter) {
+        await loadAuthorProfiles(userIds);
+      } else {
+        const { data: profData, error: profErr } = await supabaseClient
+          .from('profiles')
+          .select('user_id, username, display_name, full_name, avatar_url, is_verified, profile_color')
+          .in('user_id', userIds);
+        if (!profErr && Array.isArray(profData)) {
+          profData.forEach(p => {
+            if (!p || !p.user_id) return;
+            const uidLower = String(p.user_id).toLowerCase();
+            const entry = {
+              user_id: uidLower,
+              username: (p.username || '').replace(/^@/, ''),
+              display_name: p.display_name || p.full_name || '',
+              full_name: p.full_name || '',
+              avatar_url: p.avatar_url || '',
+              is_verified: p.is_verified === true,
+              profile_color: normalizeProfileColor(p.profile_color),
+            };
+            profileByUid[uidLower] = entry;
+            authorProfiles.set(uidLower, entry);
+            cacheVerified(uidLower, entry.is_verified);
+          });
+        }
+      }
+    }
+
+    if (reqId !== activeLikesRequestId) return;
+
+    const myUidLower = currentAuthUser && currentAuthUser.id
+      ? String(currentAuthUser.id).toLowerCase()
+      : (profile && profile.id ? String(profile.id).toLowerCase() : '');
+
+    listEl.innerHTML = userIds.map(uid => {
+      const uidLower = uid.toLowerCase();
+      const isMe = !!(myUidLower && uidLower === myUidLower);
+      const prof = profileByUid[uidLower] || authorProfileFor(uid) || null;
+      const username = ((prof && prof.username) || (isMe ? (profile.handle || '') : '') || authorFallbackHandle(uid)).replace(/^@/, '');
+      const displayName = (prof && (prof.display_name || prof.full_name))
+        || (isMe ? (profile.name || '') : '')
+        || username;
+      const avatarUrl = (prof && prof.avatar_url) || (isMe ? (profile.avatar_url || '') : '') || avatarUrlForUserId(uid, username);
+      const verified = verifiedBadgeSlotHTML(uid, isUserVerified(uid) || isHandleVerified(username), username);
+
+      return '<div class="likes-user-row">'
+        + avatarHTML(uid, displayName, avatarUrl, 40)
+        + '<div class="likes-user-meta">'
+        + '<div class="likes-user-name-row"><span class="likes-user-display">' + escapeHtml(String(displayName)) + '</span>' + verified + '</div>'
+        + '<div class="likes-user-handle">@' + escapeHtml(String(username)) + '</div>'
+        + '</div>'
+        + (isMe ? '<span class="likes-you-pill">You</span>' : '')
+        + '</div>';
+    }).join('');
+    hydrateAvatars(listEl);
+  } catch (err) {
+    if (reqId !== activeLikesRequestId) return;
+    console.warn('openLikesList error:', err);
+    listEl.innerHTML = '<div class="likes-state-box"><span>Could not load likes list.</span><button class="copy-btn" onclick="openLikesList(\'' + escapeHtml(String(postId)) + '\')">Retry</button></div>';
+  }
 }
 
 async function toggleHomeSave(id) {
@@ -11436,6 +12305,7 @@ function goPage(page, navEl) {
     } else {
       pauseAllHomeVideos();
       if (page === 'profile') {
+      verifyConfirmDismissedInSession = false;
       if (currentAuthUser && supabaseClient) {
         loadUserProfileFromSupabase(currentAuthUser.id);
         // Pull my videos fresh from the database, then re-render.
@@ -11479,7 +12349,7 @@ function closeOnBackdrop(e, id) {
   if (e.target.id === id) {
     document.getElementById(id).classList.remove('open');
     if (id === 'upload-modal') pauseUploadPreview();
-    if (['chat-modal', 'comments-modal', 'share-modal', 'more-modal', 'upload-modal'].indexOf(id) !== -1) resumeActiveFeedVideo();
+    if (['chat-modal', 'comments-modal', 'likes-modal', 'share-modal', 'more-modal', 'upload-modal'].indexOf(id) !== -1) resumeActiveFeedVideo();
   }
 }
 
