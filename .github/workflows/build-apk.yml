@@ -44,48 +44,57 @@ jobs:
       - name: Add Google sign-in deep-link intent filter
         run: |
           python3 - <<'PY'
-          import pathlib
+          import pathlib, re
           p = pathlib.Path('android/app/src/main/AndroidManifest.xml')
-          s = p.read_text()
-          needle = 'android.intent.action.VIEW'
-          if needle not in s:
-              anchor = '</activity>'
-              block = '''            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="com.flashgram.app" android:host="google-signin" />
-            </intent-filter>
-'''
-              s = s.replace(anchor, block + anchor, 1)
-              p.write_text(s)
-              print('deep-link intent filter added')
-          else:
-              print('deep-link intent filter already present')
+          if p.exists():
+              s = p.read_text()
+              if 'android:scheme="com.flashgram.app"' in s:
+                  print('deep-link intent filter already present')
+              else:
+                  block = ('        <intent-filter>\n'
+                           '            <action android:name="android.intent.action.VIEW" />\n'
+                           '            <category android:name="android.intent.category.DEFAULT" />\n'
+                           '            <category android:name="android.intent.category.BROWSABLE" />\n'
+                           '            <data android:scheme="com.flashgram.app" />\n'
+                           '        </intent-filter>\n')
+                  s2, n = re.subn(r'(</intent-filter>)', r'\1\n' + block, s, count=1)
+                  if n > 0:
+                      p.write_text(s2)
+                      print('deep-link intent filter added')
           PY
 
       - name: Bump AGP, Gradle, and compileSdk
         run: |
           python3 - <<'PY'
           import pathlib, re
-          p = pathlib.Path('android/build.gradle')
-          s = p.read_text()
-          s = s.replace("com.android.tools.build:gradle:8.0.0", "com.android.tools.build:gradle:8.5.2")
-          s = s.replace("com.android.tools.build:gradle:8.1.0", "com.android.tools.build:gradle:8.5.2")
-          s = s.replace("com.android.tools.build:gradle:8.2.0", "com.android.tools.build:gradle:8.5.2")
-          s = s.replace("com.android.tools.build:gradle:8.3.0", "com.android.tools.build:gradle:8.5.2")
-          s = s.replace("com.android.tools.build:gradle:8.4.0", "com.android.tools.build:gradle:8.5.2")
-          p.write_text(s)
-          p = pathlib.Path('android/app/build.gradle')
-          s = p.read_text()
-          s = s.replace('compileSdk 33', 'compileSdk 34')
-          s = s.replace('compileSdkVersion 33', 'compileSdkVersion 34')
-          p.write_text(s)
-          p = pathlib.Path('android/gradle/wrapper/gradle-wrapper.properties')
-          s = p.read_text()
-          s = re.sub(r'gradle-.*-bin\.zip', 'gradle-8.7-bin.zip', s)
-          p.write_text(s)
-          print('AGP/Gradle/compileSdk bumped')
+
+          def patch_file(filepath, patterns):
+              p = pathlib.Path(filepath)
+              if not p.exists():
+                  print(f"Skipping missing file: {filepath}")
+                  return
+              content = p.read_text()
+              updated = content
+              for pattern, repl in patterns:
+                  updated, count = re.subn(pattern, repl, updated)
+                  print(f"{filepath}: replaced {count} occurrence(s) of pattern: {pattern}")
+              if updated != content:
+                  p.write_text(updated)
+
+          patch_file('android/build.gradle', [
+              (r"com\.android\.tools\.build:gradle:[0-9.]+", "com.android.tools.build:gradle:8.11.1")
+          ])
+          patch_file('android/gradle/wrapper/gradle-wrapper.properties', [
+              (r"gradle-[0-9.]+-all\.zip", "gradle-8.13-all.zip")
+          ])
+          patch_file('android/app/build.gradle', [
+              (r"compileSdk\s+\d+", "compileSdk 36"),
+              (r"compileSdkVersion\s+\d+", "compileSdkVersion 36")
+          ])
+          patch_file('android/variables.gradle', [
+              (r"compileSdkVersion\s*=\s*\d+", "compileSdkVersion = 36")
+          ])
+          print('AGP / Gradle / compileSdk bump done successfully')
           PY
 
       - name: Apply Firebase google-services Gradle plugin
@@ -127,13 +136,80 @@ jobs:
               print('Firebase BoM + messaging added')
           PY
 
-      - name: Build release APK
+      - name: Enable multi-window on MainActivity
+        # Small Window / floating window / split-screen: the activity
+        # must declare android:resizeableActivity="true" and handle
+        # every resize-related config change itself, otherwise Android
+        # destroys and recreates the activity (and reloads the WebView,
+        # losing the feed position and any unsaved caption) whenever
+        # the window is resized. Capacitor generates resizeableActivity
+        # as true by default for targetSdk 24+, but this makes it
+        # explicit and fills in the configChanges flags the template
+        # omits (density, layoutDirection).
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          p = pathlib.Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          m = re.search(r'<activity[^>]*android:name="\.MainActivity"[^>]*>', s)
+          if not m:
+              print('ERROR: MainActivity not found in AndroidManifest.xml')
+              sys.exit(1)
+          tag = m.group(0)
+          orig_tag = tag
+          required = ['orientation', 'keyboardHidden', 'keyboard', 'screenSize', 'locale', 'smallestScreenSize', 'screenLayout', 'uiMode', 'density', 'layoutDirection']
+          if 'android:resizeableActivity' not in tag:
+              tag = tag[:-1] + ' android:resizeableActivity="true">'
+              print('added android:resizeableActivity="true"')
+          else:
+              print('android:resizeableActivity already present')
+          cm = re.search(r'android:configChanges="([^"]*)"', tag)
+          if cm:
+              have = [x for x in cm.group(1).split('|') if x]
+              missing = [x for x in required if x not in have]
+              if missing:
+                  newval = '|'.join(have + missing)
+                  tag = tag[:cm.start(1)] + newval + tag[cm.end(1):]
+                  print('added configChanges flags:', ','.join(missing))
+              else:
+                  print('configChanges already complete')
+          else:
+              tag = tag[:-1] + ' android:configChanges="' + '|'.join(required) + '">'
+              print('added android:configChanges')
+          if tag != orig_tag:
+              s = s[:m.start()] + tag + s[m.end():]
+              p.write_text(s)
+              print('AndroidManifest patched for multi-window')
+          else:
+              print('AndroidManifest already multi-window ready')
+          PY
+
+      - name: Fix Kotlin Version Conflict
+        run: |
+          cd android/app
+          echo "" >> build.gradle
+          echo "configurations.all {" >> build.gradle
+          echo "    resolutionStrategy.eachDependency { details ->" >> build.gradle
+          echo "        if (details.requested.group == 'org.jetbrains.kotlin') {" >> build.gradle
+          echo "            details.useVersion '1.9.24'" >> build.gradle
+          echo "        }" >> build.gradle
+          echo "    }" >> build.gradle
+          echo "}" >> build.gradle
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Build APK with Gradle
         run: |
           cd android
-          ./gradlew assembleDebug --stacktrace
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
-      - name: Upload APK artifact
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: flashgram-apk
+          name: flashgram-app
           path: android/app/build/outputs/apk/debug/app-debug.apk
