@@ -4245,6 +4245,39 @@ function refreshAuthorNames(userId) {
   updateNameIn(document.getElementById('page-home'));
 }
 let supabaseClient = null;
+// Resolves when the first initSupabase() run has finished (client
+// created + session restored). The Google button waits on this instead
+// of failing with "initializing" when the user taps during boot.
+let supabaseInitPromise = null;
+let supabaseInitDone = false;
+
+// Create the Supabase client from the built-in config (the URL + anon
+// key are hardcoded in the page, so there is never a reason to wait
+// for a network fetch before having a client). Falls back to the
+// local adapter only when the real library is unavailable.
+function ensureSupabaseClient(force) {
+  if (supabaseClient && !force) return supabaseClient;
+  if (supabaseConfig.configured && window.supabase && window.supabase.createClient) {
+    try {
+      supabaseClient = window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true
+        }
+      });
+      console.log('Real Supabase client connected successfully');
+      return supabaseClient;
+    } catch(err) {
+      console.warn('Supabase initialization note:', err);
+    }
+  }
+  if (!supabaseClient) {
+    supabaseClient = createLocalSupabaseAdapter();
+    console.log('ReelFlow Supabase adapter initialized');
+  }
+  return supabaseClient;
+}
 let currentAuthUser = null;
 let currentPendingEmail = '';
 let setupAvatarFile = null;
@@ -4546,7 +4579,10 @@ pruneAllExpiredChatMessages();
   applyForYouRanking();
   buildFeed();
 
-  await initSupabase();
+  // The init promise is kept so the login buttons can wait for auth
+  // to be ready instead of failing while it is still starting up.
+  supabaseInitPromise = initSupabase();
+  await supabaseInitPromise;
   switchChatThreadsForCurrentUser();
   applyProfile();
   await loadPostsFromSupabase();
@@ -5041,13 +5077,23 @@ function createLocalSupabaseAdapter() {
 }
 
 async function initSupabase() {
+  // The client is created FIRST from the built-in config, so the auth
+  // buttons work from the first tap. Waiting on /api/config before
+  // creating the client left supabaseClient null for the whole fetch
+  // — on a slow mobile connection that is exactly when users tapped
+  // Google and got "Authentication service is initializing."
+  ensureSupabaseClient();
+
+  // Refresh the config in the background; only re-create the client
+  // if the server actually reports different credentials.
   try {
     const res = await fetch('/api/config');
     const data = await res.json();
-    if (data.supabaseUrl && data.supabaseAnonKey) {
+    if (data.supabaseUrl && data.supabaseAnonKey && (data.supabaseUrl !== supabaseConfig.url || data.supabaseAnonKey !== supabaseConfig.anonKey)) {
       supabaseConfig.url = data.supabaseUrl;
       supabaseConfig.anonKey = data.supabaseAnonKey;
       supabaseConfig.configured = true;
+      ensureSupabaseClient(true);
     }
   } catch(e) {
     console.warn('Could not read /api/config', e);
@@ -5059,28 +5105,8 @@ async function initSupabase() {
     supabaseConfig.anonKey = localStorage.getItem('reelflow_supabase_anon_key') || '';
     if (supabaseConfig.url && supabaseConfig.anonKey) {
       supabaseConfig.configured = true;
+      ensureSupabaseClient(true);
     }
-  }
-
-  if (supabaseConfig.configured && window.supabase && window.supabase.createClient) {
-    try {
-      supabaseClient = window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true
-        }
-      });
-      console.log('Real Supabase client connected successfully');
-    } catch(err) {
-      console.warn('Supabase initialization note:', err);
-    }
-  }
-
-  // Fallback to seamlessly integrated client adapter so users are never blocked or prompted for keys
-  if (!supabaseClient) {
-    supabaseClient = createLocalSupabaseAdapter();
-    console.log('ReelFlow Supabase adapter initialized');
   }
 
   try {
@@ -5159,6 +5185,7 @@ async function initSupabase() {
   }
 
   updateAuthStatusUI();
+  supabaseInitDone = true;
 }
 
 function extractGoogleUserMetadata(user) {
@@ -5455,8 +5482,26 @@ function openAuthPage() {
   if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
   if (succBox) { succBox.style.display = 'none'; succBox.textContent = ''; }
   if (googleBtn) {
-    googleBtn.disabled = false;
-    googleBtn.innerHTML = googleBtnDefaultHtml;
+    // While auth is still initializing, show a loading state on the
+    // button instead of letting the tap fail; enable it the moment
+    // init finishes. The button is never left permanently disabled.
+    if (supabaseInitPromise && !supabaseInitDone) {
+      googleBtn.disabled = true;
+      googleBtn.innerHTML = `
+    <span class="loading-ring-sm" style="border-color:#1f1f1f;border-top-color:transparent;width:18px;height:18px;"></span>
+    <span class="auth-google-btn-text">Loading…</span>
+  `;
+      supabaseInitPromise.then(() => {
+        googleBtn.disabled = false;
+        googleBtn.innerHTML = googleBtnDefaultHtml;
+      }).catch(() => {
+        googleBtn.disabled = false;
+        googleBtn.innerHTML = googleBtnDefaultHtml;
+      });
+    } else {
+      googleBtn.disabled = false;
+      googleBtn.innerHTML = googleBtnDefaultHtml;
+    }
   }
   const page = document.getElementById('page-auth');
   if (page) page.style.display = 'flex';
@@ -5860,11 +5905,31 @@ async function handleGoogleSignIn() {
   const googleBtn = document.getElementById('auth-google-btn');
   if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
 
+  // Wait for auth initialization to finish (at most 10s) instead of
+  // failing the tap with "initializing" when the user is quick. The
+  // button shows a spinner while waiting and is restored afterwards.
+  if (supabaseInitPromise && !supabaseInitDone) {
+    if (googleBtn) {
+      googleBtn.disabled = true;
+      googleBtn.innerHTML = `
+    <span class="loading-ring-sm" style="border-color:#1f1f1f;border-top-color:transparent;width:18px;height:18px;"></span>
+    <span class="auth-google-btn-text">Loading…</span>
+  `;
+    }
+    try {
+      await Promise.race([
+        supabaseInitPromise,
+        new Promise(r => setTimeout(r, 10000))
+      ]);
+    } catch (_) {}
+  }
+
   if (!supabaseClient) {
     if (errBox) {
       errBox.textContent = 'Authentication service is initializing. Please try again.';
       errBox.style.display = 'block';
     }
+    if (googleBtn) { googleBtn.disabled = false; googleBtn.innerHTML = googleBtnDefaultHtml; }
     return;
   }
 
