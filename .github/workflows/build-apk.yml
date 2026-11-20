@@ -136,6 +136,28 @@ jobs:
               print('Firebase BoM + messaging added')
           PY
 
+      - name: Raise minSdk to 24 for firebase-messaging
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          total = 0
+          for path in ['android/variables.gradle', 'android/app/build.gradle']:
+              p = pathlib.Path(path)
+              if not p.exists():
+                  print(path, 'not found, skipping')
+                  continue
+              s = p.read_text()
+              s, n1 = re.subn(r'(minSdkVersion\s*=?\s*)\d+', r'\g<1>24', s)
+              s, n2 = re.subn(r'(minSdk\s+)\d+', r'\g<1>24', s)
+              p.write_text(s)
+              print(path, 'minSdk replacements:', n1 + n2)
+              total += n1 + n2
+          if total == 0:
+              print('ERROR: no minSdk setting found to update')
+              sys.exit(1)
+          print('minSdk raised to 24')
+          PY
+
       - name: Enable multi-window on MainActivity
         # Small Window / floating window / split-screen: the activity
         # must declare android:resizeableActivity="true" and handle
