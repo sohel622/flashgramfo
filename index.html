@@ -4244,12 +4244,22 @@ function refreshAuthorNames(userId) {
   updateNameIn(document.getElementById('page-feed'));
   updateNameIn(document.getElementById('page-home'));
 }
+let supabaseConfig = {
+  url: 'https://gxoajbncfpwhisehvbcf.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4b2FqYm5jZnB3aGlzZWh2YmNmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5Mjg2ODAsImV4cCI6MjEwNDUwNDY4MH0.Gbpsd3h-MgodjvugosWLomZL51KWbxMZWFazi6zbzsg',
+  configured: true
+};
 let supabaseClient = null;
-// Resolves when the first initSupabase() run has finished (client
-// created + session restored). The Google button waits on this instead
-// of failing with "initializing" when the user taps during boot.
+// Singleton auth readiness lifecycle state (declared before boot() to avoid any TDZ issues)
 let supabaseInitPromise = null;
 let supabaseInitDone = false;
+let authStateSubscription = null;
+let pendingGoogleSignIn = false;
+let googleSignInInFlight = false;
+let currentAuthUser = null;
+let currentPendingEmail = '';
+let setupAvatarFile = null;
+let editAvatarFile = null;
 
 // Create the Supabase client from the built-in config (the URL + anon
 // key are hardcoded in the page, so there is never a reason to wait
@@ -4278,15 +4288,16 @@ function ensureSupabaseClient(force) {
   }
   return supabaseClient;
 }
-let currentAuthUser = null;
-let currentPendingEmail = '';
-let setupAvatarFile = null;
-let editAvatarFile = null;
-let supabaseConfig = {
-  url: 'https://gxoajbncfpwhisehvbcf.supabase.co',
-  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4b2FqYm5jZnB3aGlzZWh2YmNmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5Mjg2ODAsImV4cCI6MjEwNDUwNDY4MH0.Gbpsd3h-MgodjvugosWLomZL51KWbxMZWFazi6zbzsg',
-  configured: true
-};
+
+function ensureAuthReady() {
+  if (supabaseInitDone && supabaseClient) {
+    return Promise.resolve(supabaseClient);
+  }
+  if (!supabaseInitPromise) {
+    supabaseInitPromise = initSupabase();
+  }
+  return supabaseInitPromise;
+}
 let storageOk = false;
 let blobUrls = {};
 let thumbUrls = {};
@@ -4579,10 +4590,9 @@ pruneAllExpiredChatMessages();
   applyForYouRanking();
   buildFeed();
 
-  // The init promise is kept so the login buttons can wait for auth
-  // to be ready instead of failing while it is still starting up.
-  supabaseInitPromise = initSupabase();
-  await supabaseInitPromise;
+  // The init promise is kept as a singleton so login buttons and deep-links
+  // wait seamlessly for auth readiness instead of failing during startup.
+  await ensureAuthReady();
   switchChatThreadsForCurrentUser();
   applyProfile();
   await loadPostsFromSupabase();
@@ -5076,49 +5086,115 @@ function createLocalSupabaseAdapter() {
   };
 }
 
+function attachAuthStateListener() {
+  if (!supabaseClient || !supabaseClient.auth || typeof supabaseClient.auth.onAuthStateChange !== 'function') return;
+  if (authStateSubscription && typeof authStateSubscription.unsubscribe === 'function') {
+    try { authStateSubscription.unsubscribe(); } catch (_) {}
+    authStateSubscription = null;
+  }
+  const { data } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    console.log('Supabase Auth Event:', event, session?.user?.id);
+    if (session && session.user) {
+      currentAuthUser = session.user;
+      // A push token saved while signed out now belongs to this user.
+      flushPendingPushToken();
+      switchChatThreadsForCurrentUser();
+      // Fresh Realtime join with the new login token, so the channel
+      // is authenticated as this user from the start.
+      if (chatRealtimeChannel) {
+        try { supabaseClient.removeChannel(chatRealtimeChannel); } catch (_) {}
+        chatRealtimeChannel = null;
+      }
+      subscribeToRealtimeChat();
+      closeAuthPage();
+      await loadUserProfileFromSupabase(session.user.id);
+      // Ban check on login / refresh / app open (server-time RPC),
+      // plus a Realtime subscription so an admin ban lands instantly.
+      await refreshBanState();
+      subscribeToBanRealtime(session.user.id);
+      await loadCreatorsFromSupabase();
+      loadUserChatThreadsFromSupabase();
+      await loadPostsFromSupabase();
+      await retryPendingPostUploads();
+      subscribeToPostsRealtime();
+      subscribeToProfilesRealtime();
+    } else {
+      // Only clear the inbox if a real account was active. Anonymous /
+      // demo mode keeps the shared key untouched.
+      const wasLoggedIn = chatThreadsKey !== CHAT_THREADS_LEGACY_KEY;
+      currentAuthUser = null;
+      applyBanState(null);
+      unsubscribeBanRealtime();
+      if (wasLoggedIn) {
+        chatThreads = [];
+        activeChatThreadId = null;
+        activeChatRecipient = null;
+        chatThreadsKey = CHAT_THREADS_LEGACY_KEY;
+        closeChat();
+        renderChatThreads();
+      }
+      updateAuthStatusUI();
+      await loadCreatorsFromSupabase();
+      await loadPostsFromSupabase();
+    }
+  });
+  authStateSubscription = data && data.subscription ? data.subscription : null;
+}
+
 async function initSupabase() {
   // The client is created FIRST from the built-in config, so the auth
-  // buttons work from the first tap. Waiting on /api/config before
-  // creating the client left supabaseClient null for the whole fetch
-  // — on a slow mobile connection that is exactly when users tapped
-  // Google and got "Authentication service is initializing."
+  // service is available immediately while remote config/session settle.
   ensureSupabaseClient();
 
-  // Refresh the config in the background; only re-create the client
-  // if the server actually reports different credentials.
   try {
-    const res = await fetch('/api/config');
-    const data = await res.json();
-    if (data.supabaseUrl && data.supabaseAnonKey && (data.supabaseUrl !== supabaseConfig.url || data.supabaseAnonKey !== supabaseConfig.anonKey)) {
-      supabaseConfig.url = data.supabaseUrl;
-      supabaseConfig.anonKey = data.supabaseAnonKey;
-      supabaseConfig.configured = true;
-      ensureSupabaseClient(true);
+    // Refresh the config with a short timeout; only re-create the client
+    // if the server actually reports different credentials.
+    try {
+      const controller = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = setTimeout(() => { try { controller && controller.abort(); } catch (_) {} }, 4000);
+      try {
+        const res = await Promise.race([
+          fetch('/api/config', controller ? { signal: controller.signal } : undefined),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Config timeout')), 4000))
+        ]);
+        if (res && res.ok) {
+          const data = await res.json();
+          if (data && data.supabaseUrl && data.supabaseAnonKey && (data.supabaseUrl !== supabaseConfig.url || data.supabaseAnonKey !== supabaseConfig.anonKey)) {
+            supabaseConfig.url = data.supabaseUrl;
+            supabaseConfig.anonKey = data.supabaseAnonKey;
+            supabaseConfig.configured = true;
+            ensureSupabaseClient(true);
+          }
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch(e) {
+      console.warn('Could not read /api/config', e);
     }
-  } catch(e) {
-    console.warn('Could not read /api/config', e);
-  }
 
-  // Fallback to local storage if config was stored
-  if (!supabaseConfig.url) {
-    supabaseConfig.url = localStorage.getItem('reelflow_supabase_url') || '';
-    supabaseConfig.anonKey = localStorage.getItem('reelflow_supabase_anon_key') || '';
-    if (supabaseConfig.url && supabaseConfig.anonKey) {
-      supabaseConfig.configured = true;
-      ensureSupabaseClient(true);
+    // Fallback to local storage if config was stored
+    if (!supabaseConfig.url) {
+      supabaseConfig.url = localStorage.getItem('reelflow_supabase_url') || '';
+      supabaseConfig.anonKey = localStorage.getItem('reelflow_supabase_anon_key') || '';
+      if (supabaseConfig.url && supabaseConfig.anonKey) {
+        supabaseConfig.configured = true;
+        ensureSupabaseClient(true);
+      }
     }
-  }
 
-  try {
+    // Attach a single deduplicated auth listener on the active client
+    attachAuthStateListener();
+
     // Check if app was opened directly with OAuth tokens in URL (e.g. from Google redirect)
-    const hasIncomingTokens = window.location.hash.includes('access_token') || 
-                              window.location.hash.includes('refresh_token') || 
+    const hasIncomingTokens = window.location.hash.includes('access_token') ||
+                              window.location.hash.includes('refresh_token') ||
                               window.location.search.includes('code=');
 
     if (hasIncomingTokens) {
       console.log('🔗 Incoming OAuth tokens detected in URL on boot, restoring session...');
       await handleOAuthCallback(window.location.href);
-    } else {
+    } else if (supabaseClient && supabaseClient.auth) {
       // Check existing authenticated session
       const { data: sessionData } = await supabaseClient.auth.getSession();
       if (sessionData && sessionData.session && sessionData.session.user) {
@@ -5132,60 +5208,18 @@ async function initSupabase() {
         // the other accounts' threads could be moved aside.
       }
     }
-
-    // Listen for auth state transitions
-    supabaseClient.auth.onAuthStateChange(async (event, session) => {
-      console.log('Supabase Auth Event:', event, session?.user?.id);
-      if (session && session.user) {
-        currentAuthUser = session.user;
-        // A push token saved while signed out now belongs to this user.
-        flushPendingPushToken();
-        switchChatThreadsForCurrentUser();
-        // Fresh Realtime join with the new login token, so the channel
-        // is authenticated as this user from the start.
-        if (chatRealtimeChannel) {
-          try { supabaseClient.removeChannel(chatRealtimeChannel); } catch (_) {}
-          chatRealtimeChannel = null;
-        }
-        subscribeToRealtimeChat();
-        closeAuthPage();
-        await loadUserProfileFromSupabase(session.user.id);
-        // Ban check on login / refresh / app open (server-time RPC),
-        // plus a Realtime subscription so an admin ban lands instantly.
-        await refreshBanState();
-        subscribeToBanRealtime(session.user.id);
-        await loadCreatorsFromSupabase();
-        loadUserChatThreadsFromSupabase();
-        await loadPostsFromSupabase();
-        await retryPendingPostUploads();
-        subscribeToPostsRealtime();
-        subscribeToProfilesRealtime();
-      } else {
-        // Only clear the inbox if a real account was active. Anonymous /
-        // demo mode keeps the shared key untouched.
-        const wasLoggedIn = chatThreadsKey !== CHAT_THREADS_LEGACY_KEY;
-        currentAuthUser = null;
-        applyBanState(null);
-        unsubscribeBanRealtime();
-        if (wasLoggedIn) {
-          chatThreads = [];
-          activeChatThreadId = null;
-          activeChatRecipient = null;
-          chatThreadsKey = CHAT_THREADS_LEGACY_KEY;
-          closeChat();
-          renderChatThreads();
-        }
-        updateAuthStatusUI();
-        await loadCreatorsFromSupabase();
-        await loadPostsFromSupabase();
-      }
-    });
   } catch(err) {
     console.warn('Auth session check note:', err);
+  } finally {
+    if (supabaseClient) {
+      supabaseInitDone = true;
+    } else {
+      supabaseInitPromise = null;
+    }
+    updateAuthStatusUI();
+    if (typeof syncAuthButtonState === 'function') syncAuthButtonState();
   }
-
-  updateAuthStatusUI();
-  supabaseInitDone = true;
+  return supabaseClient;
 }
 
 function extractGoogleUserMetadata(user) {
@@ -5475,33 +5509,50 @@ const googleBtnDefaultHtml = `
   <span class="auth-google-btn-text">Continue with Google</span>
 `;
 
+function syncAuthButtonState() {
+  const googleBtn = document.getElementById('auth-google-btn');
+  if (!googleBtn) return;
+  if (googleSignInInFlight || pendingGoogleSignIn) {
+    googleBtn.disabled = true;
+    googleBtn.style.opacity = '';
+    googleBtn.setAttribute('aria-busy', 'true');
+    googleBtn.innerHTML = `
+    <span class="loading-ring-sm" style="border-color:#1f1f1f;border-top-color:transparent;width:18px;height:18px;"></span>
+    <span class="auth-google-btn-text">Connecting to Google…</span>
+  `;
+    return;
+  }
+  if (!supabaseInitDone) {
+    // Subtle loading cue while still initializing; stays clickable so a tap
+    // queues seamlessly and auto-proceeds once readiness resolves.
+    googleBtn.disabled = false;
+    googleBtn.style.opacity = '0.88';
+    googleBtn.setAttribute('aria-busy', 'true');
+    googleBtn.innerHTML = `
+    <span class="loading-ring-sm" style="border-color:#1f1f1f;border-top-color:transparent;width:18px;height:18px;"></span>
+    <span class="auth-google-btn-text">Continue with Google</span>
+  `;
+    return;
+  }
+  googleBtn.disabled = false;
+  googleBtn.style.opacity = '';
+  googleBtn.removeAttribute('aria-busy');
+  googleBtn.innerHTML = googleBtnDefaultHtml;
+}
+
 function openAuthPage() {
   const errBox = document.getElementById('auth-error');
   const succBox = document.getElementById('auth-success');
-  const googleBtn = document.getElementById('auth-google-btn');
   if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
   if (succBox) { succBox.style.display = 'none'; succBox.textContent = ''; }
-  if (googleBtn) {
-    // While auth is still initializing, show a loading state on the
-    // button instead of letting the tap fail; enable it the moment
-    // init finishes. The button is never left permanently disabled.
-    if (supabaseInitPromise && !supabaseInitDone) {
-      googleBtn.disabled = true;
-      googleBtn.innerHTML = `
-    <span class="loading-ring-sm" style="border-color:#1f1f1f;border-top-color:transparent;width:18px;height:18px;"></span>
-    <span class="auth-google-btn-text">Loading…</span>
-  `;
-      supabaseInitPromise.then(() => {
-        googleBtn.disabled = false;
-        googleBtn.innerHTML = googleBtnDefaultHtml;
-      }).catch(() => {
-        googleBtn.disabled = false;
-        googleBtn.innerHTML = googleBtnDefaultHtml;
-      });
-    } else {
-      googleBtn.disabled = false;
-      googleBtn.innerHTML = googleBtnDefaultHtml;
-    }
+  const readyPromise = ensureAuthReady();
+  syncAuthButtonState();
+  if (!supabaseInitDone) {
+    readyPromise.then(() => {
+      syncAuthButtonState();
+    }).catch(() => {
+      syncAuthButtonState();
+    });
   }
   const page = document.getElementById('page-auth');
   if (page) page.style.display = 'flex';
@@ -5510,8 +5561,11 @@ function openAuthPage() {
 const openAuthModal = openAuthPage;
 
 function closeAuthPage() {
+  pendingGoogleSignIn = false;
+  googleSignInInFlight = false;
   const page = document.getElementById('page-auth');
   if (page) page.style.display = 'none';
+  syncAuthButtonState();
   resumeActiveFeedVideo();
 }
 
@@ -5582,7 +5636,10 @@ async function handleOAuthCallback(rawUrl) {
     }
 
     if (!supabaseClient) {
-      console.warn('supabaseClient not initialized yet when callback arrived');
+      ensureSupabaseClient();
+    }
+    if (!supabaseClient) {
+      console.warn('supabaseClient could not be created when callback arrived');
       return false;
     }
 
@@ -5653,15 +5710,18 @@ window.addEventListener('message', async (event) => {
     const callbackUrl = event.data?.url;
     if (callbackUrl) {
       await handleOAuthCallback(callbackUrl);
-    } else if (supabaseClient) {
-      const { data: sessionData } = await supabaseClient.auth.getSession();
-      if (sessionData && sessionData.session && sessionData.session.user) {
-        currentAuthUser = sessionData.session.user;
-        closeAuthPage();
-        showToast('Signed in successfully with Google 🎉');
-        await loadUserProfileFromSupabase(currentAuthUser.id);
-        applyProfile();
-        renderProfileGrid();
+    } else {
+      await ensureAuthReady();
+      if (supabaseClient) {
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        if (sessionData && sessionData.session && sessionData.session.user) {
+          currentAuthUser = sessionData.session.user;
+          closeAuthPage();
+          showToast('Signed in successfully with Google 🎉');
+          await loadUserProfileFromSupabase(currentAuthUser.id);
+          applyProfile();
+          renderProfileGrid();
+        }
       }
     }
   }
@@ -5740,7 +5800,8 @@ function loadGoogleGis() {
 // native Google Sign-In plugin). Same backend, same session, same
 // profile sync as the OAuth redirect — only the chooser differs.
 async function signInWithGoogleIdToken(idToken) {
-  if (!supabaseClient || !idToken) throw new Error('Google sign-in is not available.');
+  await ensureAuthReady();
+  if (!supabaseClient || !idToken) throw new Error('Google sign-in could not be completed. Please try again.');
   const { data, error } = await supabaseClient.auth.signInWithIdToken({ provider: 'google', token: idToken });
   if (error) throw error;
   if (data && data.user) {
@@ -5901,55 +5962,62 @@ async function signInWithGoogleInAppBrowser() {
 }
 
 async function handleGoogleSignIn() {
+  if (googleSignInInFlight) return;
   const errBox = document.getElementById('auth-error');
   const googleBtn = document.getElementById('auth-google-btn');
+  const authPage = document.getElementById('page-auth');
   if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
 
-  // Wait for auth initialization to finish (at most 10s) instead of
-  // failing the tap with "initializing" when the user is quick. The
-  // button shows a spinner while waiting and is restored afterwards.
-  if (supabaseInitPromise && !supabaseInitDone) {
-    if (googleBtn) {
-      googleBtn.disabled = true;
-      googleBtn.innerHTML = `
-    <span class="loading-ring-sm" style="border-color:#1f1f1f;border-top-color:transparent;width:18px;height:18px;"></span>
-    <span class="auth-google-btn-text">Loading…</span>
-  `;
-    }
-    try {
-      await Promise.race([
-        supabaseInitPromise,
-        new Promise(r => setTimeout(r, 10000))
-      ]);
-    } catch (_) {}
+  const restoreBtn = () => {
+    pendingGoogleSignIn = false;
+    googleSignInInFlight = false;
+    syncAuthButtonState();
+  };
+
+  googleSignInInFlight = true;
+  if (!supabaseInitDone || !supabaseClient) {
+    pendingGoogleSignIn = true;
   }
-
-  if (!supabaseClient) {
-    if (errBox) {
-      errBox.textContent = 'Authentication service is initializing. Please try again.';
-      errBox.style.display = 'block';
-    }
-    if (googleBtn) { googleBtn.disabled = false; googleBtn.innerHTML = googleBtnDefaultHtml; }
-    return;
-  }
-
-  googleBtn.disabled = true;
-  googleBtn.innerHTML = `
-    <span class="loading-ring-sm" style="border-color:#1f1f1f;border-top-color:transparent;width:18px;height:18px;"></span>
-    <span class="auth-google-btn-text">Connecting to Google…</span>
-  `;
-
-  const restoreBtn = () => { googleBtn.disabled = false; googleBtn.innerHTML = googleBtnDefaultHtml; };
+  syncAuthButtonState();
 
   try {
+    // Wait for auth initialization to complete cleanly so taps during mount
+    // queue and proceed automatically once ready without any error flash.
+    if (!supabaseInitDone || !supabaseClient) {
+      try {
+        await ensureAuthReady();
+      } catch (_) {}
+      pendingGoogleSignIn = false;
+      // If user closed the sign-in screen while waiting, stop cleanly.
+      if (authPage && authPage.style.display === 'none') {
+        restoreBtn();
+        return;
+      }
+      if (!supabaseClient) {
+        ensureSupabaseClient();
+      }
+      if (!supabaseClient) {
+        throw new Error('Unable to connect to authentication service. Please check your internet connection and try again.');
+      }
+    }
+
+    syncAuthButtonState();
+
     // 1) Native Android account picker (Capacitor plugin), when installed.
-    if (await tryNativeGoogleSignIn()) return;
+    if (await tryNativeGoogleSignIn()) {
+      restoreBtn();
+      return;
+    }
 
     // 2) The app's own window-browser (Capacitor Browser plugin).
     //    Google opens inside the app; the deep link brings the user
     //    straight back to the feed.
     const inApp = await signInWithGoogleInAppBrowser();
-    if (inApp === 'opened') return;
+    if (inApp === 'opened') {
+      googleSignInInFlight = false;
+      pendingGoogleSignIn = false;
+      return;
+    }
     // 'unavailable' → fall through to the popup / redirect below.
 
     // 3) Genuine Google account chooser as an in-app popup (GIS).
@@ -5958,8 +6026,14 @@ async function handleGoogleSignIn() {
     const isRealSupabase = !supabaseClient.isLocalAdapter && supabaseClient.auth && typeof supabaseClient.auth.signInWithIdToken === 'function';
     if (isRealSupabase) {
       const popup = await signInWithGooglePopup();
-      if (popup === 'signed-in') return;
-      if (popup === 'cancelled') { restoreBtn(); return; }
+      if (popup === 'signed-in') {
+        restoreBtn();
+        return;
+      }
+      if (popup === 'cancelled') {
+        restoreBtn();
+        return;
+      }
       // 'unavailable' → fall through to the redirect flow below.
     }
 
@@ -6008,6 +6082,7 @@ async function handleGoogleSignIn() {
             try { authWindow.close(); } catch(_) {}
           }
           currentAuthUser = sessionData.session.user;
+          restoreBtn();
           closeAuthPage();
           showToast('Signed in with Google 🎉');
           await loadUserProfileFromSupabase(currentAuthUser.id);
@@ -6015,13 +6090,14 @@ async function handleGoogleSignIn() {
           renderProfileGrid();
         } else if (checks > 120) {
           clearInterval(timer);
-          googleBtn.disabled = false;
-          googleBtn.innerHTML = googleBtnDefaultHtml;
+          restoreBtn();
         }
       }, 1000);
     } else if (data?.url && window.location.href !== data.url) {
       // Direct full-window native web flow
       window.location.href = data.url;
+    } else {
+      restoreBtn();
     }
   } catch(err) {
     console.error('Google Sign-In Error:', err);
@@ -6029,8 +6105,7 @@ async function handleGoogleSignIn() {
       errBox.textContent = err.message || 'Google sign-in could not be completed. Please try again.';
       errBox.style.display = 'block';
     }
-    googleBtn.disabled = false;
-    googleBtn.innerHTML = googleBtnDefaultHtml;
+    restoreBtn();
   }
 }
 
@@ -6128,6 +6203,8 @@ async function handlePasswordSignUp() {
   btn.innerHTML = '<span class="loading-ring-sm"></span> Creating Account…';
 
   try {
+    await ensureAuthReady();
+    if (!supabaseClient) throw new Error('Unable to connect to authentication service. Please check your connection and try again.');
     const { data, error } = await supabaseClient.auth.signUp({
       email: email,
       password: password
@@ -6190,6 +6267,8 @@ async function handlePasswordSignIn() {
   btn.innerHTML = '<span class="loading-ring-sm"></span> Signing In…';
 
   try {
+    await ensureAuthReady();
+    if (!supabaseClient) throw new Error('Unable to connect to authentication service. Please check your connection and try again.');
     const { data, error } = await supabaseClient.auth.signInWithPassword({
       email: email,
       password: password
@@ -6285,6 +6364,8 @@ async function handleForgotPassword() {
   }
 
   try {
+    await ensureAuthReady();
+    if (!supabaseClient) throw new Error('Unable to connect to authentication service. Please check your connection and try again.');
     const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin
     });
