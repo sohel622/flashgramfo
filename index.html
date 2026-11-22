@@ -10,6 +10,10 @@
   <meta name="description" content="ReelFlow - Video sharing and social feed web application featuring short-form video streaming, uploads, profile, and discovery.">
   <meta property="og:title" content="ReelFlow">
   <meta property="og:description" content="ReelFlow - Video sharing and social feed web application featuring short-form video streaming, uploads, profile, and discovery.">
+  <link rel="preconnect" href="https://res.cloudinary.com" crossorigin>
+  <link rel="dns-prefetch" href="https://res.cloudinary.com">
+  <link rel="preconnect" href="https://gxoajbncfpwhisehvbcf.supabase.co" crossorigin>
+  <link rel="dns-prefetch" href="https://gxoajbncfpwhisehvbcf.supabase.co">
   <!-- Supabase JS Client (CDN with local fallback) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -3102,19 +3106,48 @@
       display: none;
     }
     #home-theatre.open { display: block; }
-    .ht-stage {
+    .ht-scroller {
       position: absolute;
-      top: 0;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      margin: 0 auto;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow-y: scroll;
+      scroll-snap-type: y mandatory;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+      scrollbar-width: none;
+    }
+    .ht-scroller::-webkit-scrollbar { display: none; }
+    .ht-slide {
+      width: 100%;
+      height: 100%;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+      display: flex;
+      justify-content: center;
+      background: #000;
+      position: relative;
+      overflow: hidden;
+    }
+    .ht-stage {
+      position: relative;
       width: min(100vw, calc(100vh * 9 / 16));
       min-width: min(100vw, 300px);
       height: 100%;
       background: #000;
       overflow: hidden;
     }
+    .ht-chrome {
+      position: absolute;
+      inset: 0;
+      margin: 0 auto;
+      width: min(100vw, calc(100vh * 9 / 16));
+      min-width: min(100vw, 300px);
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .ht-chrome .ht-back, .ht-chrome .ht-sound { pointer-events: auto; }
     .ht-stage video {
       position: absolute;
       inset: 0;
@@ -3155,36 +3188,42 @@
     .ht-actions {
       position: absolute;
       right: 12px;
-      bottom: 178px;
+      bottom: calc(108px + env(safe-area-inset-bottom, 0px));
       z-index: 3;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
       align-items: center;
     }
-    .ht-act-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    .ht-act-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
     .ht-act {
-      width: 52px;
-      height: 52px;
-      border-radius: 50%;
-      border: 1px solid rgba(255,255,255,0.18);
-      background: rgba(0,0,0,0.35);
+      width: 38px;
+      height: 38px;
+      border-radius: 0;
+      border: none;
+      background: transparent;
       color: #fff;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       padding: 0;
+      transition: transform .15s;
     }
-    .ht-act svg { width: 26px; height: 26px; }
+    .ht-act:active { transform: scale(1.16); }
+    .ht-act svg {
+      width: 26px;
+      height: 26px;
+      filter: drop-shadow(0 2px 5px rgba(0,0,0,0.85));
+    }
     .ht-act.liked { color: #ff3040; }
     .ht-act.liked svg { fill: #ff3040; }
-    .ht-count { font-size: 12px; font-weight: 600; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.8); min-height: 14px; }
+    .ht-count { font-size: 12px; font-weight: 700; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.85); min-height: 14px; }
     .ht-info {
       position: absolute;
       left: 16px;
-      right: 88px;
-      bottom: 116px;
+      right: 68px;
+      bottom: calc(92px + env(safe-area-inset-bottom, 0px));
       z-index: 3;
       color: #fff;
     }
@@ -3196,23 +3235,13 @@
     .ht-time {
       position: absolute;
       right: 14px;
-      bottom: 74px;
+      bottom: calc(64px + env(safe-area-inset-bottom, 0px));
       z-index: 3;
       font-size: 12px;
       font-weight: 600;
       color: #fff;
       text-shadow: 0 1px 3px rgba(0,0,0,0.8);
     }
-    .ht-progress {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 64px;
-      height: 3px;
-      background: rgba(255,255,255,0.3);
-      z-index: 3;
-    }
-    .ht-progress-fill { height: 100%; width: 0%; background: #fff; }
     .ht-commentbar {
       position: absolute;
       left: 0;
@@ -3227,6 +3256,7 @@
     }
     .ht-commentbar input {
       flex: 1;
+      width: 100%;
       min-width: 0;
       background: rgba(255,255,255,0.14);
       border: 1px solid rgba(255,255,255,0.2);
@@ -3238,23 +3268,212 @@
       outline: none;
     }
     .ht-commentbar input::placeholder { color: rgba(255,255,255,0.65); }
-    .ht-send {
-      flex-shrink: 0;
-      width: 42px;
-      height: 42px;
-      border-radius: 50%;
-      border: none;
-      background: var(--accent);
-      color: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      padding: 0;
-    }
     /* While the theatre is open the bottom nav (and the Reels topbar)
        are hidden — the viewer is a screen of its own, not a tab. */
     body.ht-open #bottomnav, body.ht-open #topbar { display: none !important; }
+
+    /* ── DARK SHIMMER SKELETONS & OTHER USER PROFILE MODAL ── */
+    @keyframes rfShimmerSweep {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+    .rf-shimmer {
+      position: relative;
+      overflow: hidden;
+      background: #17171b;
+    }
+    .rf-shimmer::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      transform: translateX(-100%);
+      background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0) 100%);
+      animation: rfShimmerSweep 1.25s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .sk-bar {
+      height: 12px;
+      border-radius: 999px;
+      background: #1d1d22;
+    }
+    .sk-circle {
+      border-radius: 50%;
+      background: #1d1d22;
+      flex-shrink: 0;
+    }
+    .sk-grid-item {
+      aspect-ratio: 9/16;
+      border-radius: 2px;
+      background: #16161a;
+    }
+    .grid-item.is-loading {
+      background: #16161a;
+    }
+    .grid-item.is-loading::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      transform: translateX(-100%);
+      background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0) 100%);
+      animation: rfShimmerSweep 1.25s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .grid-item.is-loading video,
+    .grid-item.is-loading img {
+      opacity: 0;
+      transition: opacity .22s ease;
+    }
+    .grid-item video,
+    .grid-item img {
+      transition: opacity .22s ease;
+    }
+    .home-post-media.is-loading {
+      background: #131317;
+    }
+    .home-post-media.is-loading::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      transform: translateX(-100%);
+      background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0) 100%);
+      animation: rfShimmerSweep 1.25s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .sk-home-card {
+      margin: 10px 12px 16px;
+      border-radius: 14px;
+      background: #121215;
+      padding: 12px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .sk-home-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .sk-home-media {
+      width: 100%;
+      aspect-ratio: 4/5;
+      max-height: 360px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+    }
+    .sk-home-foot {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .sk-story-item {
+      flex: 0 0 auto;
+      width: 66px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .sk-creator-card {
+      min-width: 140px;
+      background: #141418;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 14px;
+      padding: 14px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .sk-comment-row, .sk-user-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 4px 0;
+    }
+    .sk-user-row {
+      align-items: center;
+      padding: 9px 2px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .sk-comment-lines, .sk-user-lines {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      min-width: 0;
+    }
+    #other-profile-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 210;
+      background: var(--other-profile-color, #000);
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(18px);
+      transition: opacity .22s ease, transform .22s ease, background-color .35s ease;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+    }
+    #other-profile-modal.open {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+    #other-profile-modal.other-color-light {
+      color: #111;
+    }
+    #other-profile-modal.other-color-light .profile-stat-num,
+    #other-profile-modal.other-color-light .profile-hero-name,
+    #other-profile-modal.other-color-light .profile-topbar-title {
+      color: #111;
+    }
+    #other-profile-modal.other-color-light .profile-hero-handle,
+    #other-profile-modal.other-color-light .profile-stat-label,
+    #other-profile-modal.other-color-light .profile-bio {
+      color: rgba(0,0,0,0.72);
+    }
+    #other-profile-modal.other-color-light .profile-topbar-icon {
+      background: rgba(0,0,0,0.08);
+      color: #111;
+    }
+    .other-profile-actions {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .other-profile-btn-follow {
+      flex: 1;
+      height: 42px;
+      border-radius: 10px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: var(--font);
+      cursor: pointer;
+    }
+    .other-profile-btn-follow.following {
+      background: rgba(255,255,255,0.14);
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .other-profile-btn-msg {
+      flex: 1;
+      height: 42px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.1);
+      color: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: var(--font);
+      cursor: pointer;
+    }
 
   </style>
 </head>
@@ -3392,48 +3611,12 @@
      Opens on tap of a Home video; never navigates to the Reels tab.
      Back returns to Home and restarts that Home video from 0:00. -->
 <div id="home-theatre" aria-hidden="true">
-  <div class="ht-stage">
-    <video id="ht-video" loop playsinline preload="metadata" onclick="toggleHomeTheatreVideo()"></video>
-    <span class="ht-play" id="ht-play"><svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6 3 20 12 6 21 6 3"/></svg></span>
+  <div class="ht-scroller" id="ht-scroller"></div>
+  <div class="ht-chrome">
     <button class="ht-back" onclick="closeHomeTheatre()" title="Back" aria-label="Back">
       <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
     </button>
     <button class="ht-sound" id="ht-sound-btn" onclick="toggleHomeTheatreSound(event)" title="Sound" aria-label="Sound"></button>
-    <div class="ht-actions">
-      <div class="ht-act-wrap">
-        <button class="ht-act" id="ht-like-btn" onclick="toggleHomeTheatreLike()" title="Like" aria-label="Like"></button>
-        <span class="ht-count" id="ht-like-count"></span>
-      </div>
-      <div class="ht-act-wrap">
-        <button class="ht-act" onclick="openHomeTheatreComments()" title="Comment" aria-label="Comment"></button>
-        <span class="ht-count" id="ht-comment-count"></span>
-      </div>
-      <div class="ht-act-wrap">
-        <button class="ht-act" onclick="openHomeTheatreShare()" title="Share" aria-label="Share"></button>
-        <span class="ht-count" id="ht-share-count"></span>
-      </div>
-      <div class="ht-act-wrap">
-        <button class="ht-act" onclick="openHomeTheatreMore()" title="More" aria-label="More"></button>
-      </div>
-    </div>
-    <div class="ht-info">
-      <div class="ht-user">
-        <span id="ht-avatar"></span>
-        <div>
-          <div class="ht-name" id="ht-name"></div>
-          <div class="ht-handle" id="ht-handle"></div>
-        </div>
-      </div>
-      <div class="ht-caption" id="ht-caption"></div>
-    </div>
-    <div class="ht-time" id="ht-time">0:00 / 0:00</div>
-    <div class="ht-progress"><div class="ht-progress-fill" id="ht-progress-fill"></div></div>
-    <div class="ht-commentbar">
-      <input id="ht-comment-input" type="text" placeholder="Add a comment..." autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();postHomeTheatreComment();}">
-      <button class="ht-send" onclick="postHomeTheatreComment()" title="Send comment" aria-label="Send comment">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-      </button>
-    </div>
   </div>
 </div>
 
@@ -3639,6 +3822,18 @@
     </div>
     <div class="likes-list" id="likesModalList"></div>
   </div>
+</div>
+
+<!-- OTHER USER PROFILE MODAL -->
+<div id="other-profile-modal" aria-hidden="true">
+  <div class="profile-topbar" style="padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 8px;">
+    <div class="profile-topbar-icon" onclick="closeOtherUserProfile()" title="Back" aria-label="Back">
+      <span class="material-symbols-rounded">arrow_back</span>
+    </div>
+    <div class="profile-topbar-title" id="other-profile-top-title">Profile</div>
+    <div style="width:36px;"></div>
+  </div>
+  <div id="other-profile-body"></div>
 </div>
 
 <!-- VERIFICATION CONFIRMATION POPUP -->
@@ -4317,7 +4512,131 @@ let customUploadedThumbBlob = null;
 
 // Dynamic creators list fetched from Supabase profiles table
 let creators = [];
-let isLoadingCreators = false;
+let isLoadingCreators = true;
+let isLoadingHomeFeed = true;
+let isLoadingProfileVideos = true;
+
+let profileStats = { posts: null, followers: null, following: null, likes: null };
+let profileStatsTimer = null;
+const verifiedCache = {};
+const verifiedConfirmedUsers = {};
+let verifyConfirmDismissedInSession = false;
+const avatarFetchInFlight = new Map();
+const avatarBadUrls = new Set();
+const avatarBlobUrlMemo = new Map();
+const AVATAR_CACHE_MAX_ENTRIES = 200;
+
+const PROFILE_CACHE_KEY = 'reelflow_profile_cache_v1';
+const FEED_POSTS_CACHE_KEY = 'reelflow_posts_cache_v1';
+
+function saveProfileLocalCache() {
+  try {
+    if (!profile) return;
+    if (!profile.id && (!profile.name || profile.name === 'Sign In')) return;
+    const payload = {
+      id: profile.id || null,
+      name: profile.name || '',
+      handle: profile.handle || 'user',
+      bio: profile.bio || '',
+      avatar_url: profile.avatar_url || null,
+      is_verified: profile.is_verified === true,
+      role: profile.role || 'user',
+      profile_color: profile.profile_color || '#000000',
+      updated_at: profile.updated_at || null,
+      stats: {
+        posts: typeof profileStats !== 'undefined' ? profileStats.posts : null,
+        followers: typeof profileStats !== 'undefined' ? profileStats.followers : null,
+        following: typeof profileStats !== 'undefined' ? profileStats.following : null,
+        likes: typeof profileStats !== 'undefined' ? profileStats.likes : null
+      },
+      savedAt: Date.now()
+    };
+    localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(payload));
+  } catch (_) {}
+}
+
+function clearProfileLocalCache() {
+  try { localStorage.removeItem(PROFILE_CACHE_KEY); } catch (_) {}
+}
+
+function hydrateProfileFromLocalCache() {
+  try {
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY);
+    if (!raw) return false;
+    const cached = JSON.parse(raw);
+    if (!cached || typeof cached !== 'object') return false;
+    if (cached.id) profile.id = cached.id;
+    if (cached.name) profile.name = cached.name;
+    if (cached.handle) profile.handle = String(cached.handle).replace(/^@/, '');
+    if (typeof cached.bio === 'string') profile.bio = cached.bio;
+    if (cached.avatar_url) profile.avatar_url = cached.avatar_url;
+    if (typeof cached.is_verified === 'boolean') profile.is_verified = cached.is_verified;
+    if (cached.role) profile.role = cached.role;
+    if (cached.profile_color) profile.profile_color = cached.profile_color;
+    if (cached.updated_at) profile.updated_at = cached.updated_at;
+    if (cached.id && typeof cacheVerified === 'function') {
+      cacheVerified(cached.id, cached.is_verified === true);
+    }
+    if (cached.stats && typeof profileStats !== 'undefined') {
+      ['posts', 'followers', 'following', 'likes'].forEach(k => {
+        if (typeof cached.stats[k] === 'number' && !isNaN(cached.stats[k])) {
+          profileStats[k] = cached.stats[k];
+        }
+      });
+    }
+    if (typeof applyProfile === 'function') applyProfile();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function saveFeedPostsCache(list) {
+  try {
+    const source = Array.isArray(list) ? list : videos;
+    const compact = source
+      .filter(v => v && v.videoUrl && String(v.videoUrl).indexOf('blob:') !== 0)
+      .slice(0, 20)
+      .map(v => ({
+        id: v.id,
+        user_id: v.user_id || null,
+        ts: v.ts || Date.now(),
+        created_at: v.created_at || null,
+        videoUrl: v.videoUrl,
+        thumbnail_url: (v.thumbnail_url && String(v.thumbnail_url).indexOf('blob:') !== 0) ? v.thumbnail_url : null,
+        caption: v.caption || '',
+        hashtags: Array.isArray(v.hashtags) ? v.hashtags : [],
+        music: v.music || '',
+        username: v.username || '',
+        userDisplayName: v.userDisplayName || '',
+        likes: v.likes || 0,
+        comments: v.comments || 0,
+        shares: v.shares || 0,
+        views: v.views || 42,
+        liked: !!v.liked,
+        isDatabasePost: !!v.isDatabasePost
+      }));
+    localStorage.setItem(FEED_POSTS_CACHE_KEY, JSON.stringify(compact));
+  } catch (_) {}
+}
+
+function hydrateFeedPostsFromCache() {
+  try {
+    const raw = localStorage.getItem(FEED_POSTS_CACHE_KEY);
+    if (!raw) return false;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr) || !arr.length) return false;
+    const hydrated = arr.filter(v => v && v.videoUrl).map(v => ({ ...v, userComments: [] }));
+    if (!hydrated.length) return false;
+    videos = dedupeVideosByUrl((videos || []).concat(hydrated));
+    hydrated.forEach(v => {
+      if (v.thumbnail_url && isImageUrl(v.thumbnail_url)) thumbUrls[v.id] = v.thumbnail_url;
+    });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
 
 // Seed Videos for rich out-of-the-box experience
 
@@ -4551,6 +4870,10 @@ pruneAllExpiredChatMessages();
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
+// Hydrate cached profile & counters synchronously before async boot so
+// avatar, name, verified badge and stats paint instantaneously.
+hydrateProfileFromLocalCache();
+
 (async () => {
   // Attach push listeners first, so a notification tap that
   // cold-started the app is never missed.
@@ -4563,45 +4886,50 @@ pruneAllExpiredChatMessages();
     const rows = await dbGetAll('videos');
     rows.sort((a,b) => b.ts - a.ts);
 
-    // Blob URLs are created lazily (see getBlobUrl/getThumbUrl): making
-    // one for every upload at boot kept every video file in memory.
-
-    // The feed shows only real videos: this device's uploads plus
-    // posts from Supabase (merged in below). No hardcoded, demo or
-    // placeholder videos are ever added here.
     videos = dedupeVideosByUrl(rows);
 
-    // Load profile
+    // Load profile from IndexedDB (merge without clearing fresher cached stats)
     const prows = await dbGetAll('profile');
     prows.forEach(r => {
-      if (r.key in profile) profile[r.key] = r.val;
+      if (r.key === 'id' && r.val) profile.id = r.val;
+      else if (r.key === 'is_verified') profile.is_verified = r.val === true;
+      else if (r.key in profile) profile[r.key] = r.val;
       if (typeof r.key === 'string' && r.key.indexOf('verified_confirmed_') === 0 && r.val) {
         verifiedConfirmedUsers[r.key.slice('verified_confirmed_'.length)] = true;
       }
     });
+    if (profile.id && typeof cacheVerified === 'function') {
+      cacheVerified(profile.id, profile.is_verified === true);
+    }
   } catch(e) {
     console.warn('DB initialization error', e);
     videos = [];
   }
 
-  // No loading screen: render the feed straight from the local videos
-  // (IndexedDB uploads) so the app opens on the feed immediately.
-  // The database refresh below rebuilds it with live posts.
+  // Hydrate cached remote posts immediately so cold boot has instant content
+  // while live Supabase sync runs in the background.
+  hydrateFeedPostsFromCache();
   applyForYouRanking();
   buildFeed();
+  applyProfile();
+  renderProfileGrid();
+  setupHomeHeaderScroll();
+  setupFeedTopbarScroll();
+  goPage('home', document.getElementById('nav-home'));
 
-  // The init promise is kept as a singleton so login buttons and deep-links
-  // wait seamlessly for auth readiness instead of failing during startup.
+  // Non-blocking auth + network sync: UI is already visible above.
   await ensureAuthReady();
   switchChatThreadsForCurrentUser();
   applyProfile();
-  await loadPostsFromSupabase();
+  await Promise.allSettled([
+    loadPostsFromSupabase(),
+    loadCreatorsFromSupabase()
+  ]);
   await retryPendingPostUploads();
   subscribeToPostsRealtime();
   subscribeToProfilesRealtime();
   applyForYouRanking();
   buildFeed();
-  await loadCreatorsFromSupabase();
   renderCreators();
   renderDiscover();
   renderInbox();
@@ -4609,14 +4937,7 @@ pruneAllExpiredChatMessages();
   loadUserChatThreadsFromSupabase();
   subscribeToRealtimeChat();
   startChatPolling();
-  // Land on the new Instagram-style Home page (the Reels feed stays
-  // a separate tab under the bottom nav).
-  setupHomeHeaderScroll();
-  setupFeedTopbarScroll();
-  // First launch: ask the Android 13+ notification permission
-  // once (native dialog), then register for the FCM token.
   setupPushNotifications();
-  goPage('home', document.getElementById('nav-home'));
 })();
 
 // ═══════════════════════════════════════════════════════
@@ -5151,11 +5472,11 @@ async function initSupabase() {
     // if the server actually reports different credentials.
     try {
       const controller = typeof AbortController === 'function' ? new AbortController() : null;
-      const timer = setTimeout(() => { try { controller && controller.abort(); } catch (_) {} }, 4000);
+      const timer = setTimeout(() => { try { controller && controller.abort(); } catch (_) {} }, 1500);
       try {
         const res = await Promise.race([
           fetch('/api/config', controller ? { signal: controller.signal } : undefined),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Config timeout')), 4000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Config timeout')), 1500))
         ]);
         if (res && res.ok) {
           const data = await res.json();
@@ -5436,8 +5757,10 @@ async function loadUserProfileFromSupabase(userId) {
       profile.lock_expires_at = data.lock_expires_at || null;
       cacheVerified(profile.id, profile.is_verified);
 
-      // Cache locally in IndexedDB
+      // Cache locally in IndexedDB and synchronous localStorage cache
       try {
+        if (profile.id) await dbPut('profile', { key: 'id', val: profile.id });
+        await dbPut('profile', { key: 'is_verified', val: !!profile.is_verified });
         await dbPut('profile', { key: 'name', val: profile.name });
         await dbPut('profile', { key: 'handle', val: profile.handle });
         await dbPut('profile', { key: 'bio', val: profile.bio });
@@ -5454,9 +5777,11 @@ async function loadUserProfileFromSupabase(userId) {
         if (profile.lock_expires_at) await dbPut('profile', { key: 'lock_expires_at', val: profile.lock_expires_at });
       } catch(_) {}
 
+      saveProfileLocalCache();
       applyProfile();
       renderProfileGrid();
       refreshAllVerifiedBadgeSlots();
+      loadProfileStats();
 
       // New users only: the sync JUST created this row on first login,
       // so show the pre-filled setup screen exactly once. The database
@@ -6743,8 +7068,9 @@ async function saveProfileSetup() {
     profile.username_updated_at = nowIso;
     profile.bio_updated_at = nowIso;
 
-    // Cache locally in IndexedDB
+    // Cache locally in IndexedDB and localStorage
     try {
+      await dbPut('profile', { key: 'id', val: profile.id });
       await dbPut('profile', { key: 'name', val: profile.name });
       await dbPut('profile', { key: 'handle', val: profile.handle });
       await dbPut('profile', { key: 'bio', val: profile.bio });
@@ -6756,6 +7082,7 @@ async function saveProfileSetup() {
       await dbPut('profile', { key: 'bio_updated_at', val: profile.bio_updated_at });
     } catch(_) {}
 
+    saveProfileLocalCache();
     closeProfileSetupPage();
     applyProfile();
     renderProfileGrid();
@@ -6815,10 +7142,6 @@ function avatarUrlHash(url) {
 function avatarCacheKey(uid, url) {
   return 'av:' + String(uid || 'anon') + ':' + avatarUrlHash(url);
 }
-const avatarFetchInFlight = new Map();
-const avatarBadUrls = new Set();
-const avatarBlobUrlMemo = new Map();
-const AVATAR_CACHE_MAX_ENTRIES = 200;
 
 async function avatarCachePrune(uid, keepKey) {
   try {
@@ -7466,13 +7789,7 @@ async function adminEditBanReason(banId) {
 }
 
 // ── Profile counters (Posts / Followers / Following / Likes) ──
-// Real counts from Supabase — never hardcoded. The stats row used
-// to say 148 Following / 18.4K Followers / 54.2K Likes, and
-// applyProfile() read profile.following / profile.followers, which
-// Supabase never fills (profiles has no such columns), while Likes
-// summed only the videos saved on this phone.
-let profileStats = { posts: null, followers: null, following: null, likes: null };
-let profileStatsTimer = null;
+// Real counts from Supabase — never hardcoded. (profileStats declared above boot)
 
 function renderProfileStats() {
   const set = (id, val) => {
@@ -7522,6 +7839,7 @@ async function loadProfileStats() {
     profileStats.following = followingRes.error ? (profileStats.following ?? 0) : countOf(followingRes);
     profileStats.likes = likesCount;
     renderProfileStats();
+    saveProfileLocalCache();
   } catch (e) { console.warn('loadProfileStats note:', e && e.message); }
 }
 
@@ -7883,8 +8201,9 @@ async function saveProfile() {
       if (profile.lock_expires_at) await dbPut('profile', { key: 'lock_expires_at', val: profile.lock_expires_at });
     } catch(e) {}
 
-    // Also persist in local offline store
+    // Also persist in local offline store & synchronous localStorage cache
     try {
+      if (profile.id) await dbPut('profile', { key: 'id', val: profile.id });
       await dbPut('profile', { key: 'name', val: profile.name });
       await dbPut('profile', { key: 'handle', val: profile.handle });
       await dbPut('profile', { key: 'bio', val: profile.bio });
@@ -7896,6 +8215,7 @@ async function saveProfile() {
       if (profile.bio_updated_at) await dbPut('profile', { key: 'bio_updated_at', val: profile.bio_updated_at });
     } catch(e) {}
 
+    saveProfileLocalCache();
     document.getElementById('edit-profile-modal').classList.remove('open');
     applyProfile();
     renderProfileGrid();
@@ -7926,8 +8246,12 @@ async function handleSignOut() {
   profile.handle = 'user';
   profile.bio = '';
   profile.avatar_url = null;
+  profile.is_verified = false;
+  profileStats = { posts: 0, followers: 0, following: 0, likes: 0 };
+  clearProfileLocalCache();
 
   document.getElementById('edit-profile-modal').classList.remove('open');
+  renderProfileStats();
   applyProfile();
   renderProfileGrid();
   showToast('Signed out of ReelFlow 👋');
@@ -7941,6 +8265,29 @@ function switchProfileTab(tab) {
   renderProfileGrid();
 }
 
+function attachGridMediaShimmer(item, mediaEl) {
+  if (!item) return;
+  if (!mediaEl) return;
+  item.classList.add('is-loading');
+  let cleared = false;
+  const done = () => {
+    if (cleared) return;
+    cleared = true;
+    item.classList.remove('is-loading');
+  };
+  if (mediaEl.tagName === 'IMG') {
+    if (mediaEl.complete) { done(); return; }
+    mediaEl.addEventListener('load', done, { once: true });
+    mediaEl.addEventListener('error', done, { once: true });
+  } else {
+    if (mediaEl.readyState >= 2) { done(); return; }
+    mediaEl.addEventListener('loadeddata', done, { once: true });
+    mediaEl.addEventListener('canplay', done, { once: true });
+    mediaEl.addEventListener('error', done, { once: true });
+  }
+  setTimeout(done, 4500);
+}
+
 function renderProfileGrid() {
   const wrap = document.getElementById('profile-grid-wrap');
   wrap.innerHTML = '';
@@ -7950,6 +8297,17 @@ function renderProfileGrid() {
     // My videos only: every user's uploads used to show up here.
     list = videos.filter(v => isMyVideo(v));
     if (!list.length) {
+      if (isLoadingProfileVideos) {
+        const skGrid = document.createElement('div');
+        skGrid.className = 'video-grid';
+        for (let i = 0; i < 6; i++) {
+          const tile = document.createElement('div');
+          tile.className = 'sk-grid-item rf-shimmer';
+          skGrid.appendChild(tile);
+        }
+        wrap.appendChild(skGrid);
+        return;
+      }
       const empty = document.createElement('div');
       empty.className = 'profile-empty';
       empty.innerHTML = `
@@ -7999,7 +8357,10 @@ function renderProfileGrid() {
     item.onclick = () => openInFeed(originalIndex);
 
     const thumb = makeGridThumb(v);
-    if (thumb) item.appendChild(thumb);
+    if (thumb) {
+      item.appendChild(thumb);
+      attachGridMediaShimmer(item, thumb);
+    }
 
     // Views / Likes badge
     const badge = document.createElement('div');
@@ -8815,9 +9176,6 @@ function verifiedBadgeSlotHTML(userId, isVerified, handle, large) {
   const h = handle ? String(handle).replace(/^@/, '') : '';
   return '<span class="verified-badge-slot" data-uid="' + escapeHtml(uid) + '" data-handle="' + escapeHtml(h) + '"' + (large ? ' data-large="1"' : '') + '>' + (isVerified ? verifiedBadgeHTML(large) : '') + '</span>';
 }
-const verifiedCache = {};
-const verifiedConfirmedUsers = {};
-let verifyConfirmDismissedInSession = false;
 function verifiedCacheKey(id) {
   return id ? String(id).toLowerCase() : '';
 }
@@ -8940,6 +9298,7 @@ function handleProfilesRealtimeUpdate(row) {
   }
   if (profile && profile.id && verifiedCacheKey(profile.id) === verifiedCacheKey(row.user_id)) {
     profile.is_verified = isV;
+    saveProfileLocalCache();
   }
   if (typeof creators !== 'undefined' && creators) {
     const c = creators.find(x => verifiedCacheKey(x.user_id) === verifiedCacheKey(row.user_id) || verifiedCacheKey(x.id) === verifiedCacheKey(row.user_id));
@@ -8951,6 +9310,7 @@ function handleProfilesRealtimeUpdate(row) {
     if (profile && profile.id && verifiedCacheKey(profile.id) === verifiedCacheKey(row.user_id)) {
       profile.profile_color = pc;
       applyProfileColor(pc);
+      saveProfileLocalCache();
       try { const p = dbPut('profile', { key: 'profile_color', val: pc }); if (p && p.catch) p.catch(function(){}); } catch (_) {}
     }
     if (typeof creators !== 'undefined' && creators) {
@@ -9052,6 +9412,7 @@ function applyProfileColor(color) {
     page.style.setProperty('--profile-color', c);
     page.classList.toggle('profile-color-light', isLightProfileColor(c));
   }
+  if (profile.id) saveProfileLocalCache();
 }
 
 function makeInfo(v) {
@@ -9260,6 +9621,11 @@ async function toggleLike(btn, id, idx) {
   }
 
   if (countEl) countEl.textContent = fmtC(v.likes);
+  if (isMyVideo(v)) {
+    profileStats.likes = Math.max(0, (profileStats.likes ?? 0) + (isLiked ? 1 : -1));
+    renderProfileStats();
+    saveProfileLocalCache();
+  }
   applyProfile();
   try { if (!v.isSeed) await dbPut('videos', v); } catch(e){}
 
@@ -9277,7 +9643,10 @@ function toggleFollow(e, id) {
   const followedCreator = (typeof creators !== 'undefined' ? creators.find(c => c.id === id || c.user_id === id) : null);
   recordFeedEvent(isF ? 'follow' : 'unfollow', { id: 'creator_' + id, username: (followedCreator && (followedCreator.handle || followedCreator.name)) || String(id), hashtags: [] });
   dot.querySelector('.material-symbols-rounded').textContent = isF ? 'check' : 'add';
-  profile.following = Math.max(0, profile.following + (isF ? 1 : -1));
+  profile.following = Math.max(0, (profile.following || 0) + (isF ? 1 : -1));
+  profileStats.following = Math.max(0, (profileStats.following ?? 0) + (isF ? 1 : -1));
+  renderProfileStats();
+  saveProfileLocalCache();
   applyProfile();
   showToast(isF ? 'Following creator! ✨' : 'Unfollowed');
 }
@@ -9501,10 +9870,16 @@ async function handleIncomingPost(p) {
   // Capture the video being watched before the unshift moves it.
   const currentId = activeIdx >= 0 && videos[activeIdx] ? videos[activeIdx].id : null;
   videos.unshift(mapPostToVideo(p, myId));
+  saveFeedPostsCache(videos);
   rebuildFeedPreservingPosition(currentId);
   renderProfileGrid();
   // A new post of mine arrived live — my Posts count just changed.
-  if (p.user_id && currentFollowUserId() && String(p.user_id).toLowerCase() === currentFollowUserId().toLowerCase()) loadProfileStats();
+  if (p.user_id && currentFollowUserId() && String(p.user_id).toLowerCase() === currentFollowUserId().toLowerCase()) {
+    profileStats.posts = (profileStats.posts ?? 0) + 1;
+    renderProfileStats();
+    saveProfileLocalCache();
+    loadProfileStats();
+  }
 }
 
 // Load posts from Supabase posts table
@@ -9586,7 +9961,11 @@ function mergeDbVideosInto(existing, fresh) {
 // before a fresh login) shows up instead of only what this device
 // remembers.
 async function loadMyVideosForProfile() {
-  if (!supabaseClient || !currentAuthUser) return false;
+  if (!supabaseClient || !currentAuthUser) {
+    isLoadingProfileVideos = false;
+    return false;
+  }
+  isLoadingProfileVideos = true;
   const myId = String(currentAuthUser.id);
   const myIdLower = myId.toLowerCase();
   let changed = false;
@@ -9600,19 +9979,32 @@ async function loadMyVideosForProfile() {
       const dbVids = data.filter(p => p.video_url).map(p => mapPostToVideo(p, myIdLower));
       if (dbVids.length) {
         const merged = mergeDbVideosInto(videos, dbVids);
-        if (merged.length !== videos.length) { videos = merged; changed = true; }
+        if (merged.length !== videos.length) {
+          videos = merged;
+          saveFeedPostsCache(videos);
+          changed = true;
+        }
       }
     } else if (error) {
       console.warn('loadMyVideosForProfile posts note:', error.message);
     }
   } catch (err) {
     console.warn('loadMyVideosForProfile posts error:', err);
+  } finally {
+    isLoadingProfileVideos = false;
   }
   return changed;
 }
 
 async function loadPostsFromSupabase() {
-  if (!supabaseClient) return;
+  if (!supabaseClient) {
+    isLoadingHomeFeed = false;
+    isLoadingProfileVideos = false;
+    renderHomeFeed();
+    renderProfileGrid();
+    return;
+  }
+  isLoadingHomeFeed = true;
   try {
     const { data, error } = await supabaseClient
       .from('posts')
@@ -9626,65 +10018,45 @@ async function loadPostsFromSupabase() {
 
     if (data && Array.isArray(data) && data.length > 0) {
       const myId = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : (profile.id ? String(profile.id).toLowerCase() : null);
-      // Fetch the authors' real profiles FIRST (one query), so every
-      // post is mapped with its author's actual username / display
-      // name instead of the generic fallback. Capped at 5s: a slow or
-      // hung profile fetch must never hold the feed hostage — the
-      // posts map and render with the fallback names, and the real
-      // names refresh in place when the profiles arrive.
       const authorIds = [...new Set(data.map(p => p.user_id).filter(Boolean))];
+      // Race profile metadata for only 200ms so videos render and begin buffering immediately;
+      // remaining author metadata hydrates asynchronously via refreshAuthorNames().
+      const authorLoadPromise = loadAuthorProfiles(authorIds).then(() => {
+        authorIds.forEach(id => refreshAuthorNames(id));
+      }).catch(() => {});
       try {
         await Promise.race([
-          loadAuthorProfiles(authorIds),
-          new Promise(r => setTimeout(r, 5000))
+          authorLoadPromise,
+          new Promise(r => setTimeout(r, 200))
         ]);
       } catch (_) {}
       const dbVids = data.filter(p => p.video_url).map(p => mapPostToVideo(p, myId));
 
-      // Merge cleanly: new posts prepend, already-loaded posts stay
-      // exactly once (deduped by URL and by post id). The old code
-      // rebuilt the list as fresh + non-DB locals, so the moment one
-      // new post arrived every previously loaded DB post fell out
-      // of the feed. Rebuild only when something actually arrived.
       const merged = mergeDbVideosInto(videos, dbVids);
       if (merged.length !== videos.length) {
-        // Capture the video being watched BEFORE the list is
-        // replaced: after the merge its index has shifted.
         const currentId = activeIdx >= 0 && videos[activeIdx] ? videos[activeIdx].id : null;
         videos = merged;
+        saveFeedPostsCache(videos);
         rebuildFeedPreservingPosition(currentId);
         renderProfileGrid();
+      } else {
+        saveFeedPostsCache(videos);
       }
-      // Refresh the author info on any slide/card that was already
-      // mounted before the profiles arrived (name + avatar + display
-      // name, in place, without rebuilding the feed).
       authorIds.forEach(id => refreshAuthorNames(id));
     }
-    // Re-render Home after EVERY load attempt — not only when posts
-    // arrived. The query has no user filter (it is .select('*') over
-    // the whole posts table, so it returns every user's posts), and
-    // Home renders the whole `videos` list; but if the render only
-    // ran when data arrived, a failed or empty load left Home showing
-    // whatever it had before — on a phone that is only the user's
-    // own locally saved videos. Rendering here guarantees Home always
-    // reflects the newest merged list, whatever the load returned.
+    isLoadingHomeFeed = false;
+    isLoadingProfileVideos = false;
     renderHomeFeed();
-    // Real like / comment counts and this user's liked state. A failure
-    // here must never block the feed render above.
-    try {
-      await loadEngagementForVideos();
-    } catch (e) {
-      console.warn('loadEngagementForVideos note:', e && e.message);
-    }
-    // Who I follow, so Follow buttons hide in Search and Home.
-    // A failure here must never block the feed render above either.
-    try {
-      await loadFollowedUserIds();
-    } catch (e) {
-      console.warn('loadFollowedUserIds note:', e && e.message);
-    }
+    renderProfileGrid();
+    await Promise.allSettled([
+      loadEngagementForVideos(),
+      loadFollowedUserIds()
+    ]);
   } catch(err) {
     console.warn('loadPostsFromSupabase error:', err);
+  } finally {
+    isLoadingHomeFeed = false;
+    isLoadingProfileVideos = false;
   }
   // A follow notification tapped before posts loaded waits here.
   tryOpenFollowerFromNotification();
@@ -10641,6 +11013,12 @@ async function submitUpload() {
     const progressBox = document.getElementById('uploadProgressBox');
     if (progressBox) progressBox.style.display = 'none';
 
+    saveFeedPostsCache(videos);
+    if (isMyVideo(newVid)) {
+      profileStats.posts = (profileStats.posts ?? 0) + 1;
+      renderProfileStats();
+      saveProfileLocalCache();
+    }
     buildFeed();
     renderProfileGrid();
     applyProfile();
@@ -10668,15 +11046,39 @@ async function submitUpload() {
 // ═══════════════════════════════════════════════════════
 let activeCommentsId = null;
 
+function commentsSkeletonHTML(count) {
+  const rows = [];
+  const n = count || 5;
+  for (let i = 0; i < n; i++) {
+    rows.push(
+      '<div class="sk-comment-row">'
+      + '<div class="sk-circle rf-shimmer" style="width:34px;height:34px;"></div>'
+      + '<div class="sk-comment-lines">'
+      + '<div class="sk-bar rf-shimmer" style="width:' + (32 + (i % 3) * 14) + '%;height:11px;"></div>'
+      + '<div class="sk-bar rf-shimmer" style="width:' + (68 + (i % 2) * 18) + '%;height:12px;"></div>'
+      + '<div class="sk-bar rf-shimmer" style="width:22%;height:9px;"></div>'
+      + '</div></div>'
+    );
+  }
+  return rows.join('');
+}
+
 async function openComments(id) {
   activeCommentsId = id;
   const v = videos.find(x => x.id === id);
   const list = document.getElementById('commentsList');
-  const render = () => {
+  const render = (isFetching) => {
     document.getElementById('commentsTitle').textContent = fmtN(cmCount(v)) + ' Comments';
     list.innerHTML = '';
-    (v?.userComments || []).forEach(c => addCommentEl(list, c.user, c.text, c.time, c.avatar_url, c.user_id));
-    hydrateAvatars(list);
+    const items = (v?.userComments || []);
+    if (isFetching && !v?.commentsLoaded && items.length === 0) {
+      list.innerHTML = commentsSkeletonHTML(5);
+    } else if (!isFetching && items.length === 0) {
+      list.innerHTML = '<div class="likes-state-box" style="padding:28px 16px;">No comments yet.<br>Be the first to add a comment!</div>';
+    } else {
+      items.forEach(c => addCommentEl(list, c.user, c.text, c.time, c.avatar_url, c.user_id));
+      hydrateAvatars(list);
+    }
     const ccEl = document.getElementById('cc-' + id);
     if (ccEl) ccEl.textContent = fmtC(cmCount(v));
     // Home card "View all N comments" link.
@@ -10687,13 +11089,14 @@ async function openComments(id) {
       hccEl.style.display = n > 0 ? '' : 'none';
     }
   };
-  render();
+  const needsRemoteLoad = !!(supabaseClient && v && isSupabasePostId(v.id) && !v.commentsLoaded);
+  render(needsRemoteLoad);
   document.getElementById('comments-modal').classList.add('open');
   pauseAllFeedVideos();
   pauseAllHomeVideos();
   // Load the real comments from Supabase and re-render.
   await loadCommentsForVideo(v);
-  render();
+  render(false);
 }
 
 function addCommentEl(list, user, text, time, avatarUrl, userId) {
@@ -10920,6 +11323,9 @@ async function followUser(event, uid) {
   if (isFollowing(uid)) { syncFollowButtons(); return; } // one follow only
   const key = String(uid).toLowerCase();
   followedUserIds.add(key);
+  profileStats.following = (profileStats.following ?? 0) + 1;
+  renderProfileStats();
+  saveProfileLocalCache();
   syncFollowButtons(); // hide the button in Search and Home at once
   if (!supabaseClient) return;
   try {
@@ -10935,6 +11341,9 @@ async function followUser(event, uid) {
     // supabase-setup.sql have not been run yet): undo, so the button
     // coming back tells the truth instead of pretending to follow.
     followedUserIds.delete(key);
+    profileStats.following = Math.max(0, (profileStats.following ?? 1) - 1);
+    renderProfileStats();
+    saveProfileLocalCache();
     syncFollowButtons();
     showToast('Could not save follow: ' + (err.message || 'try again'));
   }
@@ -11082,11 +11491,17 @@ function renderCreators() {
   container.innerHTML = '';
 
   if (isLoadingCreators && (!creators || creators.length === 0)) {
-    container.innerHTML = `
-      <div style="padding:18px 20px;color:var(--fg3);font-size:13px;display:flex;align-items:center;gap:8px;">
-        <span class="loading-ring-sm"></span> Loading creators…
-      </div>
-    `;
+    let skHtml = '';
+    for (let i = 0; i < 4; i++) {
+      skHtml += '<div class="sk-creator-card">'
+        + '<div class="sk-circle rf-shimmer" style="width:52px;height:52px;"></div>'
+        + '<div class="sk-bar rf-shimmer" style="width:78%;height:12px;"></div>'
+        + '<div class="sk-bar rf-shimmer" style="width:56%;height:10px;"></div>'
+        + '<div class="sk-bar rf-shimmer" style="width:100%;height:30px;border-radius:8px;margin-top:4px;"></div>'
+        + '</div>';
+    }
+    container.innerHTML = skHtml;
+    renderHomeStories();
     return;
   }
 
@@ -11097,29 +11512,31 @@ function renderCreators() {
         No other creators found in community yet
       </div>
     `;
+    renderHomeStories();
     return;
   }
 
   creators.forEach(c => {
     const card = document.createElement('div');
     card.className = 'creator-card';
-    // Each creator's own profile color (black by default, so the card
-    // keeps its usual look until they pick one).
+    card.style.cursor = 'pointer';
+    const uid = c.user_id || c.id || '';
     const cc = normalizeProfileColor(c.profile_color);
     if (cc !== '#000000') {
       card.style.backgroundColor = cc;
       card.classList.toggle('creator-color-light', isLightProfileColor(cc));
     }
     const handleClean = (c.handle || '').replace(/^@/, '');
+    card.onclick = () => openOtherUserProfile(uid, handleClean);
 
     card.innerHTML = `
       <div class="creator-card-av">
-        ${avatarHTML(c.user_id || c.id, c.name || c.handle, c.avatar_url, 52)}
+        ${avatarHTML(uid, c.name || c.handle, c.avatar_url, 52)}
       </div>
-      <div class="creator-card-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}${verifiedBadgeSlotHTML(c.user_id || c.id, c.is_verified === true, c.handle)}</div>
+      <div class="creator-card-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}${verifiedBadgeSlotHTML(uid, c.is_verified === true, c.handle)}</div>
       <div class="creator-card-handle" title="@${escapeHtml(handleClean)}">@${escapeHtml(handleClean)}</div>
       <div class="creator-card-followers">${escapeHtml(c.followers || 'Creator')}</div>
-      <button class="creator-follow-btn" data-follow-uid="${escapeHtml(c.user_id || c.id)}" onclick="followUser(event, '${escapeHtml(c.user_id || c.id)}')" title="Follow ${escapeHtml(c.name)}" style="display:${(isOwnFollowUid(c.user_id || c.id) || isFollowing(c.user_id || c.id)) ? 'none' : ''}">Follow</button>
+      <button class="creator-follow-btn" data-follow-uid="${escapeHtml(uid)}" onclick="followUser(event, '${escapeHtml(uid)}')" title="Follow ${escapeHtml(c.name)}" style="display:${(isOwnFollowUid(uid) || isFollowing(uid)) ? 'none' : ''}">Follow</button>
     `;
     container.appendChild(card);
   });
@@ -11165,7 +11582,10 @@ function renderDiscover() {
     item.onclick = () => openInFeed(originalIndex);
 
     const thumb = makeGridThumb(v);
-    if (thumb) item.appendChild(thumb);
+    if (thumb) {
+      item.appendChild(thumb);
+      attachGridMediaShimmer(item, thumb);
+    }
 
     const badge = document.createElement('div');
     badge.className = 'grid-badge';
@@ -11195,8 +11615,251 @@ function searchTag(tag) {
   renderDiscover();
 }
 
+let activeOtherProfileReqId = 0;
+function otherProfileSkeletonHTML() {
+  let skTiles = '';
+  for (let i = 0; i < 6; i++) skTiles += '<div class="sk-grid-item rf-shimmer"></div>';
+  return '<div class="profile-header-box" style="padding-top:10px;">'
+    + '<div class="profile-hero">'
+    + '<div class="profile-hero-info" style="display:flex;flex-direction:column;gap:10px;">'
+    + '<div class="sk-bar rf-shimmer" style="width:165px;height:22px;"></div>'
+    + '<div class="sk-bar rf-shimmer" style="width:105px;height:13px;"></div>'
+    + '</div>'
+    + '<div class="sk-circle rf-shimmer" style="width:76px;height:76px;"></div>'
+    + '</div>'
+    + '<div class="profile-stats">'
+    + '<div style="display:flex;flex-direction:column;gap:6px;"><div class="sk-bar rf-shimmer" style="width:32px;height:18px;"></div><div class="sk-bar rf-shimmer" style="width:42px;height:10px;"></div></div>'
+    + '<div style="display:flex;flex-direction:column;gap:6px;"><div class="sk-bar rf-shimmer" style="width:32px;height:18px;"></div><div class="sk-bar rf-shimmer" style="width:52px;height:10px;"></div></div>'
+    + '<div style="display:flex;flex-direction:column;gap:6px;"><div class="sk-bar rf-shimmer" style="width:32px;height:18px;"></div><div class="sk-bar rf-shimmer" style="width:52px;height:10px;"></div></div>'
+    + '<div style="display:flex;flex-direction:column;gap:6px;"><div class="sk-bar rf-shimmer" style="width:32px;height:18px;"></div><div class="sk-bar rf-shimmer" style="width:38px;height:10px;"></div></div>'
+    + '</div>'
+    + '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;">'
+    + '<div class="sk-bar rf-shimmer" style="width:86%;height:12px;"></div>'
+    + '<div class="sk-bar rf-shimmer" style="width:62%;height:12px;"></div>'
+    + '</div>'
+    + '<div class="other-profile-actions">'
+    + '<div class="sk-bar rf-shimmer" style="flex:1;height:42px;border-radius:10px;"></div>'
+    + '<div class="sk-bar rf-shimmer" style="flex:1;height:42px;border-radius:10px;"></div>'
+    + '</div>'
+    + '</div>'
+    + '<div class="video-grid">' + skTiles + '</div>';
+}
+
+function closeOtherUserProfile() {
+  const modal = document.getElementById('other-profile-modal');
+  if (!modal) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  activeOtherProfileReqId++;
+}
+
+async function toggleOtherProfileFollow(btn, uid) {
+  if (!uid) return;
+  const me = currentFollowUserId();
+  if (!me) { showToast('Sign in to follow'); return; }
+  if (isOwnFollowUid(uid)) return;
+  const key = String(uid).toLowerCase();
+  const wasFollowing = isFollowing(uid);
+  if (!wasFollowing) {
+    await followUser(null, uid);
+  } else if (supabaseClient) {
+    followedUserIds.delete(key);
+    profileStats.following = Math.max(0, (profileStats.following ?? 1) - 1);
+    renderProfileStats();
+    saveProfileLocalCache();
+    syncFollowButtons();
+    try {
+      const { error } = await supabaseClient.from('followers').delete().eq('follower_id', me).eq('following_id', String(uid));
+      if (error) throw new Error(error.message);
+      loadProfileStats();
+    } catch (err) {
+      followedUserIds.add(key);
+      profileStats.following = (profileStats.following ?? 0) + 1;
+      renderProfileStats();
+      saveProfileLocalCache();
+      syncFollowButtons();
+      showToast('Could not unfollow: ' + (err.message || 'try again'));
+      return;
+    }
+  }
+  const nowFollowing = isFollowing(uid);
+  if (btn) {
+    btn.textContent = nowFollowing ? 'Following' : 'Follow';
+    btn.classList.toggle('following', nowFollowing);
+  }
+  const fcEl = document.getElementById('other-stat-followers');
+  if (fcEl) {
+    const cur = parseInt(fcEl.dataset.rawCount || '0', 10) || 0;
+    const next = Math.max(0, cur + (nowFollowing ? 1 : -1));
+    fcEl.dataset.rawCount = String(next);
+    fcEl.textContent = fmtN(next);
+  }
+}
+
+async function openOtherUserProfile(uid, handleHint) {
+  const cleanHandle = String(handleHint || '').replace(/^@/, '').trim();
+  if (uid && isOwnFollowUid(uid)) {
+    goPage('profile', document.getElementById('nav-profile'));
+    return;
+  }
+  const modal = document.getElementById('other-profile-modal');
+  const body = document.getElementById('other-profile-body');
+  const titleEl = document.getElementById('other-profile-top-title');
+  if (!modal || !body) return;
+
+  const reqId = ++activeOtherProfileReqId;
+  modal.style.setProperty('--other-profile-color', '#000000');
+  modal.classList.remove('other-color-light');
+  if (titleEl) titleEl.textContent = cleanHandle ? ('@' + cleanHandle) : 'Profile';
+  body.innerHTML = otherProfileSkeletonHTML();
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+
+  try {
+    let prof = uid ? (authorProfileFor(uid) || (creators || []).find(c => String(c.user_id || c.id || '').toLowerCase() === String(uid).toLowerCase())) : null;
+    if (!prof && cleanHandle) {
+      prof = (creators || []).find(c => String(c.handle || '').replace(/^@/, '').toLowerCase() === cleanHandle.toLowerCase()) || null;
+    }
+    let resolvedUid = (prof && (prof.user_id || prof.id)) || uid || '';
+    let userPosts = [];
+    let followerCount = 0;
+    let followingCount = 0;
+    let likesCount = 0;
+
+    if (supabaseClient) {
+      let profQuery = null;
+      if (resolvedUid) {
+        profQuery = supabaseClient.from('profiles').select('user_id, display_name, full_name, username, avatar_url, bio, is_verified, profile_color').eq('user_id', String(resolvedUid)).maybeSingle();
+      } else if (cleanHandle) {
+        profQuery = supabaseClient.from('profiles').select('user_id, display_name, full_name, username, avatar_url, bio, is_verified, profile_color').eq('username', cleanHandle).maybeSingle();
+      }
+      if (profQuery) {
+        const { data: pRow } = await profQuery;
+        if (pRow) {
+          resolvedUid = pRow.user_id ? String(pRow.user_id) : resolvedUid;
+          prof = {
+            user_id: resolvedUid,
+            username: (pRow.username || cleanHandle || '').replace(/^@/, ''),
+            display_name: pRow.display_name || pRow.full_name || '',
+            full_name: pRow.full_name || '',
+            avatar_url: pRow.avatar_url || '',
+            bio: pRow.bio || '',
+            is_verified: pRow.is_verified === true,
+            profile_color: normalizeProfileColor(pRow.profile_color)
+          };
+          if (resolvedUid) {
+            authorProfiles.set(resolvedUid.toLowerCase(), prof);
+            cacheVerified(resolvedUid, prof.is_verified);
+          }
+        }
+      }
+
+      if (reqId !== activeOtherProfileReqId) return;
+
+      if (resolvedUid) {
+        const countOf = (res) => (res && typeof res.count === 'number' ? res.count : (res && Array.isArray(res.data) ? res.data.length : 0));
+        const [postsRes, followersRes, followingRes] = await Promise.all([
+          supabaseClient.from('posts').select('*').eq('user_id', resolvedUid).order('created_at', { ascending: false }),
+          supabaseClient.from('followers').select('follower_id', { count: 'exact', head: true }).eq('following_id', resolvedUid),
+          supabaseClient.from('followers').select('following_id', { count: 'exact', head: true }).eq('follower_id', resolvedUid)
+        ]);
+        if (postsRes && Array.isArray(postsRes.data)) {
+          const myIdLower = currentAuthUser ? String(currentAuthUser.id).toLowerCase() : null;
+          userPosts = postsRes.data.filter(p => p.video_url).map(p => mapPostToVideo(p, myIdLower));
+          const merged = mergeDbVideosInto(videos, userPosts);
+          if (merged.length !== videos.length) videos = merged;
+          likesCount = userPosts.reduce((sum, p) => sum + (p.likes || 0), 0);
+        }
+        followerCount = countOf(followersRes);
+        followingCount = countOf(followingRes);
+      }
+    } else if (resolvedUid || cleanHandle) {
+      userPosts = videos.filter(v => (resolvedUid && String(v.user_id || '').toLowerCase() === String(resolvedUid).toLowerCase()) || (cleanHandle && String(v.username || '').toLowerCase() === cleanHandle.toLowerCase()));
+      likesCount = userPosts.reduce((sum, p) => sum + (p.likes || 0), 0);
+    }
+
+    if (reqId !== activeOtherProfileReqId) return;
+
+    const uHandle = (prof && (prof.username || prof.handle)) || cleanHandle || authorFallbackHandle(resolvedUid);
+    const uName = (prof && (prof.display_name || prof.full_name || prof.name)) || uHandle;
+    const uAvatar = (prof && prof.avatar_url) || avatarUrlForUserId(resolvedUid, uHandle) || '';
+    const uBio = (prof && prof.bio) || '';
+    const uVerified = (prof && prof.is_verified === true) || isUserVerified(resolvedUid) || isHandleVerified(uHandle);
+    const uColor = normalizeProfileColor(prof && prof.profile_color);
+    modal.style.setProperty('--other-profile-color', uColor);
+    modal.classList.toggle('other-color-light', isLightProfileColor(uColor));
+    if (titleEl) titleEl.textContent = '@' + uHandle;
+
+    const alreadyFollowing = resolvedUid ? isFollowing(resolvedUid) : false;
+    const showFollow = resolvedUid && !isOwnFollowUid(resolvedUid);
+
+    body.innerHTML = '<div class="profile-header-box" style="padding-top:10px;">'
+      + '<div class="profile-hero">'
+      + '<div class="profile-hero-info">'
+      + '<h1 class="profile-hero-name"><span>' + escapeHtml(uName) + '</span>' + verifiedBadgeSlotHTML(resolvedUid, uVerified, uHandle, true) + '</h1>'
+      + '<div class="profile-hero-handle">@' + escapeHtml(uHandle) + '</div>'
+      + '</div>'
+      + '<div class="profile-hero-avatar-wrap" style="cursor:default;">'
+      + avatarHTML(resolvedUid || uHandle, uName, uAvatar, 76)
+      + '</div>'
+      + '</div>'
+      + '<div class="profile-stats">'
+      + '<div class="profile-stat"><div class="profile-stat-num">' + fmtN(userPosts.length) + '</div><div class="profile-stat-label">Posts</div></div>'
+      + '<div class="profile-stat"><div class="profile-stat-num" id="other-stat-followers" data-raw-count="' + followerCount + '">' + fmtN(followerCount) + '</div><div class="profile-stat-label">Followers</div></div>'
+      + '<div class="profile-stat"><div class="profile-stat-num">' + fmtN(followingCount) + '</div><div class="profile-stat-label">Following</div></div>'
+      + '<div class="profile-stat"><div class="profile-stat-num">' + fmtN(likesCount) + '</div><div class="profile-stat-label">Likes</div></div>'
+      + '</div>'
+      + (uBio ? '<div class="profile-bio">' + escapeHtml(uBio) + '</div>' : '')
+      + (showFollow ? '<div class="other-profile-actions">'
+        + '<button class="other-profile-btn-follow' + (alreadyFollowing ? ' following' : '') + '" onclick="toggleOtherProfileFollow(this, \'' + escapeHtml(String(resolvedUid)) + '\')">' + (alreadyFollowing ? 'Following' : 'Follow') + '</button>'
+        + '<button class="other-profile-btn-msg" onclick="closeOtherUserProfile();openChatWithRecipient(\'' + escapeHtml(String(uName)) + '\',\'' + escapeHtml(String(uHandle)) + '\',\'' + escapeHtml(String(resolvedUid)) + '\')">Message</button>'
+        + '</div>' : '')
+      + '</div>'
+      + '<div id="other-profile-grid-mount"></div>';
+
+    hydrateAvatars(body);
+    refreshAllVerifiedBadgeSlots();
+
+    const mount = document.getElementById('other-profile-grid-mount');
+    if (mount) {
+      if (!userPosts.length) {
+        mount.innerHTML = '<div class="profile-empty"><span class="material-symbols-rounded">videocam</span><div class="profile-empty-title">No videos yet</div><div class="profile-empty-sub">Videos posted by @' + escapeHtml(uHandle) + ' will appear here</div></div>';
+      } else {
+        const grid = document.createElement('div');
+        grid.className = 'video-grid';
+        userPosts.forEach(pv => {
+          const item = document.createElement('div');
+          item.className = 'grid-item';
+          item.onclick = () => {
+            const idx = videos.findIndex(x => String(x.id) === String(pv.id));
+            closeOtherUserProfile();
+            if (idx >= 0) openInFeed(idx);
+          };
+          const thumb = makeGridThumb(pv);
+          if (thumb) {
+            item.appendChild(thumb);
+            attachGridMediaShimmer(item, thumb);
+          }
+          const badge = document.createElement('div');
+          badge.className = 'grid-badge';
+          badge.innerHTML = `<span class="material-symbols-rounded">play_arrow</span><span>${fmtN(pv.views || (pv.likes || 0) * 3 || 120)}</span>`;
+          item.appendChild(badge);
+          grid.appendChild(item);
+        });
+        mount.appendChild(grid);
+      }
+    }
+  } catch (err) {
+    if (reqId !== activeOtherProfileReqId) return;
+    console.warn('openOtherUserProfile error:', err);
+    body.innerHTML = '<div class="profile-empty"><span class="material-symbols-rounded">error_outline</span><div class="profile-empty-title">Could not load profile</div><div class="profile-empty-sub">Please try again later.</div></div>';
+  }
+}
+
 function viewCreatorProfile(handle) {
-  showToast('Viewing @' + handle);
+  const clean = String(handle || '').replace(/^@/, '').trim();
+  const match = (creators || []).find(c => String(c.handle || '').replace(/^@/, '').toLowerCase() === clean.toLowerCase());
+  openOtherUserProfile(match ? (match.user_id || match.id) : '', clean);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -11251,12 +11914,15 @@ function renderInbox() {
 }
 
 function followBack(btn, user) {
-  const isFollowing = btn.textContent === 'Following';
-  btn.textContent = isFollowing ? 'Follow' : 'Following';
-  btn.style.background = isFollowing ? 'var(--accent)' : 'rgba(255,255,255,0.15)';
-  profile.following = Math.max(0, profile.following + (isFollowing ? -1 : 1));
+  const isF = btn.textContent === 'Following';
+  btn.textContent = isF ? 'Follow' : 'Following';
+  btn.style.background = isF ? 'var(--accent)' : 'rgba(255,255,255,0.15)';
+  profile.following = Math.max(0, (profile.following || 0) + (isF ? -1 : 1));
+  profileStats.following = Math.max(0, (profileStats.following ?? 0) + (isF ? -1 : 1));
+  renderProfileStats();
+  saveProfileLocalCache();
   applyProfile();
-  showToast(isFollowing ? 'Unfollowed ' + user : 'Following ' + user + ' ✨');
+  showToast(isF ? 'Unfollowed ' + user : 'Following ' + user + ' ✨');
 }
 
 function escapeHtml(str) {
@@ -12309,13 +12975,22 @@ function renderHomeStories() {
     + '<span class="home-story-ring"><span class="home-story-av">' + myAv + '</span>'
     + '<span class="home-story-add">' + lucideIcon('plus', 12) + '</span></span>'
     + '<span class="home-story-name">Your story</span></button>';
-  (creators || []).slice(0, 20).forEach(c => {
-    const uid = c.user_id || c.id;
-    const name = String(c.handle || c.name || 'user').replace(/^@/, '');
-    html += '<button class="home-story" onclick="openCreatorStory(\'' + escapeHtml(String(uid)) + '\')" title="@' + escapeHtml(name) + '">'
-      + '<span class="home-story-ring"><span class="home-story-av">' + avatarHTML(uid, c.name || c.handle, c.avatar_url || '', 52) + '</span></span>'
-      + '<span class="home-story-name">' + escapeHtml(name) + '</span></button>';
-  });
+  if (isLoadingCreators && (!creators || creators.length === 0)) {
+    for (let i = 0; i < 4; i++) {
+      html += '<div class="sk-story-item">'
+        + '<div class="sk-circle rf-shimmer" style="width:62px;height:62px;"></div>'
+        + '<div class="sk-bar rf-shimmer" style="width:46px;height:10px;"></div>'
+        + '</div>';
+    }
+  } else {
+    (creators || []).slice(0, 20).forEach(c => {
+      const uid = c.user_id || c.id;
+      const name = String(c.handle || c.name || 'user').replace(/^@/, '');
+      html += '<button class="home-story" onclick="openCreatorStory(\'' + escapeHtml(String(uid)) + '\')" title="@' + escapeHtml(name) + '">'
+        + '<span class="home-story-ring"><span class="home-story-av">' + avatarHTML(uid, c.name || c.handle, c.avatar_url || '', 52) + '</span></span>'
+        + '<span class="home-story-name">' + escapeHtml(name) + '</span></button>';
+    });
+  }
   row.innerHTML = html;
   hydrateAvatars(row);
 }
@@ -12328,10 +13003,7 @@ function openCreatorStory(userId) {
   showToast('No posts from @' + name + ' yet.');
 }
 
-function homePostCardHTML(v, idx) {
-  // The author's real identity comes from the author-profile cache
-  // (posts.user_id -> profiles.user_id), not from the post's own
-  // snapshot columns.
+function homePostCardHTML(v, idx, homePos) {
   const author = authorProfileFor(v.user_id);
   const username = (author && author.username) || v.username || authorFallbackHandle(v.user_id);
   const displayName = (author && (author.display_name || author.full_name)) || v.userDisplayName || username;
@@ -12341,23 +13013,24 @@ function homePostCardHTML(v, idx) {
   const caption = (v.caption && String(v.caption).trim() && String(v.caption).trim() !== 'Video')
     ? '<div class="home-post-caption"><b>' + escapeHtml(String(username)) + '</b>' + escapeHtml(String(v.caption)) + '</div>' : '';
   const nComments = cmCount(v);
-  // Always render the link (hidden at 0) so its count can be updated
-  // in place by id when a comment is posted.
   const commentsLink = '<button class="home-post-comments" id="hcc-' + escapeHtml(String(v.id)) + '" onclick="openComments(\'' + escapeHtml(String(v.id)) + '\')" style="display:' + (nComments > 0 ? '' : 'none') + '">' + (nComments > 0 ? 'View all ' + fmtN(nComments) + ' comment' + (nComments === 1 ? '' : 's') : '') + '</button>';
   const isSaved = (profile.saved || []).includes(v.id);
   const src = bestVideoSrc(v) || '';
   const poster = videoPosterFor(v) || '';
   const cachedAspect = homeMediaAspectCache[String(v.id)] || (v && v.width && v.height ? `${v.width} / ${v.height}` : '');
+  const visualIdx = typeof homePos === 'number' ? homePos : idx;
+  const preloadMode = visualIdx < 2 ? 'auto' : 'metadata';
+  const openProfAttr = ' onclick="event.stopPropagation();openOtherUserProfile(\'' + escapeHtml(String(v.user_id || '')) + '\',\'' + escapeHtml(String(username)) + '\')" style="cursor:pointer;"';
   return '<article class="home-post" data-home-post-id="' + escapeHtml(String(v.id)) + '">'
     + '<div class="home-post-head" data-author-uid="' + escapeHtml(String(v.user_id || '')) + '">'
-    + avatarHTML(v.user_id, displayName, authorAvatarUrl, 36)
-    + '<div class="home-post-user"><span class="home-post-username">@' + escapeHtml(String(username)) + '</span>' + verified + '</div>'
+    + '<span' + openProfAttr + '>' + avatarHTML(v.user_id, displayName, authorAvatarUrl, 36) + '</span>'
+    + '<div class="home-post-user"' + openProfAttr + '><span class="home-post-username">@' + escapeHtml(String(username)) + '</span>' + verified + '</div>'
     + followButtonHTML(v.user_id)
     + (time ? '<span class="home-post-time">' + escapeHtml(time) + '</span>' : '')
     + '<button class="home-post-more" onclick="openInFeed(' + idx + ')" title="Open in Reels">' + lucideIcon('more-horizontal', 20) + '</button>'
     + '</div>'
-    + '<div class="home-post-media"' + (cachedAspect ? ' style="aspect-ratio:' + escapeHtml(cachedAspect) + '"' : '') + ' onclick="openHomeTheatre(this)">'
-    + '<video data-post-id="' + escapeHtml(String(v.id)) + '" src="' + escapeHtml(src) + '" poster="' + escapeHtml(poster) + '" muted loop playsinline preload="metadata"></video>'
+    + '<div class="home-post-media is-loading"' + (cachedAspect ? ' style="aspect-ratio:' + escapeHtml(cachedAspect) + '"' : '') + ' onclick="openHomeTheatre(this)">'
+    + '<video data-post-id="' + escapeHtml(String(v.id)) + '" src="' + escapeHtml(src) + '" poster="' + escapeHtml(poster) + '" muted loop playsinline preload="' + preloadMode + '"></video>'
     + '<span class="home-video-spinner"><span class="home-spinner-ring"></span></span>'
     + '<span class="home-post-play">' + lucideIcon('play', 56, true) + '</span>'
     + '<div class="home-video-error" style="display:none"><span>Video couldn&rsquo;t load.</span><button onclick="retryHomeVideo(event, this)">Retry</button></div>'
@@ -12376,24 +13049,43 @@ function homePostCardHTML(v, idx) {
     + '</article>';
 }
 
+function homeFeedSkeletonHTML(count) {
+  let html = '';
+  const n = count || 2;
+  for (let i = 0; i < n; i++) {
+    html += '<div class="sk-home-card">'
+      + '<div class="sk-home-head">'
+      + '<div class="sk-circle rf-shimmer" style="width:36px;height:36px;"></div>'
+      + '<div style="flex:1;display:flex;flex-direction:column;gap:6px;">'
+      + '<div class="sk-bar rf-shimmer" style="width:42%;height:12px;"></div>'
+      + '<div class="sk-bar rf-shimmer" style="width:24%;height:9px;"></div>'
+      + '</div></div>'
+      + '<div class="sk-home-media rf-shimmer"></div>'
+      + '<div class="sk-home-foot">'
+      + '<div class="sk-bar rf-shimmer" style="width:34%;height:12px;"></div>'
+      + '<div class="sk-bar rf-shimmer" style="width:76%;height:11px;"></div>'
+      + '</div></div>';
+  }
+  return html;
+}
+
 function renderHomeFeed() {
   const feed = document.getElementById('home-feed');
   if (!feed) return;
   const scrollTop = feed.parentElement ? feed.parentElement.scrollTop : 0;
   pauseAllHomeVideos();
-  // Old video elements are about to be discarded: stop observing them.
   if (homeVideoObserver) { try { homeVideoObserver.disconnect(); } catch (_) {} homeVideoObserver = null; }
   const order = videos.map((v, i) => ({ v, i })).filter(o => o.v).sort((a, b) => (b.v.ts || 0) - (a.v.ts || 0));
   if (order.length === 0) {
-    feed.innerHTML = '<div class="home-post-empty"><b>No posts yet</b>Be the first to share a video — tap the + at the top to upload.</div>';
+    if (isLoadingHomeFeed) {
+      feed.innerHTML = homeFeedSkeletonHTML(2);
+    } else {
+      feed.innerHTML = '<div class="home-post-empty"><b>No posts yet</b>Be the first to share a video — tap the + at the top to upload.</div>';
+    }
     return;
   }
-  // Render each card on its own: one bad post must never blank the
-  // whole Home feed (Reels renders each slide separately, so a bad
-  // post there only affects that one slide — Home must behave the
-  // same, or it stays stuck on "No posts yet" while Reels shows videos).
-  feed.innerHTML = order.map(o => {
-    try { return homePostCardHTML(o.v, o.i); } catch (e) { console.warn('home card skipped:', o.v && o.v.id, e && e.message); return ''; }
+  feed.innerHTML = order.map((o, pos) => {
+    try { return homePostCardHTML(o.v, o.i, pos); } catch (e) { console.warn('home card skipped:', o.v && o.v.id, e && e.message); return ''; }
   }).join('');
   hydrateAvatars(feed);
   refreshAllVerifiedBadgeSlots();
@@ -12402,11 +13094,6 @@ function renderHomeFeed() {
 }
 
 // ── Home video playback: IntersectionObserver autoplay ──
-// One home video plays at a time, muted (Android autoplay policy).
-// A video starts when >= 50% visible and pauses when it leaves the
-// screen. A manual tap-pause is respected until the video scrolls
-// out and back in. Only the visible videos load beyond metadata,
-// so memory / network stay bounded on low-end phones.
 let homeVideoObserver = null;
 let currentHomeVideo = null;
 let homePostsRefreshAt = 0;
@@ -12416,12 +13103,6 @@ function ensureHomeVideoObserver() {
   if (homeVideoObserver) return homeVideoObserver;
   if (typeof IntersectionObserver === 'undefined') return null;
   homeVideoObserver = new IntersectionObserver((entries) => {
-    // Home Theatre open: never autoplay a Home video behind the
-    // viewer — its audio would play over the theatre video. Pause
-    // anything still playing and return without picking a new one.
-    // (A posts refresh re-rendering Home while the theatre is open
-    // is the usual trigger: the new visible video would otherwise
-    // start playing with sound behind the viewer.)
     if (typeof homeTheatreIsOpen !== 'undefined' && homeTheatreIsOpen) {
       entries.forEach(en => {
         const vid = en.target;
@@ -12430,7 +13111,6 @@ function ensureHomeVideoObserver() {
       });
       return;
     }
-    // Pause anything that left the visible area.
     entries.forEach(en => {
       const vid = en.target;
       if (!en.isIntersecting || en.intersectionRatio < 0.5) {
@@ -12439,7 +13119,6 @@ function ensureHomeVideoObserver() {
         if (currentHomeVideo === vid) currentHomeVideo = null;
       }
     });
-    // Play the most-visible video (only one at a time).
     let best = null, bestRatio = 0;
     entries.forEach(en => {
       if (en.isIntersecting && en.intersectionRatio >= 0.5 && en.intersectionRatio > bestRatio) {
@@ -12452,10 +13131,16 @@ function ensureHomeVideoObserver() {
         updateHomePlayIcon(currentHomeVideo.parentElement);
       }
       currentHomeVideo = best;
-      // The video that autoplays follows the global mute state.
+      best.preload = 'auto';
       best.muted = !!window._muted;
       best.play().catch(() => {});
       updateHomePlayIcon(best.parentElement);
+      // Pre-warm the very next card below so scrolling starts faster
+      const allHomeVids = Array.from(document.querySelectorAll('#home-feed video'));
+      const bIdx = allHomeVids.indexOf(best);
+      if (bIdx >= 0 && bIdx + 1 < allHomeVids.length) {
+        allHomeVids[bIdx + 1].preload = 'auto';
+      }
     }
   }, { root: document.getElementById('page-home'), threshold: [0, 0.5, 1] });
   return homeVideoObserver;
@@ -12534,7 +13219,11 @@ function setupHomeVideo(mediaEl) {
   const postId = vid.getAttribute('data-post-id') || '';
   const v = postId ? videos.find(x => String(x.id) === String(postId)) : null;
   const spinner = () => mediaEl.querySelector('.home-video-spinner');
-  const setSpinner = (on) => { const s = spinner(); if (s) s.style.display = on ? 'flex' : 'none'; };
+  const setSpinner = (on) => {
+    const s = spinner();
+    if (s) s.style.display = on ? 'flex' : 'none';
+    if (!on) mediaEl.classList.remove('is-loading');
+  };
   // Keep the Home post container's aspect ratio locked to the media's
   // natural dimensions across loading/thumbnail and playback states so
   // there is no layout jump when the video starts playing.
@@ -12557,6 +13246,7 @@ function setupHomeVideo(mediaEl) {
     const applyPosterAspect = () => {
       if (posterProbe.naturalWidth && posterProbe.naturalHeight) {
         applyHomeMediaAspect(posterProbe.naturalWidth, posterProbe.naturalHeight, false);
+        mediaEl.classList.remove('is-loading');
       }
     };
     posterProbe.onload = applyPosterAspect;
@@ -12594,32 +13284,26 @@ function setupHomeVideo(mediaEl) {
     applyVideoAspect();
     if (pendingDurReveal && !vid.paused) showHomeDurationBadge();
   });
-  vid.addEventListener('loadeddata', applyVideoAspect);
+  vid.addEventListener('loadeddata', () => {
+    applyVideoAspect();
+    mediaEl.classList.remove('is-loading');
+  });
   vid.addEventListener('resize', applyVideoAspect);
   vid.addEventListener('durationchange', () => {
     if (pendingDurReveal && !vid.paused) showHomeDurationBadge();
   });
-  // First frame ready: hide the spinner.
+  // First frame ready: hide the spinner and shimmer.
   vid.addEventListener('canplay', () => {
     applyVideoAspect();
     setSpinner(false);
   });
-  // Actually playing: hide the spinner and the play icon. (canplay
-  // alone is not enough — a video can be playable yet still paused,
-  // and a video that started before this listener attached would
-  // leave the spinner stuck on.)
   vid.addEventListener('playing', () => {
     applyVideoAspect();
     setSpinner(false);
     updateHomePlayIcon(mediaEl);
     showHomeDurationBadge();
   });
-  // Buffering mid-play: show the spinner again.
   vid.addEventListener('waiting', () => setSpinner(true));
-  // Keep the play overlay in sync with real playback state, and make
-  // single-video playback bulletproof: whenever any Home video starts
-  // playing, pause every other one (the observer handles scrolling,
-  // this guards every other path — tap, unmute, programmatic play).
   vid.addEventListener('play', () => {
     updateHomePlayIcon(mediaEl);
     currentHomeVideo = vid;
@@ -12632,17 +13316,15 @@ function setupHomeVideo(mediaEl) {
     hideHomeDurationBadge();
     updateHomePlayIcon(mediaEl);
   });
-  // Sync the overlays to the video's CURRENT state right now (a video
-  // that is already playing or already buffered must not show a
-  // stuck play icon or spinner).
-  if (vid.readyState >= 3 || !vid.paused) setSpinner(false);
+  if (vid.readyState >= 2 || !vid.paused) setSpinner(false);
   if (!vid.paused) showHomeDurationBadge();
   updateHomePlayIcon(mediaEl);
-  // Broken URL: walk the fallbacks, then show the error state.
   vid.addEventListener('error', () => {
+    mediaEl.classList.remove('is-loading');
     if (v && tryNextHomeVideoSrc(vid, v)) return;
     showHomeVideoError(mediaEl);
   });
+  setTimeout(() => mediaEl.classList.remove('is-loading'), 5000);
   const obs = ensureHomeVideoObserver();
   if (obs) obs.observe(vid);
 }
@@ -12714,32 +13396,57 @@ function pauseAllHomeVideos() {
 // button returns to Home. Playback always starts from 0:00, both
 // when the theatre opens and when returning to Home.
 let homeTheatrePostId = null;
+let homeTheatreOpenedPostId = null;
 let homeTheatreReturnVideo = null;
 let homeTheatreJustOpened = false;
 let homeTheatreIsOpen = false;
 let homeTheatreScrollTop = 0;
+let homeTheatrePosts = [];
+let homeTheatreActiveIdx = -1;
+let homeTheatreObserver = null;
+let homeTheatreScrollHandler = null;
+let homeTheatreScrollSettleTimer = null;
+let homeTheatreProgrammaticScroll = false;
+const HT_WINDOW_RADIUS = 2;
 
-function homeTheatreVideo() { return document.getElementById('ht-video'); }
+function homeTheatreScroller() { return document.getElementById('ht-scroller'); }
+function homeTheatreActiveSlide() {
+  const scroller = homeTheatreScroller();
+  if (!scroller || homeTheatreActiveIdx < 0) return null;
+  return scroller.querySelector('.ht-slide[data-ht-idx="' + homeTheatreActiveIdx + '"]');
+}
+function homeTheatreVideo() {
+  const slide = homeTheatreActiveSlide();
+  return slide ? slide.querySelector('video') : null;
+}
 function homeTheatrePost() {
   return homeTheatrePostId ? videos.find(x => String(x.id) === String(homeTheatrePostId)) : null;
 }
 
-function updateHomeTheatreTime() {
-  const ht = homeTheatreVideo();
-  if (!ht) return;
+function updateHomeTheatreTimeForSlide(slide) {
+  if (!slide) return;
+  const ht = slide.querySelector('video');
+  const t = slide.querySelector('.ht-time');
+  if (!ht || !t) return;
   const cur = ht.currentTime || 0;
   const dur = ht.duration || 0;
-  const t = document.getElementById('ht-time');
-  if (t) t.textContent = fmtTime(cur) + ' / ' + fmtTime(dur);
-  const fill = document.getElementById('ht-progress-fill');
-  if (fill) fill.style.width = (dur > 0 ? Math.min(100, (cur / dur) * 100) : 0) + '%';
+  t.textContent = fmtTime(cur) + ' / ' + fmtTime(dur);
+}
+
+function updateHomeTheatreTime() {
+  updateHomeTheatreTimeForSlide(homeTheatreActiveSlide());
+}
+
+function updateHomeTheatrePlayIconForSlide(slide) {
+  if (!slide) return;
+  const ht = slide.querySelector('video');
+  const icon = slide.querySelector('.ht-play');
+  if (!ht || !icon) return;
+  icon.style.display = ht.paused ? 'flex' : 'none';
 }
 
 function updateHomeTheatrePlayIcon() {
-  const ht = homeTheatreVideo();
-  const icon = document.getElementById('ht-play');
-  if (!ht || !icon) return;
-  icon.style.display = ht.paused ? 'flex' : 'none';
+  updateHomeTheatrePlayIconForSlide(homeTheatreActiveSlide());
 }
 
 function updateHomeTheatreSoundIcon() {
@@ -12749,123 +13456,409 @@ function updateHomeTheatreSoundIcon() {
 }
 
 function syncHomeTheatreCounts() {
+  const scroller = homeTheatreScroller();
+  if (!scroller) return;
+  const slide = homeTheatreActiveSlide();
   const v = homeTheatrePost();
-  if (!v) return;
-  const likeBtn = document.getElementById('ht-like-btn');
+  if (!slide || !v) return;
+  const likeBtn = slide.querySelector('[data-ht-action="like"]');
   if (likeBtn) likeBtn.classList.toggle('liked', !!v.liked);
-  const likeCount = document.getElementById('ht-like-count');
+  const likeCount = slide.querySelector('[data-ht-count="like"]');
   if (likeCount) likeCount.textContent = fmtC(v.likes || 0);
-  const commentCount = document.getElementById('ht-comment-count');
+  const commentCount = slide.querySelector('[data-ht-count="comment"]');
   if (commentCount) commentCount.textContent = fmtC(cmCount(v));
-  const shareCount = document.getElementById('ht-share-count');
+  const shareCount = slide.querySelector('[data-ht-count="share"]');
   if (shareCount) shareCount.textContent = fmtC(v.shares || 0);
 }
 
-function setupHomeTheatreVideo() {
-  const ht = homeTheatreVideo();
-  if (!ht || ht.dataset.htSetup) return;
-  ht.dataset.htSetup = '1';
-  ht.addEventListener('timeupdate', updateHomeTheatreTime);
-  ht.addEventListener('loadedmetadata', () => {
-    // Metadata arrived after open: the seek to 0:00 in openHomeTheatre
-    // may have been ignored while the video had no duration yet.
-    if (homeTheatreJustOpened && ht.currentTime > 0) { try { ht.currentTime = 0; } catch (_) {} }
-    homeTheatreJustOpened = false;
-    updateHomeTheatreTime();
-  });
-  ht.addEventListener('play', updateHomeTheatrePlayIcon);
-  ht.addEventListener('pause', updateHomeTheatrePlayIcon);
-  ht.addEventListener('error', () => {
-    const v = homeTheatrePost();
-    if (v && tryNextHomeVideoSrc(ht, v)) { ht.play().catch(() => {}); }
-  });
-}
-
-function openHomeTheatre(mediaEl) {
-  const vid = mediaEl ? mediaEl.querySelector('video') : null;
-  if (!vid) return;
-  const postId = vid.getAttribute('data-post-id') || '';
-  const v = postId ? videos.find(x => String(x.id) === String(postId)) : null;
-  if (!v) return;
-  homeTheatrePostId = String(v.id);
-  homeTheatreReturnVideo = vid;
-  homeTheatreIsOpen = true;
-  // Remember where the user was in the Home feed, so closing the
-  // viewer returns to this exact spot instead of the top.
-  const homePage = document.getElementById('page-home');
-  homeTheatreScrollTop = homePage ? (homePage.scrollTop || 0) : 0;
-  // Only the theatre plays: pause Home and Reels behind it, and mute
-  // the Home videos too — pausing alone is not enough, because a
-  // posts refresh or the scroll observer could restart one behind
-  // the viewer and its audio would play over the theatre.
-  pauseAllHomeVideos();
-  pauseAllFeedVideos();
-  try { vid.pause(); } catch (_) {}
-  vid.muted = true;
-  document.querySelectorAll('#home-feed video').forEach(other => { other.muted = true; });
-  // Author info, Home-card style (real profile cache, never '@creator').
+function homeTheatreSlideHTML(v, slideIdx) {
+  const pid = escapeHtml(String(v.id));
   const author = authorProfileFor(v.user_id);
   const username = (author && author.username) || v.username || authorFallbackHandle(v.user_id);
   const displayName = (author && (author.display_name || author.full_name)) || v.userDisplayName || username;
   const authorAvatarUrl = avatarUrlForUserId(v.user_id, username);
   const verified = verifiedBadgeSlotHTML(v.user_id, isUserVerified(v.user_id) || isHandleVerified(username), username);
   const time = (v.created_at || v.ts) ? formatRelativeTime(v.created_at || v.ts) : '';
-  const avatarEl = document.getElementById('ht-avatar');
-  if (avatarEl) avatarEl.innerHTML = avatarHTML(v.user_id, displayName, authorAvatarUrl, 44);
-  const nameEl = document.getElementById('ht-name');
-  if (nameEl) nameEl.innerHTML = escapeHtml(String(displayName)) + verified;
-  const handleEl = document.getElementById('ht-handle');
-  if (handleEl) handleEl.textContent = '@' + username + (time ? ' · ' + time : '');
-  const captionEl = document.getElementById('ht-caption');
-  if (captionEl) captionEl.textContent = (v.caption && String(v.caption).trim() && String(v.caption).trim() !== 'Video') ? String(v.caption) : '';
-  // Action icons (same Lucide icons as the Home card).
-  const likeBtn = document.getElementById('ht-like-btn');
-  if (likeBtn) likeBtn.innerHTML = lucideIcon('heart', 26);
-  const acts = document.querySelectorAll('#home-theatre .ht-act');
-  if (acts[1]) acts[1].innerHTML = lucideIcon('message-circle', 26);
-  if (acts[2]) acts[2].innerHTML = lucideIcon('send', 26);
-  if (acts[3]) acts[3].innerHTML = lucideIcon('more-horizontal', 26);
+  const rawCaption = (v.caption && String(v.caption).trim() && String(v.caption).trim() !== 'Video') ? String(v.caption) : '';
+  const captionHtml = rawCaption ? '<div class="ht-caption">' + escapeHtml(rawCaption) + '</div>' : '';
+  return '<div class="ht-slide" data-ht-idx="' + slideIdx + '" data-post-id="' + pid + '">'
+    + '<div class="ht-stage">'
+    + '<video loop playsinline preload="none" onclick="toggleHomeTheatreVideo(this)"></video>'
+    + '<span class="ht-play"><svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6 3 20 12 6 21 6 3"/></svg></span>'
+    + '<div class="ht-actions">'
+    + '<div class="ht-act-wrap">'
+    + '<button class="ht-act' + (v.liked ? ' liked' : '') + '" data-ht-action="like" onclick="toggleHomeTheatreLike(\'' + pid + '\')" title="Like" aria-label="Like">' + lucideIcon('heart', 26) + '</button>'
+    + '<span class="ht-count" data-ht-count="like">' + fmtC(v.likes || 0) + '</span>'
+    + '</div>'
+    + '<div class="ht-act-wrap">'
+    + '<button class="ht-act" data-ht-action="comment" onclick="openHomeTheatreComments(\'' + pid + '\')" title="Comment" aria-label="Comment">' + lucideIcon('message-circle', 26) + '</button>'
+    + '<span class="ht-count" data-ht-count="comment">' + fmtC(cmCount(v)) + '</span>'
+    + '</div>'
+    + '<div class="ht-act-wrap">'
+    + '<button class="ht-act" data-ht-action="share" onclick="openHomeTheatreShare(\'' + pid + '\')" title="Share" aria-label="Share">' + lucideIcon('send', 26) + '</button>'
+    + '<span class="ht-count" data-ht-count="share">' + fmtC(v.shares || 0) + '</span>'
+    + '</div>'
+    + '</div>'
+    + '<div class="ht-info">'
+    + '<div class="ht-user">'
+    + '<span>' + avatarHTML(v.user_id, displayName, authorAvatarUrl, 44) + '</span>'
+    + '<div>'
+    + '<div class="ht-name">' + escapeHtml(String(displayName)) + verified + '</div>'
+    + '<div class="ht-handle">@' + escapeHtml(String(username)) + (time ? ' · ' + escapeHtml(String(time)) : '') + '</div>'
+    + '</div>'
+    + '</div>'
+    + captionHtml
+    + '</div>'
+    + '<div class="ht-time">0:00 / 0:00</div>'
+    + '<div class="ht-commentbar">'
+    + '<input class="ht-comment-input" type="text" placeholder="Add a comment..." autocomplete="off" onkeydown="if(event.key===\'Enter\'){event.preventDefault();postHomeTheatreComment(this);}">'
+    + '</div>'
+    + '</div>'
+    + '</div>';
+}
+
+function setupHomeTheatreSlideVideo(slide, v) {
+  if (!slide || !v) return;
+  const ht = slide.querySelector('video');
+  if (!ht || ht.dataset.htSetup) return;
+  ht.dataset.htSetup = '1';
+  ht.addEventListener('timeupdate', () => updateHomeTheatreTimeForSlide(slide));
+  ht.addEventListener('loadedmetadata', () => {
+    if (ht.dataset.htPendingZero === '1' && ht.currentTime > 0) {
+      try { ht.currentTime = 0; } catch (_) {}
+    }
+    delete ht.dataset.htPendingZero;
+    updateHomeTheatreTimeForSlide(slide);
+  });
+  ht.addEventListener('play', () => {
+    const scroller = homeTheatreScroller();
+    if (scroller) {
+      scroller.querySelectorAll('.ht-slide').forEach(otherSlide => {
+        if (otherSlide === slide) return;
+        const ov = otherSlide.querySelector('video');
+        if (ov && !ov.paused) {
+          try { ov.pause(); } catch (_) {}
+          updateHomeTheatrePlayIconForSlide(otherSlide);
+        }
+      });
+    }
+    updateHomeTheatrePlayIconForSlide(slide);
+  });
+  ht.addEventListener('pause', () => updateHomeTheatrePlayIconForSlide(slide));
+  ht.addEventListener('error', () => {
+    const postIdx = Number(slide.dataset.htIdx);
+    const postObj = homeTheatrePosts[postIdx];
+    if (postObj && ht.dataset.htSrcSet && tryNextHomeVideoSrc(ht, postObj)) {
+      if (postIdx === homeTheatreActiveIdx) ht.play().catch(() => {});
+    }
+  });
+}
+
+function mountHomeTheatreSlideVideo(idx, isActive) {
+  const scroller = homeTheatreScroller();
+  if (!scroller) return null;
+  const slide = scroller.querySelector('.ht-slide[data-ht-idx="' + idx + '"]');
+  const v = homeTheatrePosts[idx];
+  if (!slide || !v) return null;
+  const ht = slide.querySelector('video');
+  if (!ht) return null;
+  setupHomeTheatreSlideVideo(slide, v);
+  ht.muted = !!window._muted;
+  const src = bestVideoSrc(v) || '';
+  const poster = videoPosterFor(v) || '';
+  if (poster && ht.getAttribute('poster') !== poster) ht.poster = poster;
+  ht.preload = isActive ? 'auto' : 'metadata';
+  if (src && ht.dataset.htSrcSet !== src) {
+    ht.dataset.htSrcSet = src;
+    ht.src = src;
+    ht.load();
+  }
+  return ht;
+}
+
+function trimHomeTheatreVideoWindow(centerIdx) {
+  const scroller = homeTheatreScroller();
+  if (!scroller) return;
+  scroller.querySelectorAll('.ht-slide').forEach(slide => {
+    const idx = Number(slide.dataset.htIdx);
+    const dist = Math.abs(idx - centerIdx);
+    if (dist <= HT_WINDOW_RADIUS) {
+      // Preload active slide AND immediate neighbors with preload="auto" for instant swipe transitions
+      mountHomeTheatreSlideVideo(idx, dist <= 1);
+    } else {
+      const ht = slide.querySelector('video');
+      if (ht) {
+        try { ht.pause(); } catch (_) {}
+        if (ht.dataset.htSrcSet) {
+          ht.removeAttribute('src');
+          delete ht.dataset.htSrcSet;
+          try { ht.load(); } catch (_) {}
+        }
+        delete ht.dataset.htPendingZero;
+        delete ht.dataset.htManualPaused;
+      }
+      updateHomeTheatrePlayIconForSlide(slide);
+    }
+  });
+}
+
+function pauseAllHomeTheatreVideosExcept(keepIdx) {
+  const scroller = homeTheatreScroller();
+  if (!scroller) return;
+  scroller.querySelectorAll('.ht-slide').forEach(slide => {
+    const idx = Number(slide.dataset.htIdx);
+    if (idx === keepIdx) return;
+    const ht = slide.querySelector('video');
+    if (ht) {
+      if (!ht.paused) {
+        try { ht.pause(); } catch (_) {}
+      }
+      delete ht.dataset.htManualPaused;
+    }
+    updateHomeTheatrePlayIconForSlide(slide);
+  });
+}
+
+function activateHomeTheatreSlide(idx, resetToZero) {
+  if (!homeTheatreIsOpen) return;
+  if (idx < 0 || idx >= homeTheatrePosts.length) return;
+  const scroller = homeTheatreScroller();
+  if (!scroller) return;
+  const slide = scroller.querySelector('.ht-slide[data-ht-idx="' + idx + '"]');
+  const v = homeTheatrePosts[idx];
+  if (!slide || !v) return;
+
+  const isSameSlide = (idx === homeTheatreActiveIdx);
+  pauseAllHomeTheatreVideosExcept(idx);
+  homeTheatreActiveIdx = idx;
+  homeTheatrePostId = String(v.id);
+
+  const ht = mountHomeTheatreSlideVideo(idx, true);
+  trimHomeTheatreVideoWindow(idx);
+  if (!ht) return;
+
+  if (!isSameSlide || resetToZero) {
+    delete ht.dataset.htManualPaused;
+    ht.dataset.htPendingZero = '1';
+    try { ht.currentTime = 0; } catch (_) {}
+    homeTheatreJustOpened = true;
+  }
+
+  ht.muted = !!window._muted;
   updateHomeTheatreSoundIcon();
   syncHomeTheatreCounts();
-  // The theatre video always starts from the beginning (0:00).
-  const ht = homeTheatreVideo();
-  setupHomeTheatreVideo();
-  homeTheatreJustOpened = true;
-  ht.muted = !!window._muted;
-  ht.poster = videoPosterFor(v) || '';
-  const src = bestVideoSrc(v) || vid.getAttribute('src') || '';
-  if (src && ht.getAttribute('src') !== src) { ht.src = src; ht.load(); }
-  try { ht.currentTime = 0; } catch (_) {}
-  document.getElementById('home-theatre').classList.add('open');
-  document.getElementById('home-theatre').setAttribute('aria-hidden', 'false');
+  updateHomeTheatreTimeForSlide(slide);
+  updateHomeTheatrePlayIconForSlide(slide);
+
+  if (!ht.dataset.htManualPaused) {
+    const startPlay = () => {
+      if (!homeTheatreIsOpen || homeTheatreActiveIdx !== idx || ht.dataset.htManualPaused) return;
+      const p = ht.play();
+      if (p && p.catch) p.catch(() => { ht.muted = true; ht.play().catch(() => {}); });
+    };
+    startPlay();
+    if (ht.readyState < 3) {
+      ht.addEventListener('canplay', startPlay, { once: true });
+    }
+  }
+}
+
+function attachHomeTheatreScrollWatchers() {
+  const scroller = homeTheatreScroller();
+  if (!scroller) return;
+  if (homeTheatreObserver) {
+    try { homeTheatreObserver.disconnect(); } catch (_) {}
+    homeTheatreObserver = null;
+  }
+  if (homeTheatreScrollHandler) {
+    scroller.removeEventListener('scroll', homeTheatreScrollHandler);
+    homeTheatreScrollHandler = null;
+  }
+
+  if (typeof IntersectionObserver !== 'undefined') {
+    homeTheatreObserver = new IntersectionObserver((entries) => {
+      if (!homeTheatreIsOpen || homeTheatreProgrammaticScroll) return;
+      entries.forEach(entry => {
+        const idx = Number(entry.target.dataset.htIdx);
+        const vid = entry.target.querySelector('video');
+        if (!entry.isIntersecting || entry.intersectionRatio < 0.75) {
+          if (vid && !vid.paused) {
+            try { vid.pause(); } catch (_) {}
+            updateHomeTheatrePlayIconForSlide(entry.target);
+          }
+        }
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.75) {
+          if (idx !== homeTheatreActiveIdx) {
+            activateHomeTheatreSlide(idx, true);
+          } else if (vid && vid.paused && !vid.dataset.htManualPaused) {
+            vid.muted = !!window._muted;
+            vid.play().catch(() => {});
+          }
+        }
+      });
+    }, { root: scroller, threshold: [0, 0.4, 0.75, 0.95] });
+    scroller.querySelectorAll('.ht-slide').forEach(s => homeTheatreObserver.observe(s));
+  }
+
+  homeTheatreScrollHandler = () => {
+    if (!homeTheatreIsOpen || homeTheatreProgrammaticScroll) return;
+    const h = scroller.clientHeight || window.innerHeight || 1;
+    const top = scroller.scrollTop || 0;
+    if (homeTheatreActiveIdx >= 0) {
+      const dist = Math.abs(top - homeTheatreActiveIdx * h);
+      if (dist > h * 0.2) {
+        const curSlide = homeTheatreActiveSlide();
+        const curVid = curSlide ? curSlide.querySelector('video') : null;
+        if (curVid && !curVid.paused) {
+          try { curVid.pause(); } catch (_) {}
+          updateHomeTheatrePlayIconForSlide(curSlide);
+        }
+      }
+    }
+    const candidateIdx = Math.max(0, Math.min(homeTheatrePosts.length - 1, Math.round(top / h)));
+    const candidateDist = Math.abs(top - candidateIdx * h);
+    if (candidateDist <= h * 0.25 && candidateIdx !== homeTheatreActiveIdx) {
+      activateHomeTheatreSlide(candidateIdx, true);
+    }
+    clearTimeout(homeTheatreScrollSettleTimer);
+    homeTheatreScrollSettleTimer = setTimeout(() => {
+      if (!homeTheatreIsOpen || homeTheatreProgrammaticScroll) return;
+      const settledIdx = Math.max(0, Math.min(homeTheatrePosts.length - 1, Math.round((scroller.scrollTop || 0) / (scroller.clientHeight || window.innerHeight || 1))));
+      if (settledIdx !== homeTheatreActiveIdx) {
+        activateHomeTheatreSlide(settledIdx, true);
+      } else {
+        const activeSlide = homeTheatreActiveSlide();
+        const activeVid = activeSlide ? activeSlide.querySelector('video') : null;
+        if (activeVid && activeVid.paused && !activeVid.dataset.htManualPaused) {
+          activeVid.muted = !!window._muted;
+          activeVid.play().catch(() => {});
+        }
+      }
+    }, 25);
+  };
+  scroller.addEventListener('scroll', homeTheatreScrollHandler, { passive: true });
+}
+
+function openHomeTheatre(mediaEl) {
+  const vid = mediaEl ? mediaEl.querySelector('video') : null;
+  if (!vid) return;
+  const postId = vid.getAttribute('data-post-id') || '';
+  const ordered = videos.map((v, i) => ({ v, i })).filter(o => o.v).sort((a, b) => (b.v.ts || 0) - (a.v.ts || 0)).map(o => o.v);
+  let startIdx = ordered.findIndex(x => String(x.id) === String(postId));
+  if (startIdx < 0) {
+    const fallbackPost = postId ? videos.find(x => String(x.id) === String(postId)) : null;
+    if (!fallbackPost) return;
+    homeTheatrePosts = [fallbackPost];
+    startIdx = 0;
+  } else {
+    homeTheatrePosts = ordered;
+  }
+  const v = homeTheatrePosts[startIdx];
+  homeTheatrePostId = String(v.id);
+  homeTheatreOpenedPostId = String(v.id);
+  homeTheatreReturnVideo = vid;
+  homeTheatreIsOpen = true;
+  homeTheatreActiveIdx = -1;
+
+  // Remember where the user was in the Home feed, so closing the
+  // viewer returns to this exact spot when returning on the same post.
+  const homePage = document.getElementById('page-home');
+  homeTheatreScrollTop = homePage ? (homePage.scrollTop || 0) : 0;
+
+  // Only the theatre plays: pause Home and Reels behind it, and mute Home videos.
+  pauseAllHomeVideos();
+  pauseAllFeedVideos();
+  try { vid.pause(); } catch (_) {}
+  vid.muted = true;
+  document.querySelectorAll('#home-feed video').forEach(other => { other.muted = true; });
+
+  const viewer = document.getElementById('home-theatre');
+  const scroller = homeTheatreScroller();
+  if (!viewer || !scroller) return;
+
+  scroller.innerHTML = homeTheatrePosts.map((post, idx) => homeTheatreSlideHTML(post, idx)).join('');
+  viewer.classList.add('open');
+  viewer.setAttribute('aria-hidden', 'false');
   document.body.classList.add('ht-open');
-  hydrateAvatars(document.getElementById('home-theatre'));
-  updateHomeTheatreTime();
-  updateHomeTheatrePlayIcon();
-  const p = ht.play();
-  if (p && p.catch) p.catch(() => { ht.muted = true; ht.play().catch(() => {}); });
+  hydrateAvatars(viewer);
+  refreshAllVerifiedBadgeSlots();
+
+  homeTheatreProgrammaticScroll = true;
+  const slideH = scroller.clientHeight || window.innerHeight || 0;
+  scroller.scrollTop = startIdx * slideH;
+  attachHomeTheatreScrollWatchers();
+  activateHomeTheatreSlide(startIdx, true);
+  requestAnimationFrame(() => {
+    if (scroller && scroller.clientHeight) {
+      scroller.scrollTop = startIdx * scroller.clientHeight;
+    }
+    setTimeout(() => { homeTheatreProgrammaticScroll = false; }, 80);
+  });
 }
 
 function closeHomeTheatre() {
-  const ht = homeTheatreVideo();
-  if (ht) { try { ht.pause(); } catch (_) {} }
+  clearTimeout(homeTheatreScrollSettleTimer);
+  homeTheatreScrollSettleTimer = null;
+  homeTheatreProgrammaticScroll = false;
+
+  const scroller = homeTheatreScroller();
+  if (homeTheatreObserver) {
+    try { homeTheatreObserver.disconnect(); } catch (_) {}
+    homeTheatreObserver = null;
+  }
+  if (scroller && homeTheatreScrollHandler) {
+    scroller.removeEventListener('scroll', homeTheatreScrollHandler);
+    homeTheatreScrollHandler = null;
+  }
+  if (scroller) {
+    scroller.querySelectorAll('video').forEach(v => {
+      try { v.pause(); } catch (_) {}
+      if (v.dataset && v.dataset.htSrcSet) {
+        v.removeAttribute('src');
+        delete v.dataset.htSrcSet;
+        try { v.load(); } catch (_) {}
+      }
+    });
+    scroller.innerHTML = '';
+  }
+
   homeTheatreIsOpen = false;
+  const activePostId = homeTheatrePostId;
+  const openedPostId = homeTheatreOpenedPostId;
   const viewer = document.getElementById('home-theatre');
   if (viewer) {
     viewer.classList.remove('open');
     viewer.setAttribute('aria-hidden', 'true');
   }
   document.body.classList.remove('ht-open');
-  // Return to the exact Home scroll spot saved when the viewer opened.
+
+  // Return to the exact Home scroll spot if returning on the same post,
+  // or bring the currently viewed post into view if scrolled in theatre.
   const homePage = document.getElementById('page-home');
-  if (homePage) homePage.scrollTop = homeTheatreScrollTop || 0;
-  // Returning to Home restarts the same Home video from 0:00.
-  const homeVid = homeTheatreReturnVideo;
+  let homeVid = homeTheatreReturnVideo;
+  if (activePostId && activePostId !== openedPostId) {
+    const matched = Array.from(document.querySelectorAll('#home-feed video')).find(el => String(el.getAttribute('data-post-id') || '') === String(activePostId));
+    if (matched) {
+      homeVid = matched;
+      const card = matched.closest ? matched.closest('.home-post') : null;
+      if (card && typeof card.scrollIntoView === 'function') {
+        try { card.scrollIntoView({ block: 'center', behavior: 'auto' }); } catch (_) {}
+      }
+    } else if (homePage) {
+      homePage.scrollTop = homeTheatreScrollTop || 0;
+    }
+  } else if (homePage) {
+    homePage.scrollTop = homeTheatreScrollTop || 0;
+  }
+
   homeTheatrePostId = null;
+  homeTheatreOpenedPostId = null;
   homeTheatreReturnVideo = null;
   homeTheatreJustOpened = false;
-  // Restore the global mute state on every Home video (they were all
-  // muted while the theatre was open), then resume cleanly.
+  homeTheatrePosts = [];
+  homeTheatreActiveIdx = -1;
+
+  // Restore global mute state on every Home video and restart the target video from 0:00.
   document.querySelectorAll('#home-feed video').forEach(other => { other.muted = !!window._muted; });
   if (homeVid && document.contains && document.contains(homeVid)) {
     try { homeVid.currentTime = 0; } catch (_) {}
@@ -12877,78 +13870,79 @@ function closeHomeTheatre() {
   }
 }
 
-function toggleHomeTheatreVideo() {
-  const ht = homeTheatreVideo();
+function toggleHomeTheatreVideo(vidEl) {
+  const ht = vidEl || homeTheatreVideo();
   if (!ht) return;
-  if (ht.paused) { ht.play().catch(() => {}); }
-  else { ht.pause(); }
-  updateHomeTheatrePlayIcon();
+  const slide = ht.closest ? ht.closest('.ht-slide') : homeTheatreActiveSlide();
+  if (ht.paused) {
+    delete ht.dataset.htManualPaused;
+    ht.play().catch(() => {});
+  } else {
+    ht.dataset.htManualPaused = '1';
+    ht.pause();
+  }
+  updateHomeTheatrePlayIconForSlide(slide);
 }
 
 function toggleHomeTheatreSound(ev) {
   if (ev) ev.stopPropagation();
   const ht = homeTheatreVideo();
-  if (!ht) return;
-  // Same single global mute state as Home/Reels: flip it here and
-  // apply it to every Home video too, so the theatre and the feed
-  // never disagree about sound.
-  const muted = !ht.muted;
+  const muted = ht ? !ht.muted : !window._muted;
   window._muted = muted;
-  ht.muted = muted;
+  const scroller = homeTheatreScroller();
+  if (scroller) {
+    scroller.querySelectorAll('video').forEach(sv => { sv.muted = muted; });
+  }
   updateHomeTheatreSoundIcon();
   document.querySelectorAll('#home-feed video').forEach(other => { other.muted = muted; });
   document.querySelectorAll('#home-feed .home-post-sound').forEach(b => {
     b.innerHTML = lucideIcon(muted ? 'volume-x' : 'volume-2', 20);
   });
-  if (!muted && ht.paused) { ht.play().catch(() => {}); }
+  if (!muted && ht && ht.paused) {
+    delete ht.dataset.htManualPaused;
+    ht.play().catch(() => {});
+  }
 }
 
-async function toggleHomeTheatreLike() {
-  const v = homeTheatrePost();
+async function toggleHomeTheatreLike(postId) {
+  const targetId = postId || homeTheatrePostId;
+  const v = targetId ? videos.find(x => String(x.id) === String(targetId)) : homeTheatrePost();
   if (!v) return;
   if (isCurrentUserBanned()) { showToast('Your account is suspended.'); return; }
   const idx = videos.findIndex(x => String(x.id) === String(v.id));
   const homeBtn = document.getElementById('hlike-' + v.id);
   if (!homeBtn || idx < 0) return;
-  // Reuse the Home like path (count, Supabase sync, Reels sync), then
-  // mirror the result onto the theatre button/count.
   await toggleHomeLike(homeBtn, String(v.id), idx);
   syncHomeTheatreCounts();
 }
 
-function openHomeTheatreComments() {
-  if (!homeTheatrePostId) return;
+function openHomeTheatreComments(postId) {
+  const targetId = postId || homeTheatrePostId;
+  if (!targetId) return;
   const ht = homeTheatreVideo();
   if (ht) { try { ht.pause(); } catch (_) {} }
-  // The comments sheet (z-index 200) opens above the theatre; tap
-  // the theatre video to resume when the sheet closes.
-  openComments(homeTheatrePostId);
+  openComments(targetId);
 }
 
-function openHomeTheatreShare() {
-  if (!homeTheatrePostId) return;
+function openHomeTheatreShare(postId) {
+  const targetId = postId || homeTheatrePostId;
+  if (!targetId) return;
   const ht = homeTheatreVideo();
   if (ht) { try { ht.pause(); } catch (_) {} }
-  openShare(homeTheatrePostId);
+  openShare(targetId);
 }
 
-function openHomeTheatreMore() {
-  if (!homeTheatrePostId) return;
-  const ht = homeTheatreVideo();
-  if (ht) { try { ht.pause(); } catch (_) {} }
-  openMore(homeTheatrePostId);
-}
-
-async function postHomeTheatreComment() {
-  const input = document.getElementById('ht-comment-input');
+async function postHomeTheatreComment(inputEl) {
+  const slide = homeTheatreActiveSlide();
+  const input = inputEl || (slide ? slide.querySelector('.ht-comment-input') : null);
   if (!input) return;
   const text = input.value.trim();
-  if (!text || !homeTheatrePostId) return;
-  // Reuse the existing comment path (local + Supabase): feed it the
-  // theatre text through the comments input it already reads.
+  const slideEl = input.closest ? input.closest('.ht-slide') : slide;
+  const targetId = (slideEl && slideEl.dataset.postId) || homeTheatrePostId;
+  if (!text || !targetId) return;
   const main = document.getElementById('commentInput');
   if (main) main.value = text;
-  activeCommentsId = homeTheatrePostId;
+  activeCommentsId = targetId;
   await postComment();
   input.value = '';
   syncHomeTheatreCounts();
@@ -12970,6 +13964,11 @@ async function toggleHomeLike(btn, id, idx) {
   if (feedCount) feedCount.textContent = fmtC(v.likes);
   const feedBtn = document.getElementById('like-' + id);
   if (feedBtn) feedBtn.classList.toggle('liked', isLiked);
+  if (isMyVideo(v)) {
+    profileStats.likes = Math.max(0, (profileStats.likes ?? 0) + (isLiked ? 1 : -1));
+    renderProfileStats();
+    saveProfileLocalCache();
+  }
   try { if (!v.isSeed) await dbPut('videos', v); } catch (e) {}
   await syncLikeToSupabase(v, isLiked, btn);
   // My own video's like count changed — refresh the profile counters.
@@ -12988,7 +13987,16 @@ async function openLikesList(postId) {
   const v = videos.find(x => x && String(x.id) === String(postId));
   const initialCount = v ? (v.likes || 0) : 0;
   if (titleEl) titleEl.textContent = initialCount > 0 ? `Likes (${fmtN(initialCount)})` : 'Likes';
-  listEl.innerHTML = '<div class="likes-state-box"><span class="loading-ring-sm"></span><span>Loading likes…</span></div>';
+  let skLikes = '';
+  for (let i = 0; i < 5; i++) {
+    skLikes += '<div class="sk-user-row">'
+      + '<div class="sk-circle rf-shimmer" style="width:40px;height:40px;"></div>'
+      + '<div class="sk-user-lines">'
+      + '<div class="sk-bar rf-shimmer" style="width:' + (38 + (i % 3) * 14) + '%;height:12px;"></div>'
+      + '<div class="sk-bar rf-shimmer" style="width:26%;height:10px;"></div>'
+      + '</div></div>';
+  }
+  listEl.innerHTML = skLikes;
   modal.classList.add('open');
 
   try {
@@ -13390,24 +14398,21 @@ function ensureSrc(s) {
   const vid = s.querySelector('video');
   const vidId = s.dataset.id;
   const vidObj = videos.find(x => x.id === vidId);
-  if (!vid.getAttribute('poster') && vidObj) {
+  if (vid && !vid.getAttribute('poster') && vidObj) {
     const p = videoPosterFor(vidObj);
     if (p) vid.poster = p;
   }
-  if (vid && !vid.getAttribute('src')) {
-    if (setVideoSrcWithFallbacks(vid, vidObj)) {
-      vid.preload = 'auto';
-      vid.load();
+  if (vid) {
+    vid.preload = 'auto';
+    if (!vid.getAttribute('src')) {
+      if (setVideoSrcWithFallbacks(vid, vidObj)) {
+        vid.load();
+      }
     }
   }
 }
 
-// Mid-scroll audio cut: the active video has scrolled past halfway,
-// so its sound stops NOW instead of waiting for the next video to
-// reach 80% and take over. Only pauses (no reset, no rewind): if the
-// user scrolls back, setActive's same-slide path resumes it from the
-// same spot. A video the user paused themselves is never touched
-// (it is already paused) and is never resumed by this flag.
+// Mid-scroll audio cut
 function pauseActiveVideoMidScroll() {
   if (activeIdx < 0 || !isFeedPageVisible()) return;
   const slides = feedEl.querySelectorAll('.video-slide');
@@ -13424,10 +14429,6 @@ function setActive(idx) {
   const slides = feedEl.querySelectorAll('.video-slide');
   if (!slides.length || idx < 0 || idx >= slides.length) return;
   if (idx === activeIdx) {
-    // Same slide, scrolled back into full view after a mid-scroll
-    // pause: resume it from where it stopped (no restart, no window
-    // rebuild). Only for a pause this code made — a video the user
-    // paused with a tap stays paused.
     if (midScrollPaused && isFeedPageVisible()) {
       const s = slides[idx];
       const vid = s && s.querySelector('video');
@@ -13441,13 +14442,7 @@ function setActive(idx) {
     return;
   }
   midScrollPaused = false;
-  // Scrolling moves the mount window first: the new active slide and
-  // its neighbours mount, slides that fell out unmount (their videos
-  // are paused and their src released there). Only then does playback
-  // switch, so the old video's sound is cut before the new one starts.
   renderFeedWindow(idx);
-  // For You signal: record how much of the previous video was watched.
-  // (Recorded BEFORE the loop below pauses it and resets currentTime.)
   const prevIdx = activeIdx;
   if (prevIdx >= 0 && prevIdx !== idx) {
     const prevSlide = slides[prevIdx];
@@ -13465,67 +14460,63 @@ function setActive(idx) {
   }
   activeIdx = idx;
 
+  // Pause non-active slides immediately first, then start the active slide before neighbor preloads
   slides.forEach((s, i) => {
+    if (i === idx) return;
     const vid = s.querySelector('video');
     if (!vid) return;
-    const dist = Math.abs(i - idx);
+    s.classList.remove('is-active');
+    s.classList.remove('scrubbing');
+    vid.pause();
+    vid.muted = true;
+    vid.autoplay = false;
+    try { vid.currentTime = 0; } catch(_){}
+    const pb = s.querySelector('.progress-bar');
+    if (pb) pb.style.width = '0%';
+  });
 
-    if (dist === 0) {
-      ensureSrc(s);
-      s.classList.add('is-active');
-      const pi = s.querySelector('.pause-icon');
-      if (pi) pi.className = 'pause-icon';
-      if (!isFeedPageVisible()) {
-        // Background rebuild while another page is showing: pick the
-        // active slide but never start its sound here. The video stays
-        // muted, autoplay off and paused until the user comes back.
-        vid.autoplay = false;
-        vid.muted = true;
-        vid.pause();
-      } else {
-        // Playback is driven by play() only, never by autoplay: the
-        // video stays paused while it loads and starts the moment it
-        // is ready (play() itself waits for data; the spinner covers
-        // that wait). Respect the user's own mute choice: scrolling
-        // to the next video must never switch the sound back on after
-        // they muted it (the old code forced muted=false here on
-        // every scroll).
-        vid.muted = !!window._muted;
-        const playPromise = vid.play();
+  const activeSlide = slides[idx];
+  const activeVid = activeSlide ? activeSlide.querySelector('video') : null;
+  if (activeSlide && activeVid) {
+    ensureSrc(activeSlide);
+    activeSlide.classList.add('is-active');
+    const pi = activeSlide.querySelector('.pause-icon');
+    if (pi) pi.className = 'pause-icon';
+    if (!isFeedPageVisible()) {
+      activeVid.autoplay = false;
+      activeVid.muted = true;
+      activeVid.pause();
+    } else {
+      activeVid.muted = !!window._muted;
+      const startActivePlay = () => {
+        if (!isFeedPageVisible() || activeIdx !== idx) return;
+        const playPromise = activeVid.play();
         if (playPromise !== undefined) {
           playPromise.catch((err) => {
-            // A play() interrupted by scrolling away (AbortError) must
-            // NOT be retried: the video was paused on purpose, and
-            // retrying would restart it behind the video being watched
-            // (muted background playback + stray unlock listeners).
-            // Only an autoplay block (NotAllowedError) gets the muted
-            // retry + the tap-to-unmute listeners.
             if (err && err.name === 'AbortError') return;
-            vid.muted = true;
-            vid.play().catch(()=>{});
+            activeVid.muted = true;
+            activeVid.play().catch(()=>{});
             const unlock = () => {
-              if (window._muted) return; // user muted: stay muted
-              vid.muted = false;
+              if (window._muted) return;
+              activeVid.muted = false;
               window._muted = false;
               ['click','touchstart','pointerdown','keydown'].forEach(evt => document.removeEventListener(evt, unlock));
             };
             ['click','touchstart','pointerdown','keydown'].forEach(evt => document.addEventListener(evt, unlock, { once: true, passive: true }));
           });
         }
+      };
+      startActivePlay();
+      if (activeVid.readyState < 3) {
+        activeVid.addEventListener('canplay', startActivePlay, { once: true });
       }
-    } else {
-      s.classList.remove('is-active');
-      s.classList.remove('scrubbing');
-      vid.pause();
-      vid.muted = true;
-      vid.autoplay = false;
-      try { vid.currentTime = 0; } catch(_){}
-      const pb = s.querySelector('.progress-bar');
-      if (pb) pb.style.width = '0%';
-      if (dist <= 1) ensureSrc(s);
     }
-    if (dist === 0) updateMediaSession(videos[i]);
-  });
+    updateMediaSession(videos[idx]);
+  }
+
+  // Preload immediate adjacent slides (+1 / -1) right after active playback begins
+  if (slides[idx + 1]) ensureSrc(slides[idx + 1]);
+  if (slides[idx - 1]) ensureSrc(slides[idx - 1]);
 }
 
 // Picture-in-picture + lock-screen controls (Android multitasking).
@@ -13634,11 +14625,19 @@ function moreAct(act) {
 }
 
 async function deleteVideo(id) {
+  const deleted = videos.find(v => v && v.id === id);
   try { await dbDelete('videos', id); } catch(e){}
   videos = videos.filter(v => v.id !== id);
+  saveFeedPostsCache(videos);
   if ((profile.saved || []).includes(id)) {
     profile.saved = profile.saved.filter(x => x !== id);
     try { await dbPut('profile', { key: 'saved', val: profile.saved.slice() }); } catch(e){}
+  }
+  if (deleted && isMyVideo(deleted)) {
+    profileStats.posts = Math.max(0, (profileStats.posts ?? 1) - 1);
+    profileStats.likes = Math.max(0, (profileStats.likes ?? 0) - (deleted.likes || 0));
+    renderProfileStats();
+    saveProfileLocalCache();
   }
   if (blobUrls[id]) { URL.revokeObjectURL(blobUrls[id]); delete blobUrls[id]; }
   buildFeed();
