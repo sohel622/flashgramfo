@@ -340,6 +340,86 @@
       white-space: nowrap;
       text-align: center;
     }
+    /* STORY VIEWER — full-screen image story overlay (Story System).
+       z-index 160: above the Home theatre (150), pages and nav (100),
+       below the comment/share sheets (200). Scoped to .sv-* only. */
+    #story-viewer {
+      position: fixed;
+      inset: 0;
+      z-index: 160;
+      background: #000;
+      display: none;
+      color: #fff;
+      box-sizing: border-box;
+    }
+    #story-viewer.open { display: block; }
+    #story-viewer * { box-sizing: border-box; }
+    .sv-stage {
+      position: absolute;
+      inset: 0;
+      margin: 0 auto;
+      width: min(100vw, calc(100vh * 9 / 16));
+      min-width: min(100vw, 300px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .sv-img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+    .sv-msg { font-size: 14px; color: rgba(255,255,255,0.75); text-align: center; padding: 0 24px; }
+    .sv-top {
+      position: absolute;
+      left: 0; right: 0; top: 0;
+      padding: 10px 10px 18px;
+      background: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0));
+      z-index: 3;
+    }
+    .sv-bars { display: flex; gap: 4px; }
+    .sv-bar { flex: 1; height: 2.5px; border-radius: 2px; background: rgba(255,255,255,0.35); overflow: hidden; }
+    .sv-bar-fill { height: 100%; width: 0; background: #fff; }
+    .sv-head { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+    .sv-head .av { flex: 0 0 auto; }
+    .sv-user { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sv-time { font-weight: 400; color: rgba(255,255,255,0.7); margin-left: 6px; font-size: 13px; }
+    .sv-btn {
+      background: none; border: none; color: #fff; cursor: pointer; padding: 6px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 13px;
+    }
+    .sv-btn svg { width: 24px; height: 24px; }
+    .sv-tap { position: absolute; top: 70px; bottom: 70px; width: 35%; z-index: 2; }
+    .sv-tap-left { left: 0; }
+    .sv-tap-right { right: 0; width: 65%; }
+    .sv-foot {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      padding: 14px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+      display: flex; align-items: center; gap: 14px;
+      background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.55));
+      z-index: 3;
+    }
+    .sv-foot .sv-views { margin-left: auto; color: rgba(255,255,255,0.85); }
+    .sv-btn.liked { color: #fe2c55; }
+    .sv-comments {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      max-height: 60%;
+      background: #fff;
+      color: #111;
+      border-radius: 14px 14px 0 0;
+      z-index: 5;
+      display: none;
+      flex-direction: column;
+    }
+    .sv-comments.open { display: flex; }
+    .sv-comments-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; font-weight: 700; font-size: 14px; border-bottom: 1px solid rgba(0,0,0,0.08); }
+    .sv-comments-head .sv-btn { color: #111; }
+    .sv-comments-list { flex: 1; overflow-y: auto; padding: 8px 14px; min-height: 80px; }
+    .sv-comment { font-size: 13.5px; padding: 6px 0; word-wrap: break-word; overflow-wrap: anywhere; }
+    .sv-comment b { margin-right: 6px; }
+    .sv-comments-empty { font-size: 13px; color: #888; padding: 12px 0; text-align: center; }
+    .sv-comments-input { display: flex; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid rgba(0,0,0,0.08); }
+    .sv-comments-input input { flex: 1; min-width: 0; border: 1px solid rgba(0,0,0,0.15); border-radius: 18px; padding: 8px 12px; font-size: 14px; color: #111; background: #fff; }
+    .sv-comments-input button { border: none; background: none; color: #0095f6; font-weight: 700; font-size: 14px; cursor: pointer; }
     /* Post cards. */
     .home-post {
       border-bottom: 1px solid rgba(0,0,0,0.08);
@@ -4513,6 +4593,24 @@ let customUploadedThumbBlob = null;
 // Dynamic creators list fetched from Supabase profiles table
 let creators = [];
 let isLoadingCreators = true;
+// Story System state (declared up here with the other page state so
+// the Home story bar can render at any point of boot without a TDZ
+// error). Functions live in the STORY SYSTEM section further down.
+let storyGroups = [];          // followed users with active stories
+let myActiveStories = [];      // the signed-in user's own active stories
+let storyBarLoading = false;
+let storyBarLoadedFor = null;  // user id the bar was last loaded for
+let storyBarLoadedAt = 0;
+let storyBarLastOk = false;    // last stories query succeeded
+let storyBarLoadPromise = null;
+let storyRefreshTimer = null;
+let storyRealtimeChannel = null;
+let storyCleanupDoneFor = null;
+let storyUploadInFlight = false;
+const storyCounts = new Map(); // story id -> { likes, comments, views, liked }
+const storyViewedIds = new Set();
+const storyLikeInFlight = new Set();
+const storyViewer = { open: false, groups: [], gi: 0, si: 0, timer: null, startedAt: 0, elapsed: 0, paused: false, commentsOpen: false };
 let isLoadingHomeFeed = true;
 let isLoadingProfileVideos = true;
 
@@ -11312,6 +11410,7 @@ async function loadFollowedUserIds() {
     followedUserIds.clear();
     (data || []).forEach(r => { if (r && r.following_id) followedUserIds.add(String(r.following_id).toLowerCase()); });
     syncFollowButtons();
+    scheduleStoryBarRefresh(); // story bar follows the same follow list
   } catch (e) { console.warn('loadFollowedUserIds note:', e && e.message); }
 }
 async function followUser(event, uid) {
@@ -11336,6 +11435,7 @@ async function followUser(event, uid) {
       throw new Error(error.message);
     }
     loadProfileStats(); // my Following count just changed
+    scheduleStoryBarRefresh(); // their stories join my story bar
   } catch (err) {
     // Supabase could not save it (e.g. the followers grants/RLS in
     // supabase-setup.sql have not been run yet): undo, so the button
@@ -11672,6 +11772,7 @@ async function toggleOtherProfileFollow(btn, uid) {
       const { error } = await supabaseClient.from('followers').delete().eq('follower_id', me).eq('following_id', String(uid));
       if (error) throw new Error(error.message);
       loadProfileStats();
+      scheduleStoryBarRefresh(); // their stories leave my story bar
     } catch (err) {
       followedUserIds.add(key);
       profileStats.following = (profileStats.following ?? 0) + 1;
@@ -12969,13 +13070,20 @@ function homeLikesText(v) {
 function renderHomeStories() {
   const row = document.getElementById('home-stories');
   if (!row) return;
+  const me = storyMyId();
   const myAv = avatarHTML(profile.id || 'me', profile.name || profile.handle || 'You', profile.avatar_url || avatarUrlForUserId(profile.id, profile.handle), 52);
+  const hasMine = myActiveStories.some(s => isStoryActive(s));
+  // "Your story" stays first. Tap: your own story if you have one,
+  // otherwise the gallery image picker. The + badge always opens the
+  // picker. (Posting a video stays on the header + button.)
   let html = ''
-    + '<button class="home-story" onclick="openUpload()" title="Add to your story">'
+    + '<button class="home-story" onclick="onYourStoryTap()" title="' + (hasMine ? 'Your story' : 'Add to your story') + '">'
     + '<span class="home-story-ring"><span class="home-story-av">' + myAv + '</span>'
-    + '<span class="home-story-add">' + lucideIcon('plus', 12) + '</span></span>'
+    + '<span class="home-story-add" onclick="openStoryPicker(event)">' + lucideIcon('plus', 12) + '</span></span>'
     + '<span class="home-story-name">Your story</span></button>';
-  if (isLoadingCreators && (!creators || creators.length === 0)) {
+  // Only people you follow who have an active (< 24h) story; never you.
+  const groups = activeStoryGroups();
+  if (storyBarLoading && groups.length === 0 && storyBarLoadedFor !== me) {
     for (let i = 0; i < 4; i++) {
       html += '<div class="sk-story-item">'
         + '<div class="sk-circle rf-shimmer" style="width:62px;height:62px;"></div>'
@@ -12983,16 +13091,17 @@ function renderHomeStories() {
         + '</div>';
     }
   } else {
-    (creators || []).slice(0, 20).forEach(c => {
-      const uid = c.user_id || c.id;
-      const name = String(c.handle || c.name || 'user').replace(/^@/, '');
-      html += '<button class="home-story" onclick="openCreatorStory(\'' + escapeHtml(String(uid)) + '\')" title="@' + escapeHtml(name) + '">'
-        + '<span class="home-story-ring"><span class="home-story-av">' + avatarHTML(uid, c.name || c.handle, c.avatar_url || '', 52) + '</span></span>'
+    groups.forEach(g => {
+      const uid = String(g.user_id);
+      const name = storyGroupName(g);
+      html += '<button class="home-story" data-story-uid="' + escapeHtml(uid) + '" onclick="openStoryViewer(\'' + escapeHtml(uid) + '\')" title="@' + escapeHtml(name) + '">'
+        + '<span class="home-story-ring"><span class="home-story-av">' + avatarHTML(uid, name, storyGroupAvatar(g), 52) + '</span></span>'
         + '<span class="home-story-name">' + escapeHtml(name) + '</span></button>';
     });
   }
   row.innerHTML = html;
   hydrateAvatars(row);
+  maybeRefreshStoryBar();
 }
 
 function openCreatorStory(userId) {
@@ -13001,6 +13110,685 @@ function openCreatorStory(userId) {
   const c = (creators || []).find(x => String(x.user_id || x.id) === String(userId));
   const name = c ? String(c.handle || c.name || 'user').replace(/^@/, '') : 'user';
   showToast('No posts from @' + name + ' yet.');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STORY SYSTEM — image stories that disappear after 24 hours.
+//  Supabase: public.stories / story_likes / story_comments /
+//  story_views + Storage bucket 'story' (supabase-setup.sql §13).
+//  Story bar = people the signed-in user follows (one-way, from
+//  public.followers), never the user themself; names and avatars
+//  from public.profiles. State is declared next to `creators`.
+// ═══════════════════════════════════════════════════════════════
+const STORY_TTL_MS = 24 * 60 * 60 * 1000;
+const STORY_DURATION_MS = 5000;
+const STORY_MAX_BYTES = 10 * 1024 * 1024;
+const STORY_ICONS = {
+  x: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+  eye: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>'
+};
+
+function storyMyId() {
+  return (currentAuthUser && currentAuthUser.id) ? String(currentAuthUser.id) : '';
+}
+// Real Supabase + a signed-in user (stories are never faked locally).
+function storyBackendReady() {
+  return !!(supabaseClient && !supabaseClient.isLocalAdapter && storyMyId());
+}
+function storyTime(s) {
+  const t = s ? Date.parse(s.created_at || '') : NaN;
+  return isNaN(t) ? 0 : t;
+}
+// Active = expires_at still in the future (created_at + 24h when a
+// row has no expires_at). Expired stories are hidden everywhere.
+function isStoryActive(s, nowMs) {
+  if (!s) return false;
+  const now = typeof nowMs === 'number' ? nowMs : Date.now();
+  let exp = s.expires_at ? Date.parse(s.expires_at) : NaN;
+  if (isNaN(exp)) {
+    const c = Date.parse(s.created_at || '');
+    exp = isNaN(c) ? NaN : c + STORY_TTL_MS;
+  }
+  return !isNaN(exp) && exp > now;
+}
+// Group story rows into one circle per followed user. One-way follow
+// is enough (followedIds = people I follow); my own id is skipped.
+function buildStoryGroups(stories, followedIds, myId, nowMs) {
+  const me = String(myId || '').toLowerCase();
+  const follow = new Set((followedIds || []).map(x => String(x).toLowerCase()));
+  const map = new Map();
+  (stories || []).forEach(s => {
+    if (!s || !s.id || !s.user_id || !s.image_url) return;
+    const uid = String(s.user_id).toLowerCase();
+    if (!uid || uid === me || !follow.has(uid) || !isStoryActive(s, nowMs)) return;
+    if (!map.has(uid)) map.set(uid, { user_id: String(s.user_id), stories: [] });
+    const g = map.get(uid);
+    if (!g.stories.some(x => String(x.id) === String(s.id))) g.stories.push(s);
+  });
+  const groups = [...map.values()];
+  groups.forEach(g => g.stories.sort((a, b) => storyTime(a) - storyTime(b)));
+  // Newest story first, like Instagram.
+  groups.sort((a, b) => storyTime(b.stories[b.stories.length - 1]) - storyTime(a.stories[a.stories.length - 1]));
+  return groups;
+}
+function activeStoryGroups() {
+  const now = Date.now();
+  return (storyGroups || [])
+    .map(g => ({ user_id: g.user_id, stories: (g.stories || []).filter(s => isStoryActive(s, now)) }))
+    .filter(g => g.stories.length > 0);
+}
+function storyGroupName(g) {
+  const p = g ? authorProfileFor(g.user_id) : null;
+  const last = g && g.stories && g.stories.length ? g.stories[g.stories.length - 1] : null;
+  return String((p && p.username) || (last && last.username) || authorFallbackHandle(g && g.user_id)).replace(/^@/, '');
+}
+function storyGroupAvatar(g) {
+  const p = g ? authorProfileFor(g.user_id) : null;
+  return (p && p.avatar_url) || avatarUrlForUserId(g && g.user_id, storyGroupName(g)) || '';
+}
+function myStoryUsername() {
+  const me = storyMyId();
+  const p = me ? authorProfileFor(me) : null;
+  return String((p && p.username) || (profile && profile.handle) || '').replace(/^@/, '');
+}
+function isStoryDuplicateError(err) {
+  if (!err) return false;
+  const code = String(err.code || err.statusCode || err.status || '');
+  return code === '23505' || code === '409' || /duplicate|already exists/i.test(String(err.message || err.error || ''));
+}
+
+// ── Story bar loading ──
+async function loadStoryBar() {
+  const me = storyMyId();
+  if (!storyBackendReady()) {
+    storyGroups = [];
+    myActiveStories = [];
+    storyBarLastOk = false;
+    storyBarLoadedFor = me;
+    storyBarLoadedAt = Date.now();
+    renderHomeStories();
+    return storyGroups;
+  }
+  if (storyBarLoadPromise) return storyBarLoadPromise;
+  storyBarLoading = true;
+  storyBarLoadPromise = (async () => {
+    try {
+      // Who I follow: follower_id = me (one-way is enough).
+      let followed = [];
+      const fr = await supabaseClient.from('followers').select('following_id').eq('follower_id', me);
+      if (fr && fr.error) {
+        console.warn('Story bar followers note:', fr.error.message);
+        followed = [...followedUserIds];
+      } else {
+        followed = ((fr && fr.data) || []).map(r => r && r.following_id).filter(Boolean).map(String);
+      }
+      followed = [...new Set(followed)].filter(id => id.toLowerCase() !== me.toLowerCase());
+      const ids = [...new Set([...followed, me])];
+      const sr = await supabaseClient.from('stories')
+        .select('id,user_id,image_url,username,created_at,expires_at')
+        .in('user_id', ids)
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: true });
+      if (sr && sr.error) throw new Error(sr.error.message);
+      const rows = (sr && sr.data) || [];
+      myActiveStories = rows
+        .filter(s => String(s.user_id).toLowerCase() === me.toLowerCase() && isStoryActive(s))
+        .sort((a, b) => storyTime(a) - storyTime(b));
+      storyGroups = buildStoryGroups(rows, followed, me);
+      if (storyGroups.length) await loadAuthorProfiles(storyGroups.map(g => g.user_id));
+      storyBarLastOk = true;
+    } catch (e) {
+      storyBarLastOk = false;
+      console.warn('loadStoryBar note:', e && e.message);
+    } finally {
+      storyBarLoading = false;
+      storyBarLoadedFor = me;
+      storyBarLoadedAt = Date.now();
+      storyBarLoadPromise = null;
+    }
+    renderHomeStories();
+    subscribeStoriesRealtime();
+    if (storyBarLastOk) cleanupMyExpiredStories();
+    return storyGroups;
+  })();
+  return storyBarLoadPromise;
+}
+function scheduleStoryBarRefresh() {
+  if (storyRefreshTimer) clearTimeout(storyRefreshTimer);
+  storyRefreshTimer = setTimeout(() => { storyRefreshTimer = null; loadStoryBar(); }, 400);
+}
+// Called on every bar render: reload when the account changed or the
+// last load is older than 30s (keeps expired circles from lingering).
+function maybeRefreshStoryBar() {
+  if (storyBarLoadPromise || storyRefreshTimer) return;
+  if (storyBarLoadedFor === storyMyId() && Date.now() - storyBarLoadedAt < 30000) return;
+  scheduleStoryBarRefresh();
+}
+
+// ── Realtime: bar + counts update without a refresh ──
+function subscribeStoriesRealtime() {
+  if (!storyBackendReady() || storyRealtimeChannel || typeof supabaseClient.channel !== 'function') return;
+  try {
+    const onEngagement = (payload) => {
+      const row = (payload && (payload.new || payload.old)) || {};
+      const cur = currentStory();
+      if (!storyViewer.open || !cur) return;
+      if (row.story_id && String(row.story_id) !== String(cur.id)) return;
+      loadStoryCounts(cur.id);
+      if (storyViewer.commentsOpen && payload && payload.table === 'story_comments') loadStoryComments(cur.id);
+    };
+    storyRealtimeChannel = supabaseClient.channel('realtime_stories')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stories' }, () => scheduleStoryBarRefresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'story_likes' }, onEngagement)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'story_comments' }, onEngagement)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'story_views' }, onEngagement)
+      .subscribe((status, err) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn('Stories realtime lost:', status, err || '');
+          storyRealtimeChannel = null;
+          setTimeout(subscribeStoriesRealtime, 5000);
+        }
+      });
+  } catch (err) {
+    console.warn('Stories realtime setup warning:', err);
+    storyRealtimeChannel = null;
+  }
+}
+
+// ── Cleanup of expired stories ──
+// 1) cleanup_expired_stories() deletes expired rows (+ their likes,
+//    comments, views) on the server — only expired stories.
+// 2) My own image files that no active story uses and that are
+//    older than 24h are removed through the Storage API (Supabase
+//    does not allow deleting storage files from SQL).
+async function cleanupMyExpiredStories() {
+  const me = storyMyId();
+  if (!storyBackendReady() || storyCleanupDoneFor === me || !storyBarLastOk) return;
+  storyCleanupDoneFor = me;
+  try {
+    if (typeof supabaseClient.rpc === 'function') {
+      const r = await supabaseClient.rpc('cleanup_expired_stories');
+      if (r && r.error) console.warn('Story cleanup note:', r.error.message);
+    }
+    const bucket = supabaseClient.storage && supabaseClient.storage.from('story');
+    if (!bucket || typeof bucket.list !== 'function') return;
+    const ls = await bucket.list(me, { limit: 100 });
+    if (!ls || ls.error || !Array.isArray(ls.data)) return;
+    const activeUrls = new Set(myActiveStories.filter(s => isStoryActive(s)).map(s => String(s.image_url)));
+    const cutoff = Date.now() - STORY_TTL_MS;
+    const stale = ls.data
+      .filter(f => f && f.name && f.id !== null)
+      .filter(f => { const t = Date.parse(f.created_at || f.updated_at || ''); return !isNaN(t) && t < cutoff; })
+      .map(f => me + '/' + f.name)
+      .filter(path => {
+        const pub = bucket.getPublicUrl(path);
+        const url = pub && pub.data && pub.data.publicUrl;
+        return !!url && !activeUrls.has(String(url));
+      });
+    if (stale.length && typeof bucket.remove === 'function') {
+      const rm = await bucket.remove(stale);
+      if (rm && rm.error) console.warn('Story file cleanup note:', rm.error.message);
+    }
+  } catch (e) {
+    console.warn('Story cleanup note:', e && e.message);
+  }
+}
+
+// ── Upload (gallery image → bucket 'story' → stories row) ──
+function onYourStoryTap() {
+  if (myActiveStories.some(s => isStoryActive(s))) { openMyStory(); return; }
+  openStoryPicker();
+}
+function openStoryPicker(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  if (!storyBackendReady()) {
+    showToast(supabaseClient && supabaseClient.isLocalAdapter ? 'Stories need a connection to the server. Try again later.' : 'Sign in to add a story');
+    return;
+  }
+  if (storyViewer.open) pauseStoryTimer();
+  let input = document.getElementById('story-file-input');
+  if (!input) {
+    input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.id = 'story-file-input';
+    input.style.display = 'none';
+    input.addEventListener('change', onStoryFileChosen);
+    document.body.appendChild(input);
+  }
+  if (typeof input.click === 'function') input.click();
+}
+async function onStoryFileChosen(ev) {
+  const input = ev && ev.target;
+  const file = input && input.files && input.files[0];
+  if (input) { try { input.value = ''; } catch (_) {} }
+  if (!file) { if (storyViewer.open) resumeStoryTimer(); return; }
+  const saved = await uploadStoryImage(file);
+  if (storyViewer.open) {
+    if (saved && storyViewer.groups[storyViewer.gi] && storyViewer.groups[storyViewer.gi].own) openMyStory();
+    else resumeStoryTimer();
+  }
+}
+async function storyFileHash(file) {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.subtle && file && typeof file.arrayBuffer === 'function') {
+      const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+      return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (_) {}
+  // Fallback (no WebCrypto): a stable fingerprint of the file.
+  const str = [file && file.name, file && file.size, file && file.lastModified, file && file.type].join('|');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return 'f' + (h >>> 0).toString(16) + '-' + ((file && file.size) || 0);
+}
+function storyExt(file) {
+  const byType = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/heic': 'heic', 'image/heif': 'heif' };
+  const t = String((file && file.type) || '').toLowerCase();
+  if (byType[t]) return byType[t];
+  const m = String((file && file.name) || '').toLowerCase().match(/\.([a-z0-9]{2,5})$/);
+  return m ? m[1] : 'jpg';
+}
+async function uploadStoryImage(file) {
+  if (!file) return null;
+  if (!storyBackendReady()) { showToast('Sign in to add a story'); return null; }
+  if (!/^image\//i.test(String(file.type || ''))) { showToast('Please choose an image for your story'); return null; }
+  if (file.size > STORY_MAX_BYTES) { showToast('Image is too large (max 10 MB)'); return null; }
+  if (storyUploadInFlight) { showToast('Your story is still uploading…'); return null; }
+  storyUploadInFlight = true;
+  const me = storyMyId();
+  try {
+    showToast('Uploading story…');
+    // Same image = same file name (SHA-256 of its bytes), so the
+    // same photo is never uploaded to Storage twice.
+    const path = me + '/' + (await storyFileHash(file)) + '.' + storyExt(file);
+    const bucket = supabaseClient.storage.from('story');
+    const up = await bucket.upload(path, file, { upsert: false, contentType: file.type || 'image/jpeg', cacheControl: '3600' });
+    if (up && up.error && !isStoryDuplicateError(up.error)) {
+      const msg = String(up.error.message || '');
+      throw new Error(/bucket not found/i.test(msg) ? 'story storage is not set up yet' : (msg || 'upload failed'));
+    }
+    const pub = bucket.getPublicUrl(path);
+    const imageUrl = pub && pub.data && pub.data.publicUrl;
+    if (!imageUrl) throw new Error('no image URL');
+    // The same photo already in an active story: no duplicate row.
+    let dupe = myActiveStories.find(s => String(s.image_url) === String(imageUrl) && isStoryActive(s));
+    if (!dupe) {
+      const ex = await supabaseClient.from('stories').select('id,user_id,image_url,username,created_at,expires_at')
+        .eq('user_id', me).eq('image_url', imageUrl).gt('expires_at', new Date().toISOString()).limit(1);
+      if (ex && !ex.error && Array.isArray(ex.data) && ex.data.length) dupe = ex.data[0];
+    }
+    if (dupe) {
+      if (!myActiveStories.some(s => String(s.id) === String(dupe.id))) myActiveStories = [...myActiveStories, dupe];
+      showToast('This photo is already in your story');
+      renderHomeStories();
+      return dupe;
+    }
+    const nowMs = Date.now();
+    const row = {
+      user_id: me,
+      image_url: imageUrl,
+      username: myStoryUsername() || null,
+      created_at: new Date(nowMs).toISOString(),
+      expires_at: new Date(nowMs + STORY_TTL_MS).toISOString()
+    };
+    const ins = await supabaseClient.from('stories').insert(row)
+      .select('id,user_id,image_url,username,created_at,expires_at').single();
+    if (ins && ins.error) throw new Error(ins.error.message);
+    const saved = (ins && ins.data) || row;
+    myActiveStories = [...myActiveStories.filter(s => String(s.id) !== String(saved.id)), saved]
+      .sort((a, b) => storyTime(a) - storyTime(b));
+    showToast('Story added');
+    renderHomeStories();
+    return saved;
+  } catch (e) {
+    showToast('Could not add story: ' + ((e && e.message) || 'try again'));
+    return null;
+  } finally {
+    storyUploadInFlight = false;
+  }
+}
+
+// ── Viewer ──
+function currentStory() {
+  const g = storyViewer.groups[storyViewer.gi];
+  return g && g.stories ? (g.stories[storyViewer.si] || null) : null;
+}
+function ensureStoryViewerEl() {
+  let el = document.getElementById('story-viewer');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'story-viewer';
+    document.body.appendChild(el);
+  }
+  if (el.getAttribute('data-ready') !== '1') {
+    el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = ''
+      + '<div class="sv-stage" id="sv-stage"></div>'
+      + '<div class="sv-tap sv-tap-left" onclick="storyPrev()"></div>'
+      + '<div class="sv-tap sv-tap-right" onclick="storyNext()"></div>'
+      + '<div class="sv-top"><div class="sv-bars" id="sv-bars"></div>'
+      + '<div class="sv-head"><span id="sv-av"></span><div class="sv-user" id="sv-user"></div>'
+      + '<button class="sv-btn" id="sv-add" onclick="openStoryPicker(event)" title="Add to your story" aria-label="Add to your story" style="display:none">' + lucideIcon('plus', 24) + '</button>'
+      + '<button class="sv-btn" onclick="closeStoryViewer()" title="Close" aria-label="Close">' + STORY_ICONS.x + '</button></div></div>'
+      + '<div class="sv-foot">'
+      + '<button class="sv-btn" id="sv-like" onclick="toggleStoryLike()" title="Like">' + lucideIcon('heart', 24) + '<span id="sv-like-n">0</span></button>'
+      + '<button class="sv-btn" onclick="openStoryComments()" title="Comments">' + lucideIcon('message-circle', 24) + '<span id="sv-cm-n">0</span></button>'
+      + '<span class="sv-btn sv-views" title="Views">' + STORY_ICONS.eye + '<span id="sv-view-n">0</span></span>'
+      + '</div>'
+      + '<div class="sv-comments" id="sv-comments">'
+      + '<div class="sv-comments-head"><span>Comments</span><button class="sv-btn" onclick="closeStoryComments()" title="Close" aria-label="Close comments">' + STORY_ICONS.x + '</button></div>'
+      + '<div class="sv-comments-list" id="sv-comments-list"></div>'
+      + '<div class="sv-comments-input"><input id="sv-comment-input" maxlength="300" placeholder="Add a comment…" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addStoryComment();}"><button onclick="addStoryComment()">Post</button></div>'
+      + '</div>';
+    el.setAttribute('data-ready', '1');
+  }
+  return el;
+}
+function openStoryViewerWith(groups, gi) {
+  const list = (groups || []).filter(g => g && g.stories && g.stories.length);
+  if (!list.length) return false;
+  storyViewer.groups = list;
+  storyViewer.gi = Math.max(0, Math.min(gi || 0, list.length - 1));
+  storyViewer.si = 0;
+  storyViewer.elapsed = 0;
+  storyViewer.open = true;
+  storyViewer.commentsOpen = false;
+  const el = ensureStoryViewerEl();
+  el.classList.add('open');
+  el.setAttribute('aria-hidden', 'false');
+  const cm = document.getElementById('sv-comments');
+  if (cm) cm.classList.remove('open');
+  if (typeof pauseAllHomeVideos === 'function') { try { pauseAllHomeVideos(); } catch (_) {} }
+  showCurrentStory();
+  return true;
+}
+function openStoryViewer(userId) {
+  const groups = activeStoryGroups();
+  const gi = groups.findIndex(g => String(g.user_id).toLowerCase() === String(userId || '').toLowerCase());
+  if (gi < 0) { showToast('This story is no longer available'); scheduleStoryBarRefresh(); return; }
+  openStoryViewerWith(groups, gi);
+}
+function openMyStory() {
+  const mine = myActiveStories.filter(s => isStoryActive(s));
+  if (!mine.length) { openStoryPicker(); return; }
+  openStoryViewerWith([{ user_id: storyMyId(), stories: mine, own: true }], 0);
+}
+function closeStoryViewer() {
+  stopStoryTimer();
+  storyViewer.open = false;
+  storyViewer.commentsOpen = false;
+  const el = document.getElementById('story-viewer');
+  if (el) { el.classList.remove('open'); el.setAttribute('aria-hidden', 'true'); }
+  const cm = document.getElementById('sv-comments');
+  if (cm) cm.classList.remove('open');
+  renderHomeStories();
+}
+function showCurrentStory() {
+  const v = storyViewer;
+  if (!v.open) return;
+  const g = v.groups[v.gi];
+  if (!g) { closeStoryViewer(); return; }
+  g.stories = (g.stories || []).filter(s => isStoryActive(s));
+  if (!g.stories.length) {
+    v.groups.splice(v.gi, 1);
+    v.si = 0;
+    if (v.gi >= v.groups.length) { closeStoryViewer(); return; }
+    showCurrentStory();
+    return;
+  }
+  if (v.si >= g.stories.length) v.si = g.stories.length - 1;
+  if (v.si < 0) v.si = 0;
+  const s = g.stories[v.si];
+  stopStoryTimer();
+  v.elapsed = 0;
+  const bars = document.getElementById('sv-bars');
+  if (bars) {
+    bars.innerHTML = g.stories.map((_, i) => '<div class="sv-bar"><div class="sv-bar-fill" id="sv-fill-' + i + '" style="width:' + (i < v.si ? '100%' : '0') + '"></div></div>').join('');
+  }
+  const isOwn = !!g.own || String(g.user_id).toLowerCase() === storyMyId().toLowerCase();
+  const name = isOwn ? 'Your story' : storyGroupName(g);
+  const av = document.getElementById('sv-av');
+  if (av) {
+    const avName = isOwn ? (myStoryUsername() || 'You') : name;
+    const avUrl = isOwn ? (profile.avatar_url || avatarUrlForUserId(g.user_id, avName)) : storyGroupAvatar(g);
+    av.innerHTML = avatarHTML(g.user_id, avName, avUrl, 32);
+    hydrateAvatars(av);
+  }
+  const user = document.getElementById('sv-user');
+  if (user) {
+    const t = s.created_at ? formatRelativeTime(s.created_at) : '';
+    user.innerHTML = escapeHtml(name) + (t ? '<span class="sv-time">' + escapeHtml(t) + '</span>' : '');
+  }
+  const add = document.getElementById('sv-add');
+  if (add) add.style.display = isOwn ? '' : 'none';
+  const stage = document.getElementById('sv-stage');
+  if (stage) {
+    stage.innerHTML = '<img class="sv-img" id="sv-img" alt="">';
+    const img = document.getElementById('sv-img');
+    const sid = String(s.id);
+    if (img) {
+      img.onload = () => { if (currentStory() && String(currentStory().id) === sid) startStoryTimer(); };
+      img.onerror = () => {
+        if (!currentStory() || String(currentStory().id) !== sid) return;
+        stage.innerHTML = '<div class="sv-msg">Story image couldn&rsquo;t load.</div>';
+        startStoryTimer();
+      };
+      img.src = s.image_url;
+    }
+  }
+  renderStoryCounts();
+  loadStoryCounts(s.id);
+  recordStoryView(s);
+}
+function storyFillEl() { return document.getElementById('sv-fill-' + storyViewer.si); }
+function startStoryTimer() {
+  stopStoryTimer();
+  storyViewer.paused = false;
+  storyViewer.startedAt = Date.now();
+  storyViewer.timer = setInterval(() => {
+    if (!storyViewer.open || storyViewer.paused) return;
+    const t = storyViewer.elapsed + (Date.now() - storyViewer.startedAt);
+    const fill = storyFillEl();
+    if (fill) fill.style.width = Math.min(100, (t / STORY_DURATION_MS) * 100) + '%';
+    if (t >= STORY_DURATION_MS) storyNext();
+  }, 50);
+}
+function stopStoryTimer() {
+  if (storyViewer.timer) clearInterval(storyViewer.timer);
+  storyViewer.timer = null;
+}
+function pauseStoryTimer() {
+  if (!storyViewer.timer || storyViewer.paused) return;
+  storyViewer.elapsed += Date.now() - storyViewer.startedAt;
+  storyViewer.paused = true;
+}
+function resumeStoryTimer() {
+  if (!storyViewer.open || storyViewer.commentsOpen) return;
+  if (!storyViewer.timer) { const keep = storyViewer.elapsed; startStoryTimer(); storyViewer.elapsed = keep; return; }
+  storyViewer.startedAt = Date.now();
+  storyViewer.paused = false;
+}
+function storyNext() {
+  const v = storyViewer;
+  const g = v.groups[v.gi];
+  if (!g) { closeStoryViewer(); return; }
+  if (v.si < g.stories.length - 1) v.si++;
+  else if (v.gi < v.groups.length - 1) { v.gi++; v.si = 0; }
+  else { closeStoryViewer(); return; }
+  showCurrentStory();
+}
+function storyPrev() {
+  const v = storyViewer;
+  if (v.si > 0) v.si--;
+  else if (v.gi > 0) { v.gi--; v.si = 0; }
+  showCurrentStory();
+}
+
+// ── Counts, views, likes, comments (all from Supabase) ──
+function renderStoryCounts() {
+  const s = currentStory();
+  if (!storyViewer.open || !s) return;
+  const c = storyCounts.get(String(s.id)) || { likes: 0, comments: 0, views: 0, liked: false };
+  const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = fmtN(n || 0); };
+  set('sv-like-n', c.likes);
+  set('sv-cm-n', c.comments);
+  set('sv-view-n', c.views);
+  const like = document.getElementById('sv-like');
+  if (like) {
+    like.classList.toggle('liked', !!c.liked);
+    like.innerHTML = lucideIcon('heart', 24, !!c.liked) + '<span id="sv-like-n">' + fmtN(c.likes || 0) + '</span>';
+  }
+}
+async function loadStoryCounts(storyId) {
+  if (!storyBackendReady() || !storyId) return null;
+  const id = String(storyId);
+  const me = storyMyId();
+  try {
+    const head = { count: 'exact', head: true };
+    const [l, c, v, mine] = await Promise.all([
+      supabaseClient.from('story_likes').select('id', head).eq('story_id', id),
+      supabaseClient.from('story_comments').select('id', head).eq('story_id', id),
+      supabaseClient.from('story_views').select('id', head).eq('story_id', id),
+      supabaseClient.from('story_likes').select('id').eq('story_id', id).eq('user_id', me).limit(1)
+    ]);
+    const prev = storyCounts.get(id) || { likes: 0, comments: 0, views: 0, liked: false };
+    const next = {
+      likes: (l && !l.error && typeof l.count === 'number') ? l.count : prev.likes,
+      comments: (c && !c.error && typeof c.count === 'number') ? c.count : prev.comments,
+      views: (v && !v.error && typeof v.count === 'number') ? v.count : prev.views,
+      liked: (mine && !mine.error) ? ((mine.data || []).length > 0) : prev.liked
+    };
+    if (!storyLikeInFlight.has(id)) storyCounts.set(id, next);
+    renderStoryCounts();
+    return next;
+  } catch (e) {
+    console.warn('Story counts note:', e && e.message);
+    return null;
+  }
+}
+// One view per person per story, never for your own story.
+async function recordStoryView(s) {
+  if (!s || !s.id || !storyBackendReady()) return false;
+  const me = storyMyId();
+  const id = String(s.id);
+  if (String(s.user_id).toLowerCase() === me.toLowerCase()) return false;
+  if (storyViewedIds.has(id)) return false;
+  storyViewedIds.add(id);
+  try {
+    const ex = await supabaseClient.from('story_views').select('id').eq('story_id', id).eq('viewer_id', me).limit(1);
+    if (ex && !ex.error && Array.isArray(ex.data) && ex.data.length) return false;
+    const { error } = await supabaseClient.from('story_views').insert({ story_id: id, viewer_id: me });
+    if (error) {
+      if (isStoryDuplicateError(error)) return false;
+      storyViewedIds.delete(id);
+      console.warn('Story view note:', error.message);
+      return false;
+    }
+    await loadStoryCounts(id);
+    return true;
+  } catch (e) {
+    storyViewedIds.delete(id);
+    console.warn('Story view note:', e && e.message);
+    return false;
+  }
+}
+async function toggleStoryLike() {
+  const s = currentStory();
+  if (!s) return;
+  if (!storyBackendReady()) { showToast('Sign in to like stories'); return; }
+  const id = String(s.id);
+  const me = storyMyId();
+  if (storyLikeInFlight.has(id)) return; // no double-tap duplicates
+  storyLikeInFlight.add(id);
+  const cur = storyCounts.get(id) || { likes: 0, comments: 0, views: 0, liked: false };
+  const wantLike = !cur.liked;
+  storyCounts.set(id, Object.assign({}, cur, { liked: wantLike, likes: Math.max(0, (cur.likes || 0) + (wantLike ? 1 : -1)) }));
+  renderStoryCounts();
+  try {
+    if (wantLike) {
+      const ex = await supabaseClient.from('story_likes').select('id').eq('story_id', id).eq('user_id', me).limit(1);
+      if (ex && ex.error) throw new Error(ex.error.message);
+      if (!(ex && Array.isArray(ex.data) && ex.data.length)) {
+        const { error } = await supabaseClient.from('story_likes').insert({ story_id: id, user_id: me });
+        if (error && !isStoryDuplicateError(error)) throw new Error(error.message);
+      }
+    } else {
+      const { error } = await supabaseClient.from('story_likes').delete().eq('story_id', id).eq('user_id', me);
+      if (error) throw new Error(error.message);
+    }
+  } catch (e) {
+    storyCounts.set(id, cur);
+    renderStoryCounts();
+    showToast('Could not save like: ' + ((e && e.message) || 'try again'));
+  } finally {
+    storyLikeInFlight.delete(id);
+  }
+  await loadStoryCounts(id);
+}
+function openStoryComments() {
+  const s = currentStory();
+  if (!s) return;
+  pauseStoryTimer();
+  storyViewer.commentsOpen = true;
+  const cm = document.getElementById('sv-comments');
+  if (cm) cm.classList.add('open');
+  loadStoryComments(s.id);
+}
+function closeStoryComments() {
+  storyViewer.commentsOpen = false;
+  const cm = document.getElementById('sv-comments');
+  if (cm) cm.classList.remove('open');
+  resumeStoryTimer();
+}
+async function loadStoryComments(storyId) {
+  const list = document.getElementById('sv-comments-list');
+  if (!storyBackendReady() || !storyId) return [];
+  try {
+    const { data, error } = await supabaseClient.from('story_comments')
+      .select('id,user_id,username,content,created_at')
+      .eq('story_id', String(storyId))
+      .order('created_at', { ascending: true })
+      .limit(100);
+    if (error) throw new Error(error.message);
+    const rows = data || [];
+    if (list) {
+      list.innerHTML = rows.length
+        ? rows.map(r => {
+            const p = authorProfileFor(r.user_id);
+            const who = String((p && p.username) || r.username || authorFallbackHandle(r.user_id)).replace(/^@/, '');
+            return '<div class="sv-comment"><b>' + escapeHtml(who) + '</b>' + escapeHtml(String(r.content || '')) + '</div>';
+          }).join('')
+        : '<div class="sv-comments-empty">No comments yet</div>';
+    }
+    return rows;
+  } catch (e) {
+    if (list) list.innerHTML = '<div class="sv-comments-empty">Comments couldn&rsquo;t load.</div>';
+    console.warn('Story comments note:', e && e.message);
+    return [];
+  }
+}
+async function addStoryComment() {
+  const s = currentStory();
+  const input = document.getElementById('sv-comment-input');
+  if (!s || !input) return false;
+  const text = String(input.value || '').trim();
+  if (!text) return false;
+  if (text.length > 300) { showToast('Comment is too long (max 300)'); return false; }
+  if (!storyBackendReady()) { showToast('Sign in to comment'); return false; }
+  try {
+    const { error } = await supabaseClient.from('story_comments').insert({
+      story_id: String(s.id), user_id: storyMyId(), username: myStoryUsername() || null, content: text
+    });
+    if (error) throw new Error(error.message);
+    input.value = '';
+    await loadStoryComments(s.id);
+    await loadStoryCounts(s.id);
+    return true;
+  } catch (e) {
+    showToast('Could not post comment: ' + ((e && e.message) || 'try again'));
+    return false;
+  }
 }
 
 function homePostCardHTML(v, idx, homePos) {

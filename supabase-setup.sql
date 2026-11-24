@@ -1153,3 +1153,464 @@ CREATE TABLE IF NOT EXISTS public.notification_log (
   CONSTRAINT notification_log_dedupe_key_unique UNIQUE (dedupe_key)
 );
 ALTER TABLE public.notification_log ENABLE ROW LEVEL SECURITY;
+
+-- ========================================================
+-- 13) STORY SYSTEM (public.stories, story_likes,
+--     story_comments, story_views + Storage bucket 'story')
+-- Image stories that disappear after 24 hours. The Story Bar
+-- shows only the people the signed-in user follows (one-way,
+-- from public.followers); names and avatars come from
+-- public.profiles. Reuses followers/profiles — no new copies.
+--
+-- Verified live 2026-11-24 before writing this section:
+--   * the 4 story tables ALREADY EXIST (empty). Column types:
+--     every id / user_id / story_id / viewer_id is UUID,
+--     created_at / expires_at are TIMESTAMPTZ, image_url /
+--     username / content are TEXT.
+--   * story_likes / story_comments / story_views already have
+--     a foreign key story_id -> stories(id).
+--   * the Storage bucket 'story' does NOT exist yet.
+-- So this section is fully idempotent: it creates only what is
+-- missing, checks column types before every foreign key (a
+-- type mismatch is skipped with a NOTICE instead of failing —
+-- the earlier 42804 uuid/text error cannot happen here), and
+-- never deletes posts, profiles, follows or any other data.
+-- The only rows it ever removes are EXPIRED stories (and their
+-- likes/comments/views) inside cleanup_expired_stories().
+-- ========================================================
+
+-- 13.1 Tables (created only if missing; same columns as live)
+CREATE TABLE IF NOT EXISTS public.stories (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL,
+  image_url TEXT NOT NULL,
+  username TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '24 hours')
+);
+CREATE TABLE IF NOT EXISTS public.story_likes (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL,
+  story_id UUID NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS public.story_comments (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL,
+  story_id UUID NOT NULL,
+  username TEXT,
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS public.story_views (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  story_id UUID NOT NULL,
+  viewer_id UUID NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Columns the app uses, added only if an older table lacks them.
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS username TEXT;
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT (now() + INTERVAL '24 hours');
+ALTER TABLE public.story_likes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.story_comments ADD COLUMN IF NOT EXISTS username TEXT;
+ALTER TABLE public.story_comments ADD COLUMN IF NOT EXISTS content TEXT;
+ALTER TABLE public.story_comments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.story_views ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+
+-- 13.2 Defaults (only where the column has the expected type)
+DO $$
+DECLARE
+  r RECORD;
+  v_type TEXT;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+    ('stories','id','uuid','gen_random_uuid()'),
+    ('story_likes','id','uuid','gen_random_uuid()'),
+    ('story_comments','id','uuid','gen_random_uuid()'),
+    ('story_views','id','uuid','gen_random_uuid()'),
+    ('stories','created_at','timestamp with time zone','now()'),
+    ('stories','expires_at','timestamp with time zone','(now() + INTERVAL ''24 hours'')'),
+    ('story_likes','created_at','timestamp with time zone','now()'),
+    ('story_comments','created_at','timestamp with time zone','now()'),
+    ('story_views','created_at','timestamp with time zone','now()')
+  ) AS t(tbl, col, want_type, def)
+  LOOP
+    SELECT format_type(a.atttypid, a.atttypmod) INTO v_type
+      FROM pg_attribute a
+     WHERE a.attrelid = format('public.%I', r.tbl)::regclass
+       AND a.attname = r.col AND a.attnum > 0 AND NOT a.attisdropped;
+    IF v_type = r.want_type THEN
+      EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET DEFAULT %s', r.tbl, r.col, r.def);
+    ELSE
+      RAISE NOTICE 'Story setup: %.% is % (expected %), default left as is', r.tbl, r.col, v_type, r.want_type;
+    END IF;
+  END LOOP;
+END $$;
+
+-- 13.3 stories.id must be unique before anything can reference it.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+     WHERE c.conrelid = 'public.stories'::regclass
+       AND c.contype IN ('p','u') AND a.attname = 'id' AND array_length(c.conkey, 1) = 1
+  ) THEN
+    IF EXISTS (SELECT 1 FROM public.stories WHERE id IS NULL)
+       OR EXISTS (SELECT id FROM public.stories GROUP BY id HAVING count(*) > 1) THEN
+      RAISE NOTICE 'Story setup: stories.id has NULL or duplicate values, primary key not added';
+    ELSIF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.stories'::regclass AND contype = 'p') THEN
+      ALTER TABLE public.stories ADD CONSTRAINT stories_id_unique UNIQUE (id);
+    ELSE
+      ALTER TABLE public.stories ADD CONSTRAINT stories_pkey PRIMARY KEY (id);
+    END IF;
+  END IF;
+END $$;
+
+-- 13.4 Foreign keys (each one only if missing, the column types
+-- match, and no existing row would break it). Story deleted ->
+-- its likes / comments / views go too. User deleted -> their
+-- stories, likes, comments and views go too.
+DO $$
+DECLARE
+  r RECORD;
+  v_col_type TEXT;
+  v_ref_type TEXT;
+  v_orphans BOOLEAN;
+  v_existing TEXT;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+    ('story_likes','story_id','public','stories','id','story_likes_story_id_fkey'),
+    ('story_comments','story_id','public','stories','id','story_comments_story_id_fkey'),
+    ('story_views','story_id','public','stories','id','story_views_story_id_fkey'),
+    ('stories','user_id','auth','users','id','stories_user_id_fkey'),
+    ('story_likes','user_id','auth','users','id','story_likes_user_id_fkey'),
+    ('story_comments','user_id','auth','users','id','story_comments_user_id_fkey'),
+    ('story_views','viewer_id','auth','users','id','story_views_viewer_id_fkey')
+  ) AS t(tbl, col, ref_schema, ref_tbl, ref_col, conname)
+  LOOP
+    BEGIN
+      -- An existing story_id -> stories(id) key without ON DELETE
+      -- CASCADE (the live tables have one) is re-created with the
+      -- same name and CASCADE, so deleting a story never fails on
+      -- its likes/comments/views. No row is changed by this.
+      IF r.ref_tbl = 'stories' THEN
+        SELECT c.conname INTO v_existing
+          FROM pg_constraint c
+          JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+         WHERE c.conrelid = format('public.%I', r.tbl)::regclass
+           AND c.contype = 'f' AND a.attname = r.col
+           AND c.confrelid = 'public.stories'::regclass
+           AND c.confdeltype <> 'c'
+         LIMIT 1;
+        IF v_existing IS NOT NULL THEN
+          EXECUTE format('ALTER TABLE public.%I DROP CONSTRAINT %I', r.tbl, v_existing);
+          EXECUTE format(
+            'ALTER TABLE public.%I ADD CONSTRAINT %I FOREIGN KEY (%I) REFERENCES public.stories(id) ON DELETE CASCADE',
+            r.tbl, v_existing, r.col);
+          v_existing := NULL;
+          CONTINUE;
+        END IF;
+      END IF;
+
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint c
+          JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+         WHERE c.conrelid = format('public.%I', r.tbl)::regclass
+           AND c.contype = 'f' AND a.attname = r.col
+      ) THEN
+        CONTINUE; -- already has a foreign key on this column
+      END IF;
+
+      SELECT format_type(a.atttypid, a.atttypmod) INTO v_col_type
+        FROM pg_attribute a
+       WHERE a.attrelid = format('public.%I', r.tbl)::regclass
+         AND a.attname = r.col AND a.attnum > 0 AND NOT a.attisdropped;
+      SELECT format_type(a.atttypid, a.atttypmod) INTO v_ref_type
+        FROM pg_attribute a
+       WHERE a.attrelid = format('%I.%I', r.ref_schema, r.ref_tbl)::regclass
+         AND a.attname = r.ref_col AND a.attnum > 0 AND NOT a.attisdropped;
+      IF v_col_type IS NULL OR v_col_type IS DISTINCT FROM v_ref_type THEN
+        RAISE NOTICE 'Story setup: %.% is % but %.%.% is %, foreign key skipped',
+          r.tbl, r.col, v_col_type, r.ref_schema, r.ref_tbl, r.ref_col, v_ref_type;
+        CONTINUE;
+      END IF;
+
+      EXECUTE format(
+        'SELECT EXISTS (SELECT 1 FROM public.%I x WHERE x.%I IS NOT NULL AND NOT EXISTS (SELECT 1 FROM %I.%I y WHERE y.%I = x.%I))',
+        r.tbl, r.col, r.ref_schema, r.ref_tbl, r.ref_col, r.col) INTO v_orphans;
+      IF v_orphans THEN
+        RAISE NOTICE 'Story setup: %.% has rows without a matching %.%, foreign key skipped (no rows deleted)',
+          r.tbl, r.col, r.ref_schema, r.ref_tbl;
+        CONTINUE;
+      END IF;
+
+      EXECUTE format(
+        'ALTER TABLE public.%I ADD CONSTRAINT %I FOREIGN KEY (%I) REFERENCES %I.%I(%I) ON DELETE CASCADE',
+        r.tbl, r.conname, r.col, r.ref_schema, r.ref_tbl, r.ref_col);
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Story setup: foreign key %.% skipped: %', r.tbl, r.col, SQLERRM;
+    END;
+  END LOOP;
+END $$;
+
+-- 13.5 One like and one view per user per story (enforced by
+-- the database, not only the app). If duplicate rows already
+-- exist the index is skipped with a NOTICE — nothing is deleted.
+DO $$
+BEGIN
+  BEGIN
+    CREATE UNIQUE INDEX IF NOT EXISTS story_likes_story_user_unique
+      ON public.story_likes (story_id, user_id);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Story setup: unique likes index skipped: %', SQLERRM;
+  END;
+  BEGIN
+    CREATE UNIQUE INDEX IF NOT EXISTS story_views_story_viewer_unique
+      ON public.story_views (story_id, viewer_id);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Story setup: unique views index skipped: %', SQLERRM;
+  END;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'story_comments_content_length') THEN
+    ALTER TABLE public.story_comments
+      ADD CONSTRAINT story_comments_content_length
+      CHECK (char_length(btrim(content)) BETWEEN 1 AND 300) NOT VALID;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_stories_user_expires ON public.stories (user_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_stories_expires ON public.stories (expires_at);
+CREATE INDEX IF NOT EXISTS idx_story_likes_story ON public.story_likes (story_id);
+CREATE INDEX IF NOT EXISTS idx_story_comments_story ON public.story_comments (story_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_story_views_story ON public.story_views (story_id);
+
+-- 13.6 Server-side times: a story always lives exactly 24 hours
+-- from upload, whatever the phone clock says, and its username
+-- comes from public.profiles when the app did not send one.
+CREATE OR REPLACE FUNCTION public.stories_before_insert()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  NEW.created_at := now();
+  NEW.expires_at := now() + INTERVAL '24 hours';
+  IF NEW.username IS NULL OR btrim(NEW.username) = '' THEN
+    SELECT p.username INTO NEW.username
+      FROM public.profiles p
+     WHERE p.user_id::text = NEW.user_id::text
+     LIMIT 1;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_stories_before_insert ON public.stories;
+CREATE TRIGGER trg_stories_before_insert
+  BEFORE INSERT ON public.stories
+  FOR EACH ROW EXECUTE FUNCTION public.stories_before_insert();
+
+-- 13.7 Grants + Row Level Security
+GRANT SELECT, INSERT, DELETE ON public.stories TO authenticated;
+GRANT SELECT, INSERT, DELETE ON public.story_likes TO authenticated;
+GRANT SELECT, INSERT, DELETE ON public.story_comments TO authenticated;
+GRANT SELECT, INSERT ON public.story_views TO authenticated;
+
+ALTER TABLE public.stories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.story_likes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.story_comments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.story_views ENABLE ROW LEVEL SECURITY;
+
+-- stories: signed-in users see active stories; the owner also
+-- sees their own expired rows (so the app can clean them up).
+DROP POLICY IF EXISTS "Active stories are visible to signed-in users" ON public.stories;
+CREATE POLICY "Active stories are visible to signed-in users"
+  ON public.stories FOR SELECT TO authenticated
+  USING (expires_at > now() OR auth.uid()::text = user_id::text);
+DROP POLICY IF EXISTS "Users can add their own stories" ON public.stories;
+CREATE POLICY "Users can add their own stories"
+  ON public.stories FOR INSERT TO authenticated
+  WITH CHECK (auth.uid()::text = user_id::text);
+DROP POLICY IF EXISTS "Users can delete their own stories" ON public.stories;
+CREATE POLICY "Users can delete their own stories"
+  ON public.stories FOR DELETE TO authenticated
+  USING (auth.uid()::text = user_id::text);
+
+-- story_likes: counts are public to signed-in users; you can
+-- only like as yourself, only an active story, and unlike your
+-- own like.
+DROP POLICY IF EXISTS "Story likes are visible to signed-in users" ON public.story_likes;
+CREATE POLICY "Story likes are visible to signed-in users"
+  ON public.story_likes FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "Users can like active stories as themselves" ON public.story_likes;
+CREATE POLICY "Users can like active stories as themselves"
+  ON public.story_likes FOR INSERT TO authenticated
+  WITH CHECK (
+    auth.uid()::text = user_id::text
+    AND EXISTS (SELECT 1 FROM public.stories s WHERE s.id::text = story_id::text AND s.expires_at > now())
+  );
+DROP POLICY IF EXISTS "Users can remove their own story likes" ON public.story_likes;
+CREATE POLICY "Users can remove their own story likes"
+  ON public.story_likes FOR DELETE TO authenticated
+  USING (auth.uid()::text = user_id::text);
+
+-- story_comments
+DROP POLICY IF EXISTS "Story comments are visible to signed-in users" ON public.story_comments;
+CREATE POLICY "Story comments are visible to signed-in users"
+  ON public.story_comments FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "Users can comment on active stories as themselves" ON public.story_comments;
+CREATE POLICY "Users can comment on active stories as themselves"
+  ON public.story_comments FOR INSERT TO authenticated
+  WITH CHECK (
+    auth.uid()::text = user_id::text
+    AND EXISTS (SELECT 1 FROM public.stories s WHERE s.id::text = story_id::text AND s.expires_at > now())
+  );
+DROP POLICY IF EXISTS "Users can delete their own story comments" ON public.story_comments;
+CREATE POLICY "Users can delete their own story comments"
+  ON public.story_comments FOR DELETE TO authenticated
+  USING (auth.uid()::text = user_id::text);
+
+-- story_views: one view per person (unique index above), never
+-- a view of your own story, only as yourself.
+DROP POLICY IF EXISTS "Story views are visible to signed-in users" ON public.story_views;
+CREATE POLICY "Story views are visible to signed-in users"
+  ON public.story_views FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "Users can record their own story views" ON public.story_views;
+CREATE POLICY "Users can record their own story views"
+  ON public.story_views FOR INSERT TO authenticated
+  WITH CHECK (
+    auth.uid()::text = viewer_id::text
+    AND EXISTS (
+      SELECT 1 FROM public.stories s
+       WHERE s.id::text = story_id::text
+         AND s.expires_at > now()
+         AND s.user_id::text <> viewer_id::text
+    )
+  );
+
+-- 13.8 Storage bucket 'story' (public bucket, 10 MB images).
+-- The bucket is public, so story images open by their URL for
+-- everyone without any policy. The policies below only let a
+-- signed-in user list, upload and delete inside their OWN folder
+-- "<user id>/..." (so nobody can list or remove other people's
+-- story files).
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('story', 'story', true)
+ON CONFLICT (id) DO NOTHING;
+
+DO $$
+BEGIN
+  UPDATE storage.buckets
+     SET file_size_limit = 10485760,
+         allowed_mime_types = ARRAY['image/jpeg','image/png','image/webp','image/gif','image/heic','image/heif']
+   WHERE id = 'story';
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'Story setup: bucket limits not set: %', SQLERRM;
+END $$;
+
+DROP POLICY IF EXISTS "Users can list their own story images" ON storage.objects;
+CREATE POLICY "Users can list their own story images"
+  ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'story' AND auth.uid()::text = (storage.foldername(name))[1]);
+DROP POLICY IF EXISTS "Users can upload story images to their own folder" ON storage.objects;
+CREATE POLICY "Users can upload story images to their own folder"
+  ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'story' AND auth.uid()::text = (storage.foldername(name))[1]);
+DROP POLICY IF EXISTS "Users can delete their own story images" ON storage.objects;
+CREATE POLICY "Users can delete their own story images"
+  ON storage.objects FOR DELETE TO authenticated
+  USING (bucket_id = 'story' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+-- 13.9 Cleanup of expired stories.
+-- Deletes ONLY stories whose expires_at has passed, plus their
+-- likes / comments / views (explicitly, so it works even if a
+-- foreign key was skipped above). It never touches posts,
+-- profiles, follows or anything else.
+-- Image files: Supabase blocks deleting storage.objects rows
+-- with SQL on newer projects ("use the Storage API"), so this
+-- function tries it and simply skips the files if refused. The
+-- app itself also removes each owner's expired files through
+-- the Storage API when they open it (index.html,
+-- cleanupMyExpiredStories), which is the reliable path.
+CREATE OR REPLACE FUNCTION public.cleanup_expired_stories()
+RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_ids TEXT[];
+  v_paths TEXT[];
+  v_count integer := 0;
+BEGIN
+  SELECT array_agg(id::text),
+         array_agg(substring(image_url FROM '/object/public/story/(.+)$'))
+    INTO v_ids, v_paths
+    FROM public.stories
+   WHERE expires_at <= now();
+  IF v_ids IS NULL THEN RETURN 0; END IF;
+
+  DELETE FROM public.story_likes WHERE story_id::text = ANY (v_ids);
+  DELETE FROM public.story_comments WHERE story_id::text = ANY (v_ids);
+  DELETE FROM public.story_views WHERE story_id::text = ANY (v_ids);
+  DELETE FROM public.stories WHERE id::text = ANY (v_ids);
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+
+  -- Files: only ones no active story still uses (an image
+  -- uploaded again within 24h re-uses the same file).
+  BEGIN
+    DELETE FROM storage.objects o
+     WHERE o.bucket_id = 'story'
+       AND o.name = ANY (v_paths)
+       AND NOT EXISTS (
+         SELECT 1 FROM public.stories s
+          WHERE s.expires_at > now()
+            AND s.image_url LIKE '%/object/public/story/' || o.name
+       );
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Story cleanup: files left for the app to remove: %', SQLERRM;
+  END;
+  RETURN v_count;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.cleanup_expired_stories() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cleanup_expired_stories() TO authenticated;
+
+-- Hourly cleanup job (only when pg_cron is enabled; otherwise the
+-- app calls cleanup_expired_stories() when it opens).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    BEGIN
+      PERFORM cron.schedule(
+        'cleanup-expired-stories',
+        '15 * * * *',
+        'SELECT public.cleanup_expired_stories();'
+      );
+    EXCEPTION WHEN OTHERS THEN
+      NULL; -- job already exists or scheduling not permitted
+    END;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+-- 13.10 Realtime: Story Bar and counts update without refresh.
+DO $$
+DECLARE
+  t TEXT;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    RAISE NOTICE 'Story setup: publication supabase_realtime not found, realtime skipped';
+    RETURN;
+  END IF;
+  FOREACH t IN ARRAY ARRAY['stories','story_likes','story_comments','story_views'] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+       WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = t
+    ) THEN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', t);
+    END IF;
+  END LOOP;
+END $$;
