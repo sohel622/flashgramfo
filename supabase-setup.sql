@@ -1614,3 +1614,246 @@ BEGIN
     END IF;
   END LOOP;
 END $$;
+
+-- ========================================================
+-- 14) STORY 18-HOUR EXPIRY + AUTOMATIC COMPLETE DELETION
+-- Run AFTER section 13 (the whole file in order does that).
+--
+-- * A story now lives exactly 18 hours: the database sets
+--   expires_at = created_at + 18 hours on every new story
+--   (server time; the phone clock is ignored). At 18:00:00 the
+--   story is hidden everywhere (the section 13 RLS rule only
+--   shows rows with expires_at > now()).
+-- * Within about a minute after that, the Edge Function
+--   `cleanup-expired-stories` (supabase/functions/...), called
+--   every minute by pg_cron + pg_net, deletes it completely:
+--     1. the image file in Storage bucket 'story' FIRST
+--        (stories.image_path), through the Storage API;
+--     2. only after the file is confirmed gone: its likes,
+--        comments, views and the story row itself.
+--   A failed file delete keeps the row (still hidden), records
+--   the error in cleanup_attempts / cleanup_last_error and is
+--   retried on the next runs (short back-off, never given up),
+--   so no image file is ever left without its row.
+--   A final sweep removes any file in 'story' that is older
+--   than 18 hours and that no story row refers to (orphans).
+-- * Active stories are never touched: every delete is limited
+--   to expires_at <= now().
+-- * Nothing else is changed: posts, profiles, follows and all
+--   other data are left exactly as they are.
+--
+-- Secrets: the cron call sends the header x-cleanup-secret,
+-- read from Supabase Vault (name 'story_cleanup_secret'). The
+-- secret is NOT in this file — create it once with
+--   SELECT vault.create_secret('<random secret>', 'story_cleanup_secret');
+-- and set the same value as the Edge Function secret
+-- STORY_CLEANUP_SECRET. Until the Vault secret exists the job
+-- simply does nothing.
+-- ========================================================
+
+-- 14.1 Columns (only added when missing)
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS image_path TEXT;
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS cleanup_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS cleanup_last_error TEXT;
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS cleanup_last_attempt_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_stories_expires_at ON public.stories (expires_at);
+CREATE INDEX IF NOT EXISTS idx_stories_image_path ON public.stories (image_path);
+
+DO $$
+BEGIN
+  IF (SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a
+       WHERE a.attrelid = 'public.stories'::regclass AND a.attname = 'expires_at'
+         AND a.attnum > 0 AND NOT a.attisdropped) = 'timestamp with time zone' THEN
+    ALTER TABLE public.stories ALTER COLUMN expires_at SET DEFAULT (now() + INTERVAL '18 hours');
+  ELSE
+    RAISE NOTICE 'Story 18h: stories.expires_at is not timestamptz, default left as is';
+  END IF;
+END $$;
+
+-- 14.2 Storage path of a story image, taken from its public URL
+-- (".../storage/v1/object/public/story/<uid>/<file>"). Only a
+-- file inside the story owner's OWN folder counts, so a story
+-- row can never make the cleanup delete someone else's file.
+CREATE OR REPLACE FUNCTION public.story_image_path_from_url(p_url TEXT, p_owner TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+  v_path TEXT;
+BEGIN
+  IF p_url IS NULL OR p_owner IS NULL THEN RETURN NULL; END IF;
+  v_path := substring(p_url FROM '/object/public/story/([^?#]+)');
+  IF v_path IS NULL OR v_path = '' OR position('..' IN v_path) > 0 THEN RETURN NULL; END IF;
+  IF lower(split_part(v_path, '/', 1)) <> lower(p_owner) THEN RETURN NULL; END IF;
+  RETURN v_path;
+END;
+$$;
+
+-- 14.3 New stories: 18 hours, server time; image_path is always
+-- derived from image_url (a value sent by the app is ignored).
+CREATE OR REPLACE FUNCTION public.stories_before_insert()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  NEW.created_at := now();
+  NEW.expires_at := NEW.created_at + INTERVAL '18 hours';
+  NEW.image_path := public.story_image_path_from_url(NEW.image_url, NEW.user_id::text);
+  NEW.cleanup_attempts := 0;
+  NEW.cleanup_last_error := NULL;
+  NEW.cleanup_last_attempt_at := NULL;
+  IF NEW.username IS NULL OR btrim(NEW.username) = '' THEN
+    SELECT p.username INTO NEW.username
+      FROM public.profiles p
+     WHERE p.user_id::text = NEW.user_id::text
+     LIMIT 1;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_stories_before_insert ON public.stories;
+CREATE TRIGGER trg_stories_before_insert
+  BEFORE INSERT ON public.stories
+  FOR EACH ROW EXECUTE FUNCTION public.stories_before_insert();
+
+-- 14.4 Stories that already exist:
+--  * image_path filled from image_url where missing;
+--  * expiry moved to created_at + 18 hours where it was later
+--    (so a story posted under the old 24-hour rule ends at its
+--    18-hour mark; a story already older than 18 hours becomes
+--    expired now and is cleaned up by the next run). An expiry
+--    that is already earlier is never moved.
+UPDATE public.stories
+   SET image_path = public.story_image_path_from_url(image_url, user_id::text)
+ WHERE image_path IS NULL
+   AND public.story_image_path_from_url(image_url, user_id::text) IS NOT NULL;
+UPDATE public.stories
+   SET expires_at = created_at + INTERVAL '18 hours'
+ WHERE created_at IS NOT NULL
+   AND (expires_at IS NULL OR expires_at > created_at + INTERVAL '18 hours');
+
+-- 14.5 cleanup_expired_stories() (the app calls it on open) is
+-- made SAFE: it no longer deletes a story row while that row's
+-- image file still exists, so it can never leave an orphaned
+-- file. It removes only expired rows whose file is already gone
+-- (or has no file of its own, or whose file another ACTIVE story
+-- still uses). Files themselves are deleted only by the Edge
+-- Function through the Storage API.
+CREATE OR REPLACE FUNCTION public.cleanup_expired_stories()
+RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_ids TEXT[];
+  v_count integer := 0;
+BEGIN
+  BEGIN
+    SELECT array_agg(s.id::text) INTO v_ids
+      FROM public.stories s
+     WHERE s.expires_at <= now()
+       AND (
+         s.image_path IS NULL
+         OR NOT EXISTS (SELECT 1 FROM storage.objects o
+                         WHERE o.bucket_id = 'story' AND o.name = s.image_path)
+         OR EXISTS (SELECT 1 FROM public.stories a
+                     WHERE a.image_path = s.image_path AND a.expires_at > now())
+       );
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Story cleanup: could not check storage, nothing deleted: %', SQLERRM;
+    RETURN 0;
+  END;
+  IF v_ids IS NULL THEN RETURN 0; END IF;
+
+  DELETE FROM public.story_likes WHERE story_id::text = ANY (v_ids);
+  DELETE FROM public.story_comments WHERE story_id::text = ANY (v_ids);
+  DELETE FROM public.story_views WHERE story_id::text = ANY (v_ids);
+  DELETE FROM public.stories WHERE id::text = ANY (v_ids) AND expires_at <= now();
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.cleanup_expired_stories() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cleanup_expired_stories() TO authenticated;
+
+-- 14.6 Orphan files for the Edge Function: files in 'story'
+-- older than p_min_age_hours that NO story row refers to (not
+-- by image_path and not by image_url). Service role only.
+CREATE OR REPLACE FUNCTION public.story_orphan_files(p_min_age_hours integer DEFAULT 18, p_limit integer DEFAULT 500)
+RETURNS SETOF TEXT
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT o.name
+    FROM storage.objects o
+   WHERE o.bucket_id = 'story'
+     AND o.name NOT LIKE '%.emptyFolderPlaceholder'
+     AND o.created_at < now() - make_interval(hours => GREATEST(p_min_age_hours, 18))
+     AND NOT EXISTS (SELECT 1 FROM public.stories s WHERE s.image_path = o.name)
+     AND NOT EXISTS (SELECT 1 FROM public.stories s
+                      WHERE s.image_url LIKE '%/object/public/story/' || o.name)
+   ORDER BY o.created_at
+   LIMIT LEAST(GREATEST(p_limit, 1), 1000);
+$$;
+REVOKE ALL ON FUNCTION public.story_orphan_files(integer, integer) FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE ALL ON FUNCTION public.story_orphan_files(integer, integer) FROM anon;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE ALL ON FUNCTION public.story_orphan_files(integer, integer) FROM authenticated;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    GRANT EXECUTE ON FUNCTION public.story_orphan_files(integer, integer) TO service_role;
+  END IF;
+END $$;
+
+-- 14.7 Every minute: pg_cron calls the Edge Function through
+-- pg_net. The old hourly SQL job from section 13 is removed so
+-- only one cleanup runs. If pg_cron / pg_net cannot be enabled
+-- here, a NOTICE says so (enable them in Database > Extensions
+-- and run this section again).
+DO $$
+BEGIN
+  BEGIN
+    CREATE EXTENSION IF NOT EXISTS pg_net;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Story 18h: pg_net could not be enabled here: %', SQLERRM;
+  END;
+  BEGIN
+    CREATE EXTENSION IF NOT EXISTS pg_cron;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Story 18h: pg_cron could not be enabled here: %', SQLERRM;
+  END;
+END $$;
+
+DO $$
+DECLARE
+  v_job TEXT;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    RAISE NOTICE 'Story 18h: pg_cron is not enabled, cleanup job NOT scheduled';
+    RETURN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net') THEN
+    RAISE NOTICE 'Story 18h: pg_net is not enabled, cleanup job NOT scheduled';
+    RETURN;
+  END IF;
+  FOR v_job IN SELECT jobname FROM cron.job
+                WHERE jobname IN ('cleanup-expired-stories', 'story-cleanup-every-minute') LOOP
+    PERFORM cron.unschedule(v_job);
+  END LOOP;
+  PERFORM cron.schedule(
+    'story-cleanup-every-minute',
+    '* * * * *',
+    $cmd$
+    SELECT net.http_post(
+      url := 'https://gxoajbncfpwhisehvbcf.supabase.co/functions/v1/cleanup-expired-stories',
+      headers := jsonb_strip_nulls(jsonb_build_object(
+        'Content-Type', 'application/json',
+        'x-cleanup-secret', (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'story_cleanup_secret' LIMIT 1),
+        'Authorization', (SELECT 'Bearer ' || decrypted_secret FROM vault.decrypted_secrets WHERE name = 'story_cleanup_anon_key' LIMIT 1)
+      )),
+      body := '{}'::jsonb,
+      timeout_milliseconds := 55000
+    )
+    WHERE EXISTS (SELECT 1 FROM vault.decrypted_secrets WHERE name = 'story_cleanup_secret');
+    $cmd$
+  );
+END $$;

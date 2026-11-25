@@ -13081,7 +13081,7 @@ function renderHomeStories() {
     + '<span class="home-story-ring"><span class="home-story-av">' + myAv + '</span>'
     + '<span class="home-story-add" onclick="openStoryPicker(event)">' + lucideIcon('plus', 12) + '</span></span>'
     + '<span class="home-story-name">Your story</span></button>';
-  // Only people you follow who have an active (< 24h) story; never you.
+  // Only people you follow who have an active (< 18h) story; never you.
   const groups = activeStoryGroups();
   if (storyBarLoading && groups.length === 0 && storyBarLoadedFor !== me) {
     for (let i = 0; i < 4; i++) {
@@ -13113,14 +13113,14 @@ function openCreatorStory(userId) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  STORY SYSTEM — image stories that disappear after 24 hours.
+//  STORY SYSTEM — image stories that disappear after 18 hours.
 //  Supabase: public.stories / story_likes / story_comments /
 //  story_views + Storage bucket 'story' (supabase-setup.sql §13).
 //  Story bar = people the signed-in user follows (one-way, from
 //  public.followers), never the user themself; names and avatars
 //  from public.profiles. State is declared next to `creators`.
 // ═══════════════════════════════════════════════════════════════
-const STORY_TTL_MS = 24 * 60 * 60 * 1000;
+const STORY_TTL_MS = 18 * 60 * 60 * 1000;
 const STORY_DURATION_MS = 5000;
 const STORY_MAX_BYTES = 10 * 1024 * 1024;
 const STORY_ICONS = {
@@ -13139,7 +13139,7 @@ function storyTime(s) {
   const t = s ? Date.parse(s.created_at || '') : NaN;
   return isNaN(t) ? 0 : t;
 }
-// Active = expires_at still in the future (created_at + 24h when a
+// Active = expires_at still in the future (created_at + 18h when a
 // row has no expires_at). Expired stories are hidden everywhere.
 function isStoryActive(s, nowMs) {
   if (!s) return false;
@@ -13297,9 +13297,11 @@ function subscribeStoriesRealtime() {
 
 // ── Cleanup of expired stories ──
 // 1) cleanup_expired_stories() deletes expired rows (+ their likes,
-//    comments, views) on the server — only expired stories.
+//    comments, views) on the server — only expired stories whose
+//    image file is already gone (files are removed first by the
+//    Edge Function cleanup-expired-stories, every minute).
 // 2) My own image files that no active story uses and that are
-//    older than 24h are removed through the Storage API (Supabase
+//    older than 18h are removed through the Storage API (Supabase
 //    does not allow deleting storage files from SQL).
 async function cleanupMyExpiredStories() {
   const me = storyMyId();
