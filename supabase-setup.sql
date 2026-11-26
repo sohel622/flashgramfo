@@ -1857,3 +1857,20 @@ BEGIN
     $cmd$
   );
 END $$;
+
+-- ========================================================
+-- 15) VIDEO STORIES (sharing a feed video directly to Story)
+-- Safe, idempotent additions to public.stories so users can
+-- share a viewed video/post directly to their story without
+-- downloading or re-uploading the video file, preserving the
+-- original creator mention, post reference, and duration.
+-- ========================================================
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS story_type TEXT NOT NULL DEFAULT 'image';
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS video_url TEXT;
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS source_post_id TEXT;
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS source_user_id UUID;
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS source_username TEXT;
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS source_display_name TEXT;
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS duration_seconds NUMERIC;
+CREATE INDEX IF NOT EXISTS idx_stories_source_post_id ON public.stories (source_post_id);
+

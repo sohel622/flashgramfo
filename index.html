@@ -365,28 +365,60 @@
       justify-content: center;
       overflow: hidden;
     }
-    .sv-img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+    .sv-img, .sv-video { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
     .sv-msg { font-size: 14px; color: rgba(255,255,255,0.75); text-align: center; padding: 0 24px; }
     .sv-top {
       position: absolute;
       left: 0; right: 0; top: 0;
       padding: 10px 10px 18px;
-      background: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0));
+      background: linear-gradient(rgba(0,0,0,0.62), rgba(0,0,0,0));
       z-index: 3;
     }
     .sv-bars { display: flex; gap: 4px; }
     .sv-bar { flex: 1; height: 2.5px; border-radius: 2px; background: rgba(255,255,255,0.35); overflow: hidden; }
     .sv-bar-fill { height: 100%; width: 0; background: #fff; }
-    .sv-head { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-    .sv-head .av { flex: 0 0 auto; }
-    .sv-user { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .sv-time { font-weight: 400; color: rgba(255,255,255,0.7); margin-left: 6px; font-size: 13px; }
+    .sv-head { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; }
+    .sv-head .av { flex: 0 0 auto; margin-top: 1px; }
+    .sv-user-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    .sv-user { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 14px; font-weight: 700; line-height: 1.25; }
+    .sv-user-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sv-time { font-weight: 400; color: rgba(255,255,255,0.74); font-size: 12.5px; flex: 0 0 auto; white-space: nowrap; }
+    .sv-dur {
+      font-weight: 600;
+      color: rgba(255,255,255,0.92);
+      background: rgba(255,255,255,0.16);
+      border-radius: 999px;
+      padding: 1px 7px;
+      font-size: 11px;
+      line-height: 1.45;
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+    .sv-mention {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      align-self: flex-start;
+      max-width: 100%;
+      padding: 3px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.22);
+      background: rgba(0,0,0,0.45);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.3;
+      cursor: pointer;
+    }
+    .sv-mention svg { width: 13px; height: 13px; flex: 0 0 auto; opacity: 0.9; }
+    .sv-mention-handle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sv-mention-sub { font-weight: 400; color: rgba(255,255,255,0.74); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sv-btn {
       background: none; border: none; color: #fff; cursor: pointer; padding: 6px;
       display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 13px;
     }
     .sv-btn svg { width: 24px; height: 24px; }
-    .sv-tap { position: absolute; top: 70px; bottom: 70px; width: 35%; z-index: 2; }
+    .sv-tap { position: absolute; top: 88px; bottom: 70px; width: 35%; z-index: 2; }
     .sv-tap-left { left: 0; }
     .sv-tap-right { right: 0; width: 65%; }
     .sv-foot {
@@ -3868,7 +3900,7 @@
       <div class="share-item" onclick="shareAct('native')"><div class="share-icon-wrap"><span class="material-symbols-rounded">share</span></div><div class="share-item-label">Share To…</div></div>
       <div class="share-item" onclick="shareAct('whatsapp')"><div class="share-icon-wrap"><span class="material-symbols-rounded">chat</span></div><div class="share-item-label">WhatsApp</div></div>
       <div class="share-item" onclick="shareAct('sms')"><div class="share-icon-wrap"><span class="material-symbols-rounded">sms</span></div><div class="share-item-label">Message</div></div>
-      <div class="share-item" onclick="shareAct('email')"><div class="share-icon-wrap"><span class="material-symbols-rounded">mail</span></div><div class="share-item-label">Email</div></div>
+      <div class="share-item" onclick="shareAct('story')"><div class="share-icon-wrap"><span class="material-symbols-rounded">story</span></div><div class="share-item-label">Story</div></div>
     </div>
     <div class="share-link-row">
       <span class="share-link-url" id="shareUrl">reelflow.app/v/...</span>
@@ -4269,6 +4301,7 @@ const P={
   chat:'<path d="M4 5h16v11H9l-5 4z"/>',
   sms:'<path d="M4 5h16v11H9l-5 4z"/><path d="M8 10.5h.01M12 10.5h.01M16 10.5h.01"/>',
   mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 7 9-7"/>',
+  story:'<circle cx="12" cy="12" r="9"/><path d="M12 8.5v7M8.5 12h7"/>',
   more_horiz:'<g '+D+'><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></g>',
   favorite:'<path d="M12 21s-8-5.5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 5.5-8 11-8 11z"/>',
   chat_bubble:'<path d="M4 4h16v13H8l-4 4z"/>',
@@ -4607,10 +4640,12 @@ let storyRefreshTimer = null;
 let storyRealtimeChannel = null;
 let storyCleanupDoneFor = null;
 let storyUploadInFlight = false;
+let storyShareInFlight = false;
+let storyRichColsSupported = true;
 const storyCounts = new Map(); // story id -> { likes, comments, views, liked }
 const storyViewedIds = new Set();
 const storyLikeInFlight = new Set();
-const storyViewer = { open: false, groups: [], gi: 0, si: 0, timer: null, startedAt: 0, elapsed: 0, paused: false, commentsOpen: false };
+const storyViewer = { open: false, groups: [], gi: 0, si: 0, timer: null, startedAt: 0, elapsed: 0, paused: false, commentsOpen: false, durationMs: 5000, isVideo: false };
 let isLoadingHomeFeed = true;
 let isLoadingProfileVideos = true;
 
@@ -11264,9 +11299,35 @@ function openShare(id) {
   pauseAllHomeVideos();
 }
 
+function resumeActiveHomeTheatreVideo() {
+  if (typeof homeTheatreIsOpen === 'undefined' || !homeTheatreIsOpen) return;
+  if (typeof storyViewer !== 'undefined' && storyViewer && storyViewer.open) return;
+  const ht = typeof homeTheatreVideo === 'function' ? homeTheatreVideo() : null;
+  if (!ht || (ht.dataset && ht.dataset.htManualPaused)) return;
+  ht.muted = !!window._muted;
+  const p = ht.play();
+  if (p && p.catch) p.catch(() => { ht.muted = true; ht.play().catch(() => {}); });
+}
+
 function shareAct(type) {
   document.getElementById('share-modal').classList.remove('open');
+  if (type === 'story') {
+    const shareId = window._shareId;
+    const v = videos.find(x => String(x.id) === String(shareId));
+    if (v) {
+      recordFeedEvent('share', v);
+      v.shares = (v.shares || 0) + 1;
+      const shc = document.getElementById('shc-' + v.id);
+      if (shc) shc.textContent = fmtC(v.shares);
+      try { if (!v.isSeed) dbPut('videos', v); } catch(_){}
+    }
+    resumeActiveFeedVideo();
+    resumeActiveHomeTheatreVideo();
+    shareVideoToStory(shareId);
+    return;
+  }
   resumeActiveFeedVideo();
+  resumeActiveHomeTheatreVideo();
   const v = videos.find(x => x.id === window._shareId);
   if (v) {
     recordFeedEvent('share', v);
@@ -13128,6 +13189,132 @@ const STORY_ICONS = {
   eye: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>'
 };
 
+const STORY_BASE_COLS = 'id,user_id,image_url,username,created_at,expires_at';
+const STORY_ALL_COLS = 'id,user_id,image_url,username,created_at,expires_at,story_type,video_url,source_post_id,source_user_id,source_username,source_display_name,duration_seconds';
+
+function isMissingStoryColError(err) {
+  if (!err) return false;
+  const code = String(err.code || '');
+  const msg = String(err.message || err.details || '');
+  return code === '42703' || code === 'PGRST204' || /column .* does not exist|could not find .* column/i.test(msg);
+}
+function isStoryUuid(val) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || '').trim());
+}
+function encodeStoryVideoHashUrl(baseUrl, meta) {
+  const cleanBase = String(baseUrl || '').split('#')[0] || '';
+  try {
+    const payload = {
+      t: 'v',
+      v: meta.videoUrl || '',
+      pid: meta.sourcePostId || '',
+      suid: meta.sourceUserId || '',
+      su: meta.sourceUsername || '',
+      sn: meta.sourceDisplayName || '',
+      d: (typeof meta.durationSeconds === 'number' && isFinite(meta.durationSeconds) && meta.durationSeconds > 0)
+        ? Math.round(meta.durationSeconds * 10) / 10 : 0
+    };
+    const json = JSON.stringify(payload);
+    const b64 = btoa(unescape(encodeURIComponent(json))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return cleanBase + '#rfv=' + b64;
+  } catch (_) {
+    return cleanBase;
+  }
+}
+function decodeStoryRow(s) {
+  const out = {
+    isVideo: false,
+    videoUrl: '',
+    posterUrl: '',
+    sourcePostId: '',
+    sourceUserId: '',
+    sourceUsername: '',
+    sourceDisplayName: '',
+    durationSeconds: 0
+  };
+  if (!s) return out;
+  const rawImg = String(s.image_url || '');
+  const hashIdx = rawImg.indexOf('#rfv=');
+  const cleanImg = hashIdx >= 0 ? rawImg.slice(0, hashIdx) : rawImg;
+  if (hashIdx >= 0) {
+    try {
+      let b64 = rawImg.slice(hashIdx + 5).replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      const decoded = JSON.parse(decodeURIComponent(escape(atob(b64))));
+      if (decoded && decoded.t === 'v') {
+        out.isVideo = true;
+        out.videoUrl = decoded.v || '';
+        out.sourcePostId = decoded.pid || '';
+        out.sourceUserId = decoded.suid || '';
+        out.sourceUsername = decoded.su || '';
+        out.sourceDisplayName = decoded.sn || '';
+        out.durationSeconds = Number(decoded.d) || 0;
+      }
+    } catch (_) {}
+  }
+  if (s.story_type === 'video' || s.video_url) {
+    out.isVideo = true;
+    if (s.video_url) out.videoUrl = String(s.video_url);
+    if (s.source_post_id) out.sourcePostId = String(s.source_post_id);
+    if (s.source_user_id) out.sourceUserId = String(s.source_user_id);
+    if (s.source_username) out.sourceUsername = String(s.source_username).replace(/^@/, '');
+    if (s.source_display_name) out.sourceDisplayName = String(s.source_display_name);
+    if (s.duration_seconds !== null && s.duration_seconds !== undefined && !isNaN(Number(s.duration_seconds))) {
+      out.durationSeconds = Number(s.duration_seconds);
+    }
+  }
+  if (out.isVideo) {
+    out.posterUrl = isImageUrl(cleanImg) ? cleanImg : '';
+  } else {
+    out.posterUrl = cleanImg;
+  }
+  return out;
+}
+function storyVideoPosterCandidate(v, videoUrl) {
+  const poster = videoPosterFor(v);
+  if (poster) return poster;
+  const raw = String(videoUrl || '');
+  if (raw.indexOf('res.cloudinary.com') !== -1 && raw.indexOf('/video/upload/') !== -1) {
+    return raw.replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
+  }
+  return raw;
+}
+function resolveVideoDurationSeconds(v) {
+  if (!v) return 0;
+  const direct = Number(v.duration_seconds || v.duration || 0);
+  if (isFinite(direct) && direct > 0) return Math.round(direct * 10) / 10;
+  try {
+    const id = String(v.id || '');
+    const candidates = [];
+    const hv = document.getElementById('hv-' + id);
+    if (hv) candidates.push(hv);
+    if (typeof homeTheatreScroller === 'function') {
+      const sc = homeTheatreScroller();
+      if (sc) {
+        sc.querySelectorAll('.ht-slide').forEach(sl => {
+          if (sl && sl.dataset && String(sl.dataset.postId || '') === id) {
+            const vid = sl.querySelector('video');
+            if (vid) candidates.push(vid);
+          }
+        });
+      }
+    }
+    if (typeof feedEl !== 'undefined' && feedEl) {
+      const slideIdx = videos.findIndex(x => x && String(x.id) === id);
+      if (slideIdx >= 0 && feedEl.children && feedEl.children[slideIdx]) {
+        const vid = feedEl.children[slideIdx].querySelector('video');
+        if (vid) candidates.push(vid);
+      }
+    }
+    for (const el of candidates) {
+      if (el && typeof el.duration === 'number' && isFinite(el.duration) && el.duration > 0) {
+        return Math.round(el.duration * 10) / 10;
+      }
+    }
+  } catch (_) {}
+  return 0;
+}
+
 function storyMyId() {
   return (currentAuthUser && currentAuthUser.id) ? String(currentAuthUser.id) : '';
 }
@@ -13158,7 +13345,7 @@ function buildStoryGroups(stories, followedIds, myId, nowMs) {
   const follow = new Set((followedIds || []).map(x => String(x).toLowerCase()));
   const map = new Map();
   (stories || []).forEach(s => {
-    if (!s || !s.id || !s.user_id || !s.image_url) return;
+    if (!s || !s.id || !s.user_id || (!s.image_url && !s.video_url)) return;
     const uid = String(s.user_id).toLowerCase();
     if (!uid || uid === me || !follow.has(uid) || !isStoryActive(s, nowMs)) return;
     if (!map.has(uid)) map.set(uid, { user_id: String(s.user_id), stories: [] });
@@ -13224,18 +13411,32 @@ async function loadStoryBar() {
       }
       followed = [...new Set(followed)].filter(id => id.toLowerCase() !== me.toLowerCase());
       const ids = [...new Set([...followed, me])];
-      const sr = await supabaseClient.from('stories')
-        .select('id,user_id,image_url,username,created_at,expires_at')
+      const cols = storyRichColsSupported ? STORY_ALL_COLS : STORY_BASE_COLS;
+      let sr = await supabaseClient.from('stories')
+        .select(cols)
         .in('user_id', ids)
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: true });
+      if (sr && sr.error && storyRichColsSupported && isMissingStoryColError(sr.error)) {
+        storyRichColsSupported = false;
+        sr = await supabaseClient.from('stories')
+          .select(STORY_BASE_COLS)
+          .in('user_id', ids)
+          .gt('expires_at', new Date().toISOString())
+          .order('created_at', { ascending: true });
+      }
       if (sr && sr.error) throw new Error(sr.error.message);
       const rows = (sr && sr.data) || [];
       myActiveStories = rows
         .filter(s => String(s.user_id).toLowerCase() === me.toLowerCase() && isStoryActive(s))
         .sort((a, b) => storyTime(a) - storyTime(b));
       storyGroups = buildStoryGroups(rows, followed, me);
-      if (storyGroups.length) await loadAuthorProfiles(storyGroups.map(g => g.user_id));
+      const extraUids = new Set(storyGroups.map(g => g.user_id));
+      rows.forEach(r => {
+        const meta = decodeStoryRow(r);
+        if (meta && meta.sourceUserId) extraUids.add(meta.sourceUserId);
+      });
+      if (extraUids.size) await loadAuthorProfiles([...extraUids]);
       storyBarLastOk = true;
     } catch (e) {
       storyBarLastOk = false;
@@ -13451,10 +13652,127 @@ async function uploadStoryImage(file) {
   }
 }
 
+// ── Share existing video directly to Story (no video download) ──
+async function shareVideoToStory(postId) {
+  if (isCurrentUserBanned()) { showToast('Your account is suspended.'); return null; }
+  if (!postId) { showToast('No video selected'); return null; }
+  if (!storyBackendReady()) {
+    showToast(supabaseClient && supabaseClient.isLocalAdapter ? 'Stories need a connection to the server. Try again later.' : 'Sign in to share to your story');
+    return null;
+  }
+  const v = videos.find(x => x && String(x.id) === String(postId));
+  if (!v) { showToast('Video not found'); return null; }
+  const videoUrl = bestVideoSrc(v) || v.videoUrl || '';
+  if (!videoUrl || String(videoUrl).indexOf('blob:') === 0) {
+    showToast('Wait for video upload to finish before sharing to story');
+    return null;
+  }
+  if (storyShareInFlight) { showToast('Sharing to your story…'); return null; }
+  storyShareInFlight = true;
+  const me = storyMyId();
+  try {
+    const existing = myActiveStories.find(s => {
+      if (!isStoryActive(s)) return false;
+      const m = decodeStoryRow(s);
+      return m.isVideo && ((m.sourcePostId && String(m.sourcePostId) === String(v.id)) || (m.videoUrl && m.videoUrl === videoUrl));
+    });
+    if (existing) {
+      showToast('Already shared to your story');
+      return existing;
+    }
+    const creatorUid = v.user_id ? String(v.user_id) : (v.userId ? String(v.userId) : '');
+    const author = creatorUid ? authorProfileFor(creatorUid) : null;
+    const creatorHandle = String((author && author.username) || v.username || v.handle || (creatorUid ? authorFallbackHandle(creatorUid) : '')).replace(/^@/, '');
+    const creatorDisplayName = String((author && (author.display_name || author.full_name)) || v.userDisplayName || v.user || '').trim();
+    const durationSec = resolveVideoDurationSeconds(v);
+    const posterBase = storyVideoPosterCandidate(v, videoUrl);
+    const fallbackUrl = encodeStoryVideoHashUrl(posterBase, {
+      videoUrl,
+      sourcePostId: String(v.id),
+      sourceUserId: creatorUid,
+      sourceUsername: creatorHandle,
+      sourceDisplayName: creatorDisplayName,
+      durationSeconds: durationSec
+    });
+    const nowMs = Date.now();
+    const baseRow = {
+      user_id: me,
+      image_url: fallbackUrl,
+      username: myStoryUsername() || null,
+      created_at: new Date(nowMs).toISOString(),
+      expires_at: new Date(nowMs + STORY_TTL_MS).toISOString()
+    };
+    const richRow = Object.assign({}, baseRow, {
+      image_url: posterBase || videoUrl,
+      story_type: 'video',
+      video_url: videoUrl,
+      source_post_id: String(v.id),
+      source_user_id: isStoryUuid(creatorUid) ? creatorUid : null,
+      source_username: creatorHandle || null,
+      source_display_name: creatorDisplayName || null,
+      duration_seconds: durationSec > 0 ? durationSec : null
+    });
+    let ins = null;
+    if (storyRichColsSupported) {
+      ins = await supabaseClient.from('stories').insert(richRow).select(STORY_ALL_COLS).single();
+      if (ins && ins.error && isMissingStoryColError(ins.error)) {
+        storyRichColsSupported = false;
+        ins = null;
+      }
+    }
+    if (!ins) {
+      ins = await supabaseClient.from('stories').insert(baseRow).select(STORY_BASE_COLS).single();
+    }
+    if (ins && ins.error) throw new Error(ins.error.message);
+    const saved = (ins && ins.data) || (storyRichColsSupported ? richRow : baseRow);
+    myActiveStories = [...myActiveStories.filter(s => String(s.id) !== String(saved.id)), saved]
+      .sort((a, b) => storyTime(a) - storyTime(b));
+    showToast('Shared to your story!');
+    renderHomeStories();
+    return saved;
+  } catch (e) {
+    showToast('Could not share to story: ' + ((e && e.message) || 'try again'));
+    return null;
+  } finally {
+    storyShareInFlight = false;
+  }
+}
+
 // ── Viewer ──
 function currentStory() {
   const g = storyViewer.groups[storyViewer.gi];
   return g && g.stories ? (g.stories[storyViewer.si] || null) : null;
+}
+function cleanupStoryStageVideo() {
+  const vid = document.getElementById('sv-video');
+  if (vid) {
+    try { vid.pause(); } catch (_) {}
+    try { vid.removeAttribute('src'); vid.load(); } catch (_) {}
+  }
+}
+function updateStoryMuteIcon(isMutedNow) {
+  const btn = document.getElementById('sv-mute');
+  if (btn) btn.innerHTML = lucideIcon(isMutedNow ? 'volume-x' : 'volume-2', 20);
+}
+function toggleStoryMute(ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  const vid = document.getElementById('sv-video');
+  const nextMuted = vid ? !vid.muted : !window._muted;
+  window._muted = nextMuted;
+  if (vid) {
+    vid.muted = nextMuted;
+    if (!nextMuted && vid.paused && !storyViewer.paused) {
+      vid.play().catch(() => {});
+    }
+  }
+  updateStoryMuteIcon(nextMuted);
+}
+function openStorySourceCreator(ev, uid, handle) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  closeStoryViewer();
+  if (typeof openOtherUserProfile === 'function' && (uid || handle)) {
+    openOtherUserProfile(uid || '', handle || '');
+  }
 }
 function ensureStoryViewerEl() {
   let el = document.getElementById('story-viewer');
@@ -13470,7 +13788,9 @@ function ensureStoryViewerEl() {
       + '<div class="sv-tap sv-tap-left" onclick="storyPrev()"></div>'
       + '<div class="sv-tap sv-tap-right" onclick="storyNext()"></div>'
       + '<div class="sv-top"><div class="sv-bars" id="sv-bars"></div>'
-      + '<div class="sv-head"><span id="sv-av"></span><div class="sv-user" id="sv-user"></div>'
+      + '<div class="sv-head"><span id="sv-av"></span>'
+      + '<div class="sv-user-col"><div class="sv-user" id="sv-user"></div><div id="sv-mention-wrap" style="display:none"></div></div>'
+      + '<button class="sv-btn" id="sv-mute" onclick="toggleStoryMute(event)" title="Mute/Unmute" aria-label="Toggle sound" style="display:none">' + lucideIcon('volume-2', 20) + '</button>'
       + '<button class="sv-btn" id="sv-add" onclick="openStoryPicker(event)" title="Add to your story" aria-label="Add to your story" style="display:none">' + lucideIcon('plus', 24) + '</button>'
       + '<button class="sv-btn" onclick="closeStoryViewer()" title="Close" aria-label="Close">' + STORY_ICONS.x + '</button></div></div>'
       + '<div class="sv-foot">'
@@ -13502,6 +13822,8 @@ function openStoryViewerWith(groups, gi) {
   const cm = document.getElementById('sv-comments');
   if (cm) cm.classList.remove('open');
   if (typeof pauseAllHomeVideos === 'function') { try { pauseAllHomeVideos(); } catch (_) {} }
+  if (typeof pauseAllFeedVideos === 'function') { try { pauseAllFeedVideos(); } catch (_) {} }
+  if (typeof homeTheatreVideo === 'function') { const ht = homeTheatreVideo(); if (ht) { try { ht.pause(); } catch (_) {} } }
   showCurrentStory();
   return true;
 }
@@ -13518,13 +13840,17 @@ function openMyStory() {
 }
 function closeStoryViewer() {
   stopStoryTimer();
+  cleanupStoryStageVideo();
   storyViewer.open = false;
   storyViewer.commentsOpen = false;
+  storyViewer.isVideo = false;
   const el = document.getElementById('story-viewer');
   if (el) { el.classList.remove('open'); el.setAttribute('aria-hidden', 'true'); }
   const cm = document.getElementById('sv-comments');
   if (cm) cm.classList.remove('open');
   renderHomeStories();
+  resumeActiveFeedVideo();
+  resumeActiveHomeTheatreVideo();
 }
 function showCurrentStory() {
   const v = storyViewer;
@@ -13542,8 +13868,14 @@ function showCurrentStory() {
   if (v.si >= g.stories.length) v.si = g.stories.length - 1;
   if (v.si < 0) v.si = 0;
   const s = g.stories[v.si];
+  const meta = decodeStoryRow(s);
   stopStoryTimer();
+  cleanupStoryStageVideo();
   v.elapsed = 0;
+  v.isVideo = !!(meta.isVideo && meta.videoUrl);
+  v.durationMs = (v.isVideo && meta.durationSeconds > 0)
+    ? Math.max(2000, Math.round(meta.durationSeconds * 1000))
+    : STORY_DURATION_MS;
   const bars = document.getElementById('sv-bars');
   if (bars) {
     bars.innerHTML = g.stories.map((_, i) => '<div class="sv-bar"><div class="sv-bar-fill" id="sv-fill-' + i + '" style="width:' + (i < v.si ? '100%' : '0') + '"></div></div>').join('');
@@ -13560,23 +13892,114 @@ function showCurrentStory() {
   const user = document.getElementById('sv-user');
   if (user) {
     const t = s.created_at ? formatRelativeTime(s.created_at) : '';
-    user.innerHTML = escapeHtml(name) + (t ? '<span class="sv-time">' + escapeHtml(t) + '</span>' : '');
+    const durStr = (v.isVideo && meta.durationSeconds > 0) ? fmtTime(meta.durationSeconds) : '';
+    user.innerHTML = '<span class="sv-user-name">' + escapeHtml(name) + '</span>'
+      + (t ? '<span class="sv-time">' + escapeHtml(t) + '</span>' : '')
+      + (v.isVideo ? '<span class="sv-dur" id="sv-dur"' + (durStr ? '' : ' style="display:none"') + '>' + escapeHtml(durStr) + '</span>' : '');
+  }
+  const mentionWrap = document.getElementById('sv-mention-wrap');
+  if (mentionWrap) {
+    const srcUid = meta.sourceUserId || '';
+    const srcAuthor = srcUid ? authorProfileFor(srcUid) : null;
+    const rawHandle = String((srcAuthor && srcAuthor.username) || meta.sourceUsername || '').replace(/^@/, '');
+    const rawDisp = String((srcAuthor && (srcAuthor.display_name || srcAuthor.full_name)) || meta.sourceDisplayName || '').trim();
+    const hasCreatorInfo = !!(v.isVideo && (rawHandle || rawDisp));
+    if (hasCreatorInfo) {
+      const handleLabel = rawHandle ? '@' + rawHandle : rawDisp;
+      const showSub = rawHandle && rawDisp && rawDisp.toLowerCase() !== rawHandle.toLowerCase();
+      mentionWrap.style.display = '';
+      mentionWrap.innerHTML = '<button type="button" class="sv-mention" onclick="openStorySourceCreator(event,\'' + escapeHtml(srcUid) + '\',\'' + escapeHtml(rawHandle) + '\')">'
+        + lucideIcon('film', 13)
+        + '<span class="sv-mention-handle">' + escapeHtml(handleLabel) + '</span>'
+        + (showSub ? '<span class="sv-mention-sub">· ' + escapeHtml(rawDisp) + '</span>' : '')
+        + '</button>';
+    } else {
+      mentionWrap.style.display = 'none';
+      mentionWrap.innerHTML = '';
+    }
+  }
+  const muteBtn = document.getElementById('sv-mute');
+  if (muteBtn) {
+    muteBtn.style.display = v.isVideo ? '' : 'none';
+    if (v.isVideo) updateStoryMuteIcon(!!window._muted);
   }
   const add = document.getElementById('sv-add');
   if (add) add.style.display = isOwn ? '' : 'none';
   const stage = document.getElementById('sv-stage');
   if (stage) {
-    stage.innerHTML = '<img class="sv-img" id="sv-img" alt="">';
-    const img = document.getElementById('sv-img');
     const sid = String(s.id);
-    if (img) {
-      img.onload = () => { if (currentStory() && String(currentStory().id) === sid) startStoryTimer(); };
-      img.onerror = () => {
-        if (!currentStory() || String(currentStory().id) !== sid) return;
-        stage.innerHTML = '<div class="sv-msg">Story image couldn&rsquo;t load.</div>';
+    if (v.isVideo) {
+      stage.innerHTML = '<video class="sv-video" id="sv-video" playsinline autoplay preload="auto"></video>';
+      const vid = document.getElementById('sv-video');
+      if (vid) {
+        vid.playsInline = true;
+        vid.muted = !!window._muted;
+        if (meta.posterUrl) vid.poster = meta.posterUrl;
+        const syncVideoDurBadge = () => {
+          if (!currentStory() || String(currentStory().id) !== sid) return;
+          if (typeof vid.duration === 'number' && isFinite(vid.duration) && vid.duration > 0) {
+            storyViewer.durationMs = Math.max(2000, Math.round(vid.duration * 1000));
+            const durEl = document.getElementById('sv-dur');
+            if (durEl) {
+              durEl.style.display = '';
+              durEl.textContent = fmtTime(vid.currentTime || 0) + ' / ' + fmtTime(vid.duration);
+            }
+          }
+        };
+        vid.addEventListener('loadedmetadata', syncVideoDurBadge);
+        vid.addEventListener('timeupdate', () => {
+          if (!currentStory() || String(currentStory().id) !== sid) return;
+          syncVideoDurBadge();
+          if (typeof vid.duration === 'number' && isFinite(vid.duration) && vid.duration > 0) {
+            const fill = storyFillEl();
+            if (fill) fill.style.width = Math.min(100, ((vid.currentTime || 0) / vid.duration) * 100) + '%';
+          }
+        });
+        vid.addEventListener('playing', () => {
+          if (!currentStory() || String(currentStory().id) !== sid) return;
+          syncVideoDurBadge();
+          if (!storyViewer.timer && !storyViewer.paused && !storyViewer.commentsOpen) startStoryTimer();
+        });
+        vid.addEventListener('ended', () => {
+          if (currentStory() && String(currentStory().id) === sid) storyNext();
+        });
+        vid.addEventListener('error', () => {
+          if (!currentStory() || String(currentStory().id) !== sid) return;
+          const nextSrc = (vid._svFallbacks || []).shift();
+          if (nextSrc) {
+            try { vid.src = nextSrc; vid.load(); vid.play().catch(() => {}); } catch (_) {}
+            return;
+          }
+          stage.innerHTML = '<div class="sv-msg">Story video couldn&rsquo;t load.</div>';
+          startStoryTimer();
+        });
+        const primaryUrl = playableVideoUrl(meta.videoUrl);
+        const fallbacks = [];
+        if (meta.videoUrl && meta.videoUrl !== primaryUrl) fallbacks.push(meta.videoUrl);
+        vid._svFallbacks = fallbacks;
+        vid.src = primaryUrl || meta.videoUrl;
+        const p = vid.play();
+        if (p && p.catch) {
+          p.catch(() => {
+            vid.muted = true;
+            updateStoryMuteIcon(true);
+            vid.play().catch(() => {});
+          });
+        }
         startStoryTimer();
-      };
-      img.src = s.image_url;
+      }
+    } else {
+      stage.innerHTML = '<img class="sv-img" id="sv-img" alt="">';
+      const img = document.getElementById('sv-img');
+      if (img) {
+        img.onload = () => { if (currentStory() && String(currentStory().id) === sid) startStoryTimer(); };
+        img.onerror = () => {
+          if (!currentStory() || String(currentStory().id) !== sid) return;
+          stage.innerHTML = '<div class="sv-msg">Story image couldn&rsquo;t load.</div>';
+          startStoryTimer();
+        };
+        img.src = meta.posterUrl || s.image_url;
+      }
     }
   }
   renderStoryCounts();
@@ -13590,10 +14013,21 @@ function startStoryTimer() {
   storyViewer.startedAt = Date.now();
   storyViewer.timer = setInterval(() => {
     if (!storyViewer.open || storyViewer.paused) return;
+    if (storyViewer.isVideo) {
+      const vid = document.getElementById('sv-video');
+      if (vid && typeof vid.duration === 'number' && isFinite(vid.duration) && vid.duration > 0) {
+        const pct = Math.min(100, ((vid.currentTime || 0) / vid.duration) * 100);
+        const fill = storyFillEl();
+        if (fill) fill.style.width = pct + '%';
+        if (vid.ended) storyNext();
+        return;
+      }
+    }
+    const dur = storyViewer.durationMs || STORY_DURATION_MS;
     const t = storyViewer.elapsed + (Date.now() - storyViewer.startedAt);
     const fill = storyFillEl();
-    if (fill) fill.style.width = Math.min(100, (t / STORY_DURATION_MS) * 100) + '%';
-    if (t >= STORY_DURATION_MS) storyNext();
+    if (fill) fill.style.width = Math.min(100, (t / dur) * 100) + '%';
+    if (t >= dur) storyNext();
   }, 50);
 }
 function stopStoryTimer() {
@@ -13601,12 +14035,16 @@ function stopStoryTimer() {
   storyViewer.timer = null;
 }
 function pauseStoryTimer() {
+  const vid = document.getElementById('sv-video');
+  if (vid && !vid.paused) { try { vid.pause(); } catch (_) {} }
   if (!storyViewer.timer || storyViewer.paused) return;
   storyViewer.elapsed += Date.now() - storyViewer.startedAt;
   storyViewer.paused = true;
 }
 function resumeStoryTimer() {
   if (!storyViewer.open || storyViewer.commentsOpen) return;
+  const vid = document.getElementById('sv-video');
+  if (vid && vid.paused) { try { vid.play().catch(() => {}); } catch (_) {} }
   if (!storyViewer.timer) { const keep = storyViewer.elapsed; startStoryTimer(); storyViewer.elapsed = keep; return; }
   storyViewer.startedAt = Date.now();
   storyViewer.paused = false;
@@ -15128,7 +15566,10 @@ function closeOnBackdrop(e, id) {
   if (e.target.id === id) {
     document.getElementById(id).classList.remove('open');
     if (id === 'upload-modal') pauseUploadPreview();
-    if (['chat-modal', 'comments-modal', 'likes-modal', 'share-modal', 'more-modal', 'upload-modal'].indexOf(id) !== -1) resumeActiveFeedVideo();
+    if (['chat-modal', 'comments-modal', 'likes-modal', 'share-modal', 'more-modal', 'upload-modal'].indexOf(id) !== -1) {
+      resumeActiveFeedVideo();
+      resumeActiveHomeTheatreVideo();
+    }
   }
 }
 
