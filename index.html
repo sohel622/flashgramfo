@@ -2844,12 +2844,205 @@
       color: #ff4d6d;
       font-variant-numeric: tabular-nums;
     }
+    .banned-report-btn {
+      width: 100%;
+      margin-top: 22px;
+      height: 48px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: linear-gradient(135deg, #242b38 0%, #191f2a 100%);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: var(--font);
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      transition: transform .12s, background .15s, border-color .15s, opacity .15s;
+    }
+    .banned-report-btn:hover {
+      border-color: rgba(255, 59, 92, 0.45);
+      background: linear-gradient(135deg, #2a3140 0%, #1e2432 100%);
+    }
+    .banned-report-btn:active { transform: scale(0.985); }
+    .banned-report-btn svg { width: 17px; height: 17px; color: #ff4d6d; flex: 0 0 auto; }
     .banned-note {
-      margin-top: 18px;
+      margin-top: 14px;
       font-size: 12.5px;
       color: #778091;
       line-height: 1.45;
     }
+    /* Ban Report Modal */
+    #ban-report-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10010;
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    #ban-report-modal.open { display: flex; }
+    .ban-report-sheet {
+      width: 100%;
+      max-width: 440px;
+      background: #141923;
+      color: #f5f7fa;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: 22px;
+      padding: 20px 18px calc(20px + env(safe-area-inset-bottom, 0px));
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+      max-height: 88vh;
+      overflow-y: auto;
+      box-sizing: border-box;
+      margin: auto;
+    }
+    .ban-report-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+    .ban-report-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: #ffffff;
+    }
+    .ban-report-close {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255, 255, 255, 0.08);
+      color: #e4e8f0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+    }
+    .ban-report-sub {
+      font-size: 13px;
+      color: #9ba3b4;
+      line-height: 1.42;
+      margin: 0 0 14px;
+    }
+    .ban-report-reasons {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .ban-report-option {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      background: rgba(255, 255, 255, 0.03);
+      color: #e9edf5;
+      font-size: 13.5px;
+      font-weight: 600;
+      font-family: var(--font);
+      text-align: left;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .ban-report-option.selected {
+      border-color: #ff3b5c;
+      background: rgba(255, 59, 92, 0.12);
+      color: #ffffff;
+    }
+    .ban-report-radio {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid #596275;
+      box-sizing: border-box;
+      flex: 0 0 auto;
+    }
+    .ban-report-option.selected .ban-report-radio {
+      border-color: #ff3b5c;
+      border-width: 5.5px;
+    }
+    .ban-report-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      color: #9ba3b4;
+      margin-bottom: 6px;
+    }
+    .ban-report-textarea {
+      width: 100%;
+      min-height: 86px;
+      resize: vertical;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(0, 0, 0, 0.28);
+      color: #ffffff;
+      font-family: var(--font);
+      font-size: 13.5px;
+      padding: 11px 12px;
+      box-sizing: border-box;
+      outline: none;
+    }
+    .ban-report-textarea:focus { border-color: #ff3b5c; }
+    .ban-report-error {
+      margin-top: 10px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      background: rgba(255, 59, 92, 0.14);
+      border: 1px solid rgba(255, 59, 92, 0.35);
+      color: #ff6b84;
+      font-size: 12.5px;
+      font-weight: 600;
+      display: none;
+    }
+    .ban-report-submit {
+      width: 100%;
+      height: 46px;
+      margin-top: 14px;
+      border-radius: 999px;
+      border: none;
+      background: #ff2b4a;
+      color: #ffffff;
+      font-size: 14.5px;
+      font-weight: 700;
+      font-family: var(--font);
+      cursor: pointer;
+    }
+    .ban-report-submit:disabled { opacity: 0.6; cursor: wait; }
+    .ban-report-success {
+      text-align: center;
+      padding: 12px 6px 4px;
+      display: none;
+    }
+    .ban-report-success-icon {
+      width: 52px;
+      height: 52px;
+      margin: 0 auto 12px;
+      border-radius: 50%;
+      background: rgba(34, 197, 94, 0.15);
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      color: #4ade80;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .ban-report-success h3 { margin: 0 0 6px; font-size: 17px; font-weight: 800; color: #fff; }
+    .ban-report-success p { margin: 0 0 16px; font-size: 13.5px; color: #9ba3b4; line-height: 1.45; }
     @media (max-width: 400px) {
       .banned-topbar { padding: 14px 16px 8px; }
       .banned-heading { font-size: 21px; }
@@ -4681,7 +4874,42 @@
           </div>
         </div>
       </div>
-      <div class="banned-note">If you believe this suspension was made in error, please contact support.</div>
+      <button type="button" id="banned-report-btn" class="banned-report-btn" onclick="openBanReportSheet()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+          <line x1="4" y1="22" x2="4" y2="15"/>
+        </svg>
+        <span>Report</span>
+      </button>
+      <div class="banned-note">If you believe this suspension was made in error, please submit a report or contact support.</div>
+    </div>
+  </div>
+</div>
+
+<!-- BAN REPORT MODAL (over #page-banned) -->
+<div id="ban-report-modal" aria-hidden="true" onclick="if(event.target===this)closeBanReportSheet()">
+  <div class="ban-report-sheet" onclick="event.stopPropagation()">
+    <div class="ban-report-head">
+      <div class="ban-report-title">Report Suspension</div>
+      <button type="button" class="ban-report-close" onclick="closeBanReportSheet()" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+    <div id="ban-report-form-wrap">
+      <p class="ban-report-sub">Select a reason below to submit an appeal or report regarding this suspension.</p>
+      <div id="ban-report-reasons" class="ban-report-reasons" role="radiogroup" aria-label="Report reason"></div>
+      <label class="ban-report-label" for="ban-report-details">Additional details (optional)</label>
+      <textarea id="ban-report-details" class="ban-report-textarea" maxlength="1000" placeholder="Provide any context that may help our review team..."></textarea>
+      <div id="ban-report-error" class="ban-report-error"></div>
+      <button type="button" id="ban-report-submit-btn" class="ban-report-submit" onclick="submitBanReport()">Submit Report</button>
+    </div>
+    <div id="ban-report-success" class="ban-report-success">
+      <div class="ban-report-success-icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <h3>Report Submitted</h3>
+      <p>Thank you. Your report has been saved and linked to your account for review.</p>
+      <button type="button" class="ban-report-submit" onclick="closeBanReportSheet()">Done</button>
     </div>
   </div>
 </div>
@@ -5566,6 +5794,7 @@ pruneAllExpiredChatMessages();
 // Hydrate cached profile & counters synchronously before async boot so
 // avatar, name, verified badge and stats paint instantaneously.
 hydrateProfileFromLocalCache();
+if (typeof hydrateBanStateFromLocalCache === 'function') hydrateBanStateFromLocalCache();
 
 (async () => {
   // Attach push listeners first, so a notification tap that
@@ -6214,6 +6443,8 @@ async function initSupabase() {
       if (sessionData && sessionData.session && sessionData.session.user) {
         currentAuthUser = sessionData.session.user;
         await loadUserProfileFromSupabase(currentAuthUser.id);
+        await refreshBanState();
+        subscribeToBanRealtime(currentAuthUser.id);
         await loadCreatorsFromSupabase();
         // NOTE: threads are NOT loaded here on purpose. The app boot
         // sequence loads them after switchChatThreadsForCurrentUser(),
@@ -8223,15 +8454,148 @@ function extractBanFromProfileRow(row) {
   return out;
 }
 
+const BAN_CACHE_KEY = 'reelflow_ban_cache_v1';
+const BAN_REPORT_REASONS = [
+  'Wrongful or mistaken suspension',
+  'My account was hacked / unauthorized access',
+  'Ban reason is inaccurate or unclear',
+  'Requesting second review of my content',
+  'Other suspension issue'
+];
+let selectedBanReportReason = '';
+let banBackLockInstalled = false;
+let banAudioGuardInstalled = false;
+
+function saveBanLocalCache(ban, userId) {
+  try {
+    if (!ban || !userId) {
+      localStorage.removeItem(BAN_CACHE_KEY);
+      return;
+    }
+    localStorage.setItem(BAN_CACHE_KEY, JSON.stringify({
+      userId: String(userId),
+      ban: ban,
+      cachedAt: Date.now()
+    }));
+  } catch (_) {}
+}
+
+function clearBanLocalCache() {
+  try { localStorage.removeItem(BAN_CACHE_KEY); } catch (_) {}
+}
+
+function hasActiveSupabaseAuthTokenInStorage() {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('sb-') && k.endsWith('-auth-token')) {
+        const raw = localStorage.getItem(k);
+        if (raw && raw.includes('access_token')) return true;
+      }
+    }
+    if (localStorage.getItem('reelflow_session')) return true;
+  } catch (_) {}
+  return false;
+}
+
+function hydrateBanStateFromLocalCache() {
+  try {
+    const raw = localStorage.getItem(BAN_CACHE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.ban || !parsed.userId) {
+      clearBanLocalCache();
+      return false;
+    }
+    const cachedUid = String(parsed.userId);
+    const activeUid = (currentAuthUser && currentAuthUser.id) || (typeof profile !== 'undefined' && profile && profile.id) || '';
+    if (activeUid && String(activeUid) !== cachedUid) {
+      clearBanLocalCache();
+      return false;
+    }
+    if (!activeUid && !hasActiveSupabaseAuthTokenInStorage()) {
+      clearBanLocalCache();
+      return false;
+    }
+    const ban = parsed.ban;
+    if (ban.user_id_ban !== undefined && String(ban.user_id_ban).trim().toLowerCase() === 'none') {
+      clearBanLocalCache();
+      return false;
+    }
+    if (ban.expires_at) {
+      const expMs = Date.parse(ban.expires_at);
+      if (isNaN(expMs) || expMs <= Date.now()) {
+        clearBanLocalCache();
+        return false;
+      }
+    }
+    applyBanState(ban, { fromCache: true });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function installBanBackNavigationGuard() {
+  if (banBackLockInstalled) return;
+  banBackLockInstalled = true;
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('popstate', () => {
+      if (!isCurrentUserBanned()) return;
+      const repModal = document.getElementById('ban-report-modal');
+      if (repModal && repModal.classList.contains('open')) {
+        closeBanReportSheet();
+      }
+      try { history.pushState({ rfBannedLock: true }, ''); } catch (_) {}
+      showBannedScreen(currentBan);
+      silenceAllAppMediaForBan();
+    });
+    window.addEventListener('online', () => {
+      if (currentAuthUser && typeof refreshBanState === 'function') {
+        refreshBanState();
+      }
+    });
+  }
+  try {
+    const AppPlugin = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (AppPlugin && typeof AppPlugin.addListener === 'function') {
+      AppPlugin.addListener('backButton', () => {
+        if (!isCurrentUserBanned()) return;
+        const repModal = document.getElementById('ban-report-modal');
+        if (repModal && repModal.classList.contains('open')) {
+          closeBanReportSheet();
+          return;
+        }
+        showBannedScreen(currentBan);
+        silenceAllAppMediaForBan();
+      });
+    }
+  } catch (_) {}
+}
+
+function installBanAudioLockGuard() {
+  if (banAudioGuardInstalled || typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+  banAudioGuardInstalled = true;
+  document.addEventListener('play', (ev) => {
+    if (!isCurrentUserBanned()) return;
+    const t = ev && ev.target;
+    if (t && typeof t.pause === 'function') {
+      try { t.pause(); } catch (_) {}
+      t.muted = true;
+    }
+  }, true);
+}
+
 // Server-time ban check: checks BOTH is_user_banned RPC (user_bans table)
 // AND public.profiles (user_id_ban, user_id_ban_reason, expiry fields).
+// Returns { verified: boolean, ban: object|null }.
 async function checkUserBan(userId) {
-  if (!supabaseClient || !userId) return null;
-  if (supabaseClient.isLocalAdapter) return null;
+  if (!supabaseClient || !userId) return { verified: false, ban: null };
+  if (supabaseClient.isLocalAdapter) return { verified: true, ban: null };
   let rpcBan = null;
-  let profRow = latestBanProfileRow && String(latestBanProfileRow.user_id || '') === String(userId)
-    ? latestBanProfileRow
-    : null;
+  let rpcVerified = false;
+  let profVerified = false;
+  let profRow = null;
 
   const tasks = [];
   if (typeof supabaseClient.rpc === 'function') {
@@ -8239,7 +8603,7 @@ async function checkUserBan(userId) {
       supabaseClient.rpc('is_user_banned', { p_user_id: String(userId) })
         .then(({ data, error }) => {
           if (error) console.warn('ban check error:', error.message);
-          else rpcBan = data || null;
+          else { rpcVerified = true; rpcBan = data || null; }
         })
         .catch(e => { console.warn('ban check failed:', e); })
     );
@@ -8248,9 +8612,12 @@ async function checkUserBan(userId) {
     tasks.push(
       supabaseClient.from('profiles').select('*').eq('user_id', String(userId)).maybeSingle()
         .then(({ data, error }) => {
-          if (!error && data) {
-            profRow = data;
-            latestBanProfileRow = data;
+          if (!error) {
+            profVerified = true;
+            if (data) {
+              profRow = data;
+              latestBanProfileRow = data;
+            }
           }
         })
         .catch(() => {})
@@ -8258,8 +8625,13 @@ async function checkUserBan(userId) {
   }
   await Promise.allSettled(tasks);
 
+  const verified = rpcVerified || profVerified;
+  if (!verified && latestBanProfileRow && String(latestBanProfileRow.user_id || '') === String(userId)) {
+    profRow = latestBanProfileRow;
+  }
+
   const profBan = extractBanFromProfileRow(profRow);
-  if (!rpcBan && !profBan) return null;
+  if (!rpcBan && !profBan) return { verified, ban: null };
 
   const profReason = profRow && profRow.user_id_ban_reason !== undefined && profRow.user_id_ban_reason !== null
     ? String(profRow.user_id_ban_reason).trim() : '';
@@ -8276,12 +8648,25 @@ async function checkUserBan(userId) {
   };
   if (merged.expires_at) merged.ban_type = 'temporary';
   if (!merged.duration_label) merged.duration_label = formatBanDurationLabel(merged);
-  return merged;
+  return { verified, ban: merged };
 }
 
 async function refreshBanState() {
   if (!currentAuthUser) { applyBanState(null); return null; }
-  const ban = await checkUserBan(currentAuthUser.id);
+  const res = await checkUserBan(currentAuthUser.id);
+  if (res && !res.verified && !res.ban) {
+    // Offline/network failure: keep valid non-expired cached ban temporarily,
+    // but unlock if cached ban already expired.
+    if (currentBan && currentBan.expires_at) {
+      const expMs = Date.parse(currentBan.expires_at);
+      if (isNaN(expMs) || expMs <= Date.now()) {
+        applyBanState(null);
+        return null;
+      }
+    }
+    return currentBan;
+  }
+  const ban = res ? res.ban : null;
   applyBanState(ban);
   return ban;
 }
@@ -8293,28 +8678,53 @@ function silenceAllAppMediaForBan() {
   if (typeof stopStoryTimer === 'function') { try { stopStoryTimer(); } catch (_) {} }
   if (typeof cleanupStoryStageVideo === 'function') { try { cleanupStoryStageVideo(); } catch (_) {} }
   try {
-    document.querySelectorAll('video, audio').forEach(el => {
-      try { el.pause(); } catch (_) {}
-      el.muted = true;
-    });
+    if (typeof document !== 'undefined') {
+      if (document.pictureInPictureElement && typeof document.exitPictureInPicture === 'function') {
+        document.exitPictureInPicture().catch(() => {});
+      }
+      document.querySelectorAll('video, audio').forEach(el => {
+        try { el.pause(); } catch (_) {}
+        el.muted = true;
+        el.autoplay = false;
+      });
+    }
+  } catch (_) {}
+  try {
+    if (typeof navigator !== 'undefined' && navigator.mediaSession) {
+      navigator.mediaSession.playbackState = 'none';
+    }
   } catch (_) {}
 }
 
-function applyBanState(ban) {
+function applyBanState(ban, opts) {
   const wasBanned = Boolean(currentBan);
   currentBan = ban || null;
   if (currentBan) {
+    installBanBackNavigationGuard();
+    installBanAudioLockGuard();
+    if (!opts || !opts.fromCache) {
+      const cacheUid = (currentAuthUser && currentAuthUser.id) || currentBan.user_id || (typeof profile !== 'undefined' && profile && profile.id) || '';
+      saveBanLocalCache(currentBan, cacheUid);
+    }
+    if (!wasBanned) {
+      try {
+        if (typeof history !== 'undefined' && typeof history.pushState === 'function') {
+          history.pushState({ rfBannedLock: true }, '');
+        }
+      } catch (_) {}
+    }
     document.body.classList.add('is-banned');
     showBannedScreen(currentBan);
     silenceAllAppMediaForBan();
     startBanCountdown();
     startBanRecheck();
   } else {
+    clearBanLocalCache();
     document.body.classList.remove('is-banned');
     hideBannedScreen();
     stopBanCountdown();
     stopBanRecheck();
-    if (wasBanned) {
+    if (wasBanned && currentAuthUser) {
       showToast('Your account access has been restored ✨');
       try { loadPostsFromSupabase(); } catch (_) {}
     }
@@ -8391,10 +8801,106 @@ function showBannedScreen(ban) {
 }
 
 function hideBannedScreen() {
+  closeBanReportSheet();
   const page = document.getElementById('page-banned');
   if (page) {
     page.style.display = 'none';
     page.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function renderBanReportReasons() {
+  const listEl = document.getElementById('ban-report-reasons');
+  if (!listEl) return;
+  listEl.innerHTML = BAN_REPORT_REASONS.map((r, idx) => {
+    const sel = selectedBanReportReason === r;
+    return '<button type="button" class="ban-report-option' + (sel ? ' selected' : '') + '" role="radio" aria-checked="' + (sel ? 'true' : 'false') + '" onclick="selectBanReportReason(' + idx + ')">'
+      + '<span>' + escapeHtml(r) + '</span>'
+      + '<span class="ban-report-radio"></span>'
+      + '</button>';
+  }).join('');
+}
+
+function selectBanReportReason(idx) {
+  selectedBanReportReason = BAN_REPORT_REASONS[idx] || '';
+  renderBanReportReasons();
+  const errEl = document.getElementById('ban-report-error');
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+}
+
+function openBanReportSheet() {
+  const modal = document.getElementById('ban-report-modal');
+  if (!modal) return;
+  selectedBanReportReason = '';
+  renderBanReportReasons();
+  const detailsEl = document.getElementById('ban-report-details');
+  if (detailsEl) detailsEl.value = '';
+  const errEl = document.getElementById('ban-report-error');
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+  const formWrap = document.getElementById('ban-report-form-wrap');
+  const successWrap = document.getElementById('ban-report-success');
+  if (formWrap) formWrap.style.display = 'block';
+  if (successWrap) successWrap.style.display = 'none';
+  const submitBtn = document.getElementById('ban-report-submit-btn');
+  if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit Report'; }
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeBanReportSheet() {
+  const modal = document.getElementById('ban-report-modal');
+  if (!modal) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+async function submitBanReport() {
+  const errEl = document.getElementById('ban-report-error');
+  const showErr = (msg) => {
+    if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+  };
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+
+  const reporterUid = currentAuthUser && currentAuthUser.id ? String(currentAuthUser.id) : '';
+  const reportedUid = (currentBan && currentBan.user_id ? String(currentBan.user_id) : '') || reporterUid;
+  if (!reporterUid || !reportedUid) {
+    showErr('Please sign in with your suspended account to submit a report.');
+    return;
+  }
+  if (!selectedBanReportReason) {
+    showErr('Please select a report reason.');
+    return;
+  }
+  if (!supabaseClient || typeof supabaseClient.from !== 'function') {
+    showErr('Database service is unavailable. Please try again.');
+    return;
+  }
+
+  const detailsEl = document.getElementById('ban-report-details');
+  const reportDetails = detailsEl ? detailsEl.value.trim() : '';
+  const submitBtn = document.getElementById('ban-report-submit-btn');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting...'; }
+
+  try {
+    const payload = {
+      reported_user_id: reportedUid,
+      reporter_user_id: reporterUid,
+      report_reason: selectedBanReportReason,
+      report_details: reportDetails,
+      report_status: 'pending',
+      created_at: new Date().toISOString()
+    };
+    const { error } = await supabaseClient.from('user_ban_reports').insert([payload]);
+    if (error) throw new Error(error.message || 'Could not submit report.');
+
+    const formWrap = document.getElementById('ban-report-form-wrap');
+    const successWrap = document.getElementById('ban-report-success');
+    if (formWrap) formWrap.style.display = 'none';
+    if (successWrap) successWrap.style.display = 'block';
+    showToast('Report submitted successfully');
+  } catch (err) {
+    showErr((err && err.message) || 'Could not submit report. Please try again.');
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit Report'; }
   }
 }
 
@@ -8431,6 +8937,8 @@ function stopBanRecheck() {
 async function handleBannedLogout() {
   const btn = document.getElementById('banned-logout-btn');
   if (btn) btn.disabled = true;
+  closeBanReportSheet();
+  clearBanLocalCache();
   try {
     if (typeof removePushToken === 'function') await removePushToken();
   } catch (_) {}
@@ -14194,6 +14702,7 @@ async function loadUserChatThreadsFromSupabase() {
 // on every other page). Any playback started while another page is
 // showing would be background audio.
 function isFeedPageVisible() {
+  if (typeof isCurrentUserBanned === 'function' && isCurrentUserBanned()) return false;
   const topbar = document.getElementById('topbar');
   return !topbar || topbar.style.display !== 'none';
 }
@@ -15470,6 +15979,7 @@ let homePlaybackRaf = 0;
 let homePlaybackSettleTimer = null;
 
 function isHomeFeedPlaybackAllowed() {
+  if (typeof isCurrentUserBanned === 'function' && isCurrentUserBanned()) return false;
   if (typeof homeTheatreIsOpen !== 'undefined' && homeTheatreIsOpen) return false;
   if (typeof storyViewer !== 'undefined' && storyViewer && storyViewer.open) return false;
   const page = document.getElementById('page-home');
@@ -16768,6 +17278,11 @@ function setupFeedTopbarScroll() {
 }
 
 function goPage(page, navEl) {
+  if (typeof isCurrentUserBanned === 'function' && isCurrentUserBanned()) {
+    showBannedScreen(currentBan);
+    silenceAllAppMediaForBan();
+    return;
+  }
   ['home', 'discover', 'inbox', 'profile'].forEach(p => {
     document.getElementById('page-' + p).classList.toggle('active', p === page);
   });

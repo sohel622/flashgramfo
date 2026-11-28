@@ -1874,3 +1874,52 @@ ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS source_display_name TEXT;
 ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS duration_seconds NUMERIC;
 CREATE INDEX IF NOT EXISTS idx_stories_source_post_id ON public.stories (source_post_id);
 
+-- ========================================================
+-- 16) USER BAN REPORTS RLS POLICIES (existing table only)
+-- Applies row-level security policies to the existing
+-- public.user_ban_reports table (never creates a new table
+-- or removes existing columns). Suspended users can submit
+-- reports only as themselves (linked to auth.uid()) and view
+-- their own reports, while admins can review and update status.
+-- ========================================================
+DO $$
+BEGIN
+  IF to_regclass('public.user_ban_reports') IS NOT NULL THEN
+    ALTER TABLE public.user_ban_reports ENABLE ROW LEVEL SECURITY;
+
+    GRANT SELECT, INSERT ON public.user_ban_reports TO authenticated;
+
+    DROP POLICY IF EXISTS "Users submit ban reports as themselves" ON public.user_ban_reports;
+    CREATE POLICY "Users submit ban reports as themselves"
+      ON public.user_ban_reports FOR INSERT TO authenticated
+      WITH CHECK (
+        auth.uid() IS NOT NULL
+        AND auth.uid()::text = reporter_user_id::text
+        AND reported_user_id IS NOT NULL
+        AND length(btrim(COALESCE(report_reason, ''))) > 0
+        AND COALESCE(report_status, 'pending') = 'pending'
+      );
+
+    DROP POLICY IF EXISTS "Users read own ban reports, admins read all" ON public.user_ban_reports;
+    CREATE POLICY "Users read own ban reports, admins read all"
+      ON public.user_ban_reports FOR SELECT TO authenticated
+      USING (
+        auth.uid()::text = reporter_user_id::text
+        OR public.is_admin()
+      );
+
+    DROP POLICY IF EXISTS "Only admins update ban reports" ON public.user_ban_reports;
+    CREATE POLICY "Only admins update ban reports"
+      ON public.user_ban_reports FOR UPDATE TO authenticated
+      USING (public.is_admin())
+      WITH CHECK (public.is_admin());
+
+    DROP POLICY IF EXISTS "Only admins delete ban reports" ON public.user_ban_reports;
+    CREATE POLICY "Only admins delete ban reports"
+      ON public.user_ban_reports FOR DELETE TO authenticated
+      USING (public.is_admin());
+  ELSE
+    RAISE NOTICE 'user_ban_reports table not found; RLS policies skipped';
+  END IF;
+END $$;
+
