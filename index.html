@@ -2632,69 +2632,229 @@
       margin: 2px auto 12px auto;
       width: fit-content;
     }
-    /* Account Suspended screen (dark theme, covers the whole app) */
+    /* Account Suspended screen (Instagram-inspired premium dark theme, covers the whole app) */
     body.is-banned #bottomnav, body.is-banned #topbar { display: none !important; }
     .banned-screen {
-      background: #000;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: radial-gradient(circle at 50% 0%, #1d2330 0%, #0d1017 48%, #07090d 100%);
+      color: #f5f7fa;
+      flex-direction: column;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: calc(env(safe-area-inset-top, 0px)) 0 calc(24px + env(safe-area-inset-bottom, 0px));
+    }
+    .banned-topbar {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px 10px;
+      box-sizing: border-box;
+      flex: 0 0 auto;
+    }
+    .banned-brand {
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+      color: #ffffff;
+      user-select: none;
+    }
+    .banned-top-logout {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 59, 92, 0.38);
+      background: rgba(255, 59, 92, 0.14);
+      color: #ff5c77;
+      font-size: 13.5px;
+      font-weight: 700;
+      font-family: var(--font);
+      cursor: pointer;
+      transition: background .15s, transform .1s, opacity .15s;
+    }
+    .banned-top-logout:active { transform: scale(0.97); background: rgba(255, 59, 92, 0.24); }
+    .banned-top-logout:disabled { opacity: 0.6; cursor: wait; }
+    .banned-top-logout svg { width: 16px; height: 16px; flex: 0 0 auto; }
+    .banned-body {
+      flex: 1 0 auto;
+      display: flex;
       align-items: center;
       justify-content: center;
-      z-index: 9999;
+      padding: 12px 18px 24px;
+      box-sizing: border-box;
     }
     .banned-card {
-      width: min(92vw, 420px);
-      margin: auto;
+      width: min(100%, 440px);
+      margin: 0 auto;
       text-align: center;
-      padding: 28px 22px;
+    }
+    .banned-avatar-emblem {
+      position: relative;
+      width: 96px;
+      height: 96px;
+      margin: 0 auto 18px;
     }
     .banned-avatar-wrap {
-      width: 92px; height: 92px;
-      margin: 0 auto 14px auto;
+      width: 96px;
+      height: 96px;
       border-radius: 50%;
       overflow: hidden;
-      border: 3px solid rgba(255, 45, 120, 0.55);
-      background: #1a1a1a;
-      position: relative;
+      background: #e1e4ea;
+      border: 2px solid rgba(255, 255, 255, 0.14);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .banned-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .banned-avatar-placeholder {
-      width: 100%; height: 100%;
-      display: flex; align-items: center; justify-content: center;
-      color: #888; font-size: 30px; font-weight: 700;
-      background: linear-gradient(135deg, #ff2d78, #7c3aed);
-      color: #fff;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(180deg, #e5e7eb 0%, #cfd5df 100%);
+      color: #ffffff;
     }
-    .banned-username { font-size: 15px; font-weight: 700; color: #bbb; margin-bottom: 10px; }
+    .banned-avatar-placeholder svg { width: 58px; height: 58px; }
+    .banned-avatar-badge {
+      position: absolute;
+      right: -2px;
+      bottom: -2px;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: #ff2b4a;
+      border: 4px solid #0d1017;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      box-shadow: 0 4px 12px rgba(255, 43, 74, 0.4);
+    }
+    .banned-avatar-badge-bar {
+      width: 14px;
+      height: 3.2px;
+      border-radius: 2px;
+      background: #0d1017;
+    }
+    .banned-username {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #8f98a8;
+      margin-bottom: 8px;
+      letter-spacing: 0.01em;
+    }
     .banned-heading {
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-      font-size: 26px; font-weight: 800; color: #fff; margin-bottom: 16px;
+      font-size: 24px;
+      font-weight: 800;
+      line-height: 1.24;
+      color: #ffffff;
+      margin: 0 0 10px;
+      letter-spacing: -0.02em;
     }
-    .banned-heading .material-symbols-rounded { font-size: 30px; color: #ff2d78; }
-    .banned-reason-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #888; margin-bottom: 6px; }
+    .banned-subtitle {
+      font-size: 14px;
+      line-height: 1.48;
+      color: #9ba3b4;
+      margin: 0 auto 24px;
+      max-width: 340px;
+    }
+    .banned-info-stack {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 18px;
+      padding: 18px 18px 16px;
+      text-align: left;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+    }
+    .banned-info-section {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+    }
+    .banned-info-section + .banned-info-section {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .banned-info-icon {
+      width: 24px;
+      height: 24px;
+      flex: 0 0 auto;
+      margin-top: 2px;
+      color: #e4e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .banned-info-icon.danger { color: #ff3b5c; }
+    .banned-info-icon svg { width: 22px; height: 22px; }
+    .banned-info-content { flex: 1; min-width: 0; }
+    .banned-reason-label {
+      display: inline-block;
+      font-size: 11.5px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #ff3b5c;
+      background: rgba(255, 59, 92, 0.14);
+      border: 1px solid rgba(255, 59, 92, 0.34);
+      border-radius: 6px;
+      padding: 3px 8px;
+      margin-bottom: 8px;
+    }
     .banned-reason {
-      font-size: 15px; line-height: 1.5; color: #eee;
-      background: rgba(255, 45, 120, 0.10);
-      border: 1px solid rgba(255, 45, 120, 0.30);
-      border-radius: 12px; padding: 12px 14px; margin-bottom: 18px;
+      font-size: 14.5px;
+      font-weight: 500;
+      line-height: 1.5;
+      color: #f3f5f8;
+      word-break: break-word;
     }
-    .banned-meta { margin-bottom: 22px; }
+    .banned-section-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 10px;
+    }
+    .banned-meta { margin: 0; }
     .banned-meta-row {
-      display: flex; align-items: center; justify-content: space-between;
-      font-size: 13.5px; color: #aaa;
-      padding: 9px 2px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+      color: #9ba3b4;
+      padding: 6px 0;
     }
-    .banned-meta-row strong { color: #fff; font-weight: 700; }
-    .banned-type-badge { color: #ffb020; }
-    .banned-type-badge.permanent { color: #ff2d78; }
-    .banned-countdown { color: #ff2d78; font-variant-numeric: tabular-nums; }
-    .banned-logout-btn {
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-      width: 100%; padding: 13px; border-radius: 999px;
-      background: #ff2d78; color: #fff; border: none;
-      font-size: 15px; font-weight: 700; cursor: pointer;
+    .banned-meta-row strong {
+      color: #ffffff;
+      font-weight: 700;
+      text-align: right;
     }
-    .banned-logout-btn:active { opacity: 0.85; }
-    .banned-note { margin-top: 14px; font-size: 12px; color: #777; }
+    .banned-type-badge { color: #fbbf24; }
+    .banned-type-badge.permanent { color: #ff4d6d; }
+    .banned-countdown {
+      color: #ff4d6d;
+      font-variant-numeric: tabular-nums;
+    }
+    .banned-note {
+      margin-top: 18px;
+      font-size: 12.5px;
+      color: #778091;
+      line-height: 1.45;
+    }
+    @media (max-width: 400px) {
+      .banned-topbar { padding: 14px 16px 8px; }
+      .banned-heading { font-size: 21px; }
+      .banned-info-stack { padding: 15px; }
+    }
     /* Admin ban panel */
     .ab-section-title {
       display: flex; align-items: center; justify-content: space-between;
@@ -4458,31 +4618,71 @@
 </div>
 
 <!-- ACCOUNT SUSPENDED (banned) — fullscreen, covers the whole app -->
-<div id="page-banned" class="fullscreen-page banned-screen" style="display:none;">
-  <div class="banned-card">
-    <div class="banned-avatar-wrap">
-      <img id="banned-avatar-img" class="banned-avatar-img" src="" alt="Profile picture" style="display:none;" />
-      <div id="banned-avatar-placeholder" class="banned-avatar-placeholder">
-        <span class="material-symbols-rounded">person</span>
-      </div>
-    </div>
-    <div class="banned-username" id="banned-username">@user</div>
-    <div class="banned-heading">
-      <span class="material-symbols-rounded">block</span>
-      Account Suspended
-    </div>
-    <div class="banned-reason-label">Reason</div>
-    <div class="banned-reason" id="banned-reason"></div>
-    <div class="banned-meta">
-      <div class="banned-meta-row"><span>Banned on</span><strong id="banned-date"></strong></div>
-      <div class="banned-meta-row"><span>Status</span><strong id="banned-type" class="banned-type-badge"></strong></div>
-      <div class="banned-meta-row"><span>Time remaining</span><strong id="banned-countdown" class="banned-countdown"></strong></div>
-    </div>
-    <button class="banned-logout-btn" onclick="handleBannedLogout()">
-      <span class="material-symbols-rounded">logout</span>
-      Log Out
+<div id="page-banned" class="fullscreen-page banned-screen" style="display:none;" aria-hidden="true">
+  <div class="banned-topbar">
+    <div class="banned-brand">ReelFlow</div>
+    <button type="button" id="banned-logout-btn" class="banned-top-logout" onclick="handleBannedLogout()" aria-label="Logout">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+        <polyline points="16 17 21 12 16 7"/>
+        <line x1="21" y1="12" x2="9" y2="12"/>
+      </svg>
+      <span>Logout</span>
     </button>
-    <div class="banned-note">If you think this is a mistake, contact support.</div>
+  </div>
+  <div class="banned-body">
+    <div class="banned-card">
+      <div class="banned-avatar-emblem" aria-hidden="true">
+        <div class="banned-avatar-wrap">
+          <img id="banned-avatar-img" class="banned-avatar-img" src="" alt="Profile picture" style="display:none;" />
+          <div id="banned-avatar-placeholder" class="banned-avatar-placeholder">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9zm0 2c-4.42 0-8 2.24-8 5v1.5h16V19c0-2.76-3.58-5-8-5z"/>
+            </svg>
+          </div>
+        </div>
+        <div class="banned-avatar-badge">
+          <span class="banned-avatar-badge-bar"></span>
+        </div>
+      </div>
+      <div class="banned-username" id="banned-username">@user</div>
+      <h1 class="banned-heading">Your Account Has Been Suspended</h1>
+      <p class="banned-subtitle">Your profile isn&rsquo;t visible to others, and you can&rsquo;t access your account while suspended.</p>
+      <div class="banned-info-stack">
+        <div class="banned-info-section">
+          <div class="banned-info-icon danger" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </div>
+          <div class="banned-info-content">
+            <div class="banned-reason-label">REASON</div>
+            <div class="banned-reason" id="banned-reason">Violation of community guidelines.</div>
+          </div>
+        </div>
+        <div class="banned-info-section">
+          <div class="banned-info-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <div class="banned-info-content">
+            <div class="banned-section-title">Suspension Duration &amp; Status</div>
+            <div class="banned-meta">
+              <div class="banned-meta-row"><span>Ban duration</span><strong id="banned-duration">Permanent</strong></div>
+              <div class="banned-meta-row"><span>Remaining time</span><strong id="banned-countdown" class="banned-countdown">Permanent</strong></div>
+              <div class="banned-meta-row"><span>Status</span><strong id="banned-type" class="banned-type-badge">Temporary Ban</strong></div>
+              <div class="banned-meta-row" id="banned-date-row"><span>Suspended on</span><strong id="banned-date"></strong></div>
+              <div class="banned-meta-row" id="banned-expiry-row"><span>Expires on</span><strong id="banned-expiry"></strong></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="banned-note">If you believe this suspension was made in error, please contact support.</div>
+    </div>
   </div>
 </div>
 
@@ -6248,6 +6448,9 @@ async function loadUserProfileFromSupabase(userId) {
       profile.profile_edit_count = Math.max(0, parseInt(data.profile_edit_count, 10) || 0);
       profile.cycle_started_at = data.cycle_started_at || null;
       profile.lock_expires_at = data.lock_expires_at || null;
+      if (currentAuthUser && String(data.user_id || userId) === String(currentAuthUser.id)) {
+        latestBanProfileRow = data;
+      }
       cacheVerified(profile.id, profile.is_verified);
 
       // Cache locally in IndexedDB and synchronous localStorage cache
@@ -7782,6 +7985,7 @@ function avatarUrlForUserId(userId, handle) {
 //  restores access when a temporary ban expires.
 // ═══════════════════════════════════════════════════════════════
 let currentBan = null;
+let latestBanProfileRow = null;
 let banRealtimeChannel = null;
 let banCountdownTimer = null;
 let banRecheckTimer = null;
@@ -7807,6 +8011,85 @@ function formatBanDate(iso) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatBanDurationUnits(ms) {
+  if (!ms || !isFinite(ms) || ms <= 0) return '';
+  const totalSec = Math.round(ms / 1000);
+  const days = Math.round(totalSec / 86400);
+  if (days >= 365) {
+    const yrs = Math.round(days / 365);
+    return yrs + (yrs === 1 ? ' Year' : ' Years');
+  }
+  if (days >= 28 && Math.abs(days - Math.round(days / 30) * 30) <= 2) {
+    const mos = Math.round(days / 30);
+    return mos + (mos === 1 ? ' Month' : ' Months');
+  }
+  if (totalSec >= 86400) {
+    const wholeDays = Math.floor(totalSec / 86400);
+    const remHours = Math.round((totalSec % 86400) / 3600);
+    if (remHours > 0 && wholeDays < 3) {
+      return wholeDays + (wholeDays === 1 ? ' Day ' : ' Days ') + remHours + (remHours === 1 ? ' Hour' : ' Hours');
+    }
+    const roundedDays = Math.round(totalSec / 86400);
+    return roundedDays + (roundedDays === 1 ? ' Day' : ' Days');
+  }
+  if (totalSec >= 3600) {
+    const hrs = Math.round(totalSec / 3600);
+    return hrs + (hrs === 1 ? ' Hour' : ' Hours');
+  }
+  if (totalSec >= 60) {
+    const mins = Math.round(totalSec / 60);
+    return mins + (mins === 1 ? ' Minute' : ' Minutes');
+  }
+  return totalSec + (totalSec === 1 ? ' Second' : ' Seconds');
+}
+
+function parseBanDurationSpec(val) {
+  if (val === null || val === undefined) return null;
+  if (typeof val === 'number' && isFinite(val)) {
+    if (val <= 1) return null;
+    if (val > 1e12) return { expiresAtMs: val, ms: null, label: '' };
+    if (val > 1e9) return { expiresAtMs: val * 1000, ms: null, label: '' };
+    const ms = val * 1000;
+    return { ms, label: formatBanDurationUnits(ms) };
+  }
+  const s = String(val).trim();
+  if (!s) return null;
+  if (/^(perm|permanent|forever|indefinite|lifetime)$/i.test(s)) {
+    return { permanent: true, label: 'Permanent' };
+  }
+  const m = s.match(/^(\d+(?:\.\d+)?)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|mon|month|months|y|yr|yrs|year|years)$/i);
+  if (m) {
+    const num = parseFloat(m[1]);
+    const unit = m[2].toLowerCase();
+    let mult = 86400000;
+    if (unit.startsWith('s')) mult = 1000;
+    else if (unit === 'm' || unit.startsWith('min')) mult = 60000;
+    else if (unit.startsWith('h')) mult = 3600000;
+    else if (unit.startsWith('d')) mult = 86400000;
+    else if (unit.startsWith('w')) mult = 7 * 86400000;
+    else if (unit.startsWith('mo')) mult = 30 * 86400000;
+    else if (unit.startsWith('y')) mult = 365 * 86400000;
+    const ms = Math.round(num * mult);
+    return { ms, label: formatBanDurationUnits(ms) };
+  }
+  return null;
+}
+
+function formatBanDurationLabel(ban) {
+  if (!ban) return 'Permanent';
+  if (ban.duration_label) return ban.duration_label;
+  if (!ban.expires_at || ban.ban_type === 'permanent') return 'Permanent';
+  const expMs = new Date(ban.expires_at).getTime();
+  if (isNaN(expMs)) return 'Temporary';
+  const startMs = ban.banned_at ? new Date(ban.banned_at).getTime() : NaN;
+  if (!isNaN(startMs) && expMs > startMs) {
+    return formatBanDurationUnits(expMs - startMs) || 'Temporary';
+  }
+  const parsed = parseBanDurationSpec(ban.user_id_ban);
+  if (parsed && parsed.label) return parsed.label;
+  return formatBanDurationUnits(expMs - Date.now()) || 'Temporary';
 }
 
 // "6d 4h" / "23h 15m" / "45m 10s" / "Permanent"
@@ -7838,23 +8121,162 @@ function formatBanCountdown(expiresAt) {
   return (d > 0 ? d + 'd ' : '') + h + ':' + m + ':' + sec;
 }
 
-// Server-time ban check (RPC uses the database clock). Returns the
-// active ban object or null. Local/offline mode has no bans.
+function extractBanFromProfileRow(row) {
+  if (!row || typeof row !== 'object') return null;
+  const rawBan = row.user_id_ban;
+  const rawReason = row.user_id_ban_reason !== undefined && row.user_id_ban_reason !== null
+    ? String(row.user_id_ban_reason).trim() : '';
+  const explicitExpiry = row.user_id_ban_expires_at || row.user_id_ban_expiry || row.user_id_ban_until
+    || row.user_id_ban_end || row.ban_expires_at || row.ban_expiry || row.ban_until || row.expires_at || null;
+  const explicitStart = row.user_id_banned_at || row.user_id_ban_at || row.banned_at || row.ban_started_at
+    || row.updated_at || null;
+  const explicitDur = row.user_id_ban_duration || row.ban_duration || null;
+
+  if (rawBan === undefined || rawBan === null || rawBan === false) return null;
+  if (typeof rawBan === 'string') {
+    const trimmed = rawBan.trim().toLowerCase();
+    if (!trimmed || trimmed === 'false' || trimmed === '0' || trimmed === 'none' || trimmed === 'no' || trimmed === 'unbanned' || trimmed === 'normal' || trimmed === 'ok') {
+      return null;
+    }
+  }
+  if (typeof rawBan === 'number' && rawBan === 0) return null;
+
+  let expiresAt = null;
+  let bannedAt = explicitStart ? String(explicitStart) : null;
+  let banType = 'permanent';
+  let durationLabel = '';
+  let jsonReason = '';
+
+  if (typeof rawBan === 'object') {
+    if (rawBan.is_active === false || rawBan.active === false || rawBan.banned === false) return null;
+    jsonReason = String(rawBan.reason || rawBan.ban_reason || rawBan.user_id_ban_reason || '').trim();
+    if (rawBan.banned_at) bannedAt = String(rawBan.banned_at);
+    if (rawBan.expires_at || rawBan.expiry || rawBan.until) {
+      expiresAt = String(rawBan.expires_at || rawBan.expiry || rawBan.until);
+    } else if (rawBan.duration) {
+      const spec = parseBanDurationSpec(rawBan.duration);
+      if (spec && spec.ms) {
+        const baseMs = bannedAt && !isNaN(Date.parse(bannedAt)) ? Date.parse(bannedAt) : Date.now();
+        expiresAt = new Date(baseMs + spec.ms).toISOString();
+        durationLabel = spec.label;
+      }
+    }
+    if (rawBan.ban_type) banType = String(rawBan.ban_type);
+  } else {
+    if (explicitExpiry) {
+      expiresAt = String(explicitExpiry);
+    }
+    const specFromBan = parseBanDurationSpec(rawBan);
+    const specFromDur = parseBanDurationSpec(explicitDur);
+    if (specFromBan && specFromBan.permanent) {
+      banType = 'permanent';
+      expiresAt = null;
+      durationLabel = 'Permanent';
+    } else if (specFromBan && specFromBan.expiresAtMs) {
+      if (!expiresAt) expiresAt = new Date(specFromBan.expiresAtMs).toISOString();
+    } else if (specFromBan && specFromBan.ms) {
+      durationLabel = specFromBan.label;
+      if (!expiresAt) {
+        const baseMs = bannedAt && !isNaN(Date.parse(bannedAt)) ? Date.parse(bannedAt) : Date.now();
+        expiresAt = new Date(baseMs + specFromBan.ms).toISOString();
+      }
+    } else if (typeof rawBan === 'string' && /[-/:T]/.test(rawBan)) {
+      const parsedTs = Date.parse(rawBan);
+      if (!isNaN(parsedTs)) {
+        if (explicitExpiry) {
+          if (!row.user_id_banned_at && !row.banned_at) bannedAt = new Date(parsedTs).toISOString();
+        } else if (specFromDur && specFromDur.ms) {
+          bannedAt = new Date(parsedTs).toISOString();
+          expiresAt = new Date(parsedTs + specFromDur.ms).toISOString();
+          durationLabel = specFromDur.label;
+        } else {
+          expiresAt = new Date(parsedTs).toISOString();
+        }
+      }
+    }
+    if (!expiresAt && specFromDur && specFromDur.ms) {
+      const baseMs = bannedAt && !isNaN(Date.parse(bannedAt)) ? Date.parse(bannedAt) : Date.now();
+      expiresAt = new Date(baseMs + specFromDur.ms).toISOString();
+      durationLabel = durationLabel || specFromDur.label;
+    }
+  }
+
+  if (expiresAt) {
+    const expMs = Date.parse(expiresAt);
+    if (isNaN(expMs) || expMs <= Date.now()) {
+      return null;
+    }
+    banType = 'temporary';
+  }
+
+  const out = {
+    user_id: row.user_id ? String(row.user_id) : undefined,
+    ban_reason: rawReason || jsonReason || 'Violation of community guidelines.',
+    ban_type: expiresAt ? 'temporary' : 'permanent',
+    banned_at: bannedAt,
+    expires_at: expiresAt,
+    duration_label: durationLabel || '',
+    user_id_ban: rawBan,
+    is_active: true
+  };
+  if (!out.duration_label) out.duration_label = formatBanDurationLabel(out);
+  return out;
+}
+
+// Server-time ban check: checks BOTH is_user_banned RPC (user_bans table)
+// AND public.profiles (user_id_ban, user_id_ban_reason, expiry fields).
 async function checkUserBan(userId) {
   if (!supabaseClient || !userId) return null;
   if (supabaseClient.isLocalAdapter) return null;
-  if (typeof supabaseClient.rpc !== 'function') return null;
-  try {
-    const { data, error } = await supabaseClient.rpc('is_user_banned', { p_user_id: String(userId) });
-    if (error) {
-      console.warn('ban check error:', error.message);
-      return null;
-    }
-    return data || null;
-  } catch (e) {
-    console.warn('ban check failed:', e);
-    return null;
+  let rpcBan = null;
+  let profRow = latestBanProfileRow && String(latestBanProfileRow.user_id || '') === String(userId)
+    ? latestBanProfileRow
+    : null;
+
+  const tasks = [];
+  if (typeof supabaseClient.rpc === 'function') {
+    tasks.push(
+      supabaseClient.rpc('is_user_banned', { p_user_id: String(userId) })
+        .then(({ data, error }) => {
+          if (error) console.warn('ban check error:', error.message);
+          else rpcBan = data || null;
+        })
+        .catch(e => { console.warn('ban check failed:', e); })
+    );
   }
+  if (typeof supabaseClient.from === 'function') {
+    tasks.push(
+      supabaseClient.from('profiles').select('*').eq('user_id', String(userId)).maybeSingle()
+        .then(({ data, error }) => {
+          if (!error && data) {
+            profRow = data;
+            latestBanProfileRow = data;
+          }
+        })
+        .catch(() => {})
+    );
+  }
+  await Promise.allSettled(tasks);
+
+  const profBan = extractBanFromProfileRow(profRow);
+  if (!rpcBan && !profBan) return null;
+
+  const profReason = profRow && profRow.user_id_ban_reason !== undefined && profRow.user_id_ban_reason !== null
+    ? String(profRow.user_id_ban_reason).trim() : '';
+  const merged = {
+    id: (rpcBan && rpcBan.id) || null,
+    user_id: String(userId),
+    ban_reason: profReason || (profBan && profBan.ban_reason) || (rpcBan && rpcBan.ban_reason) || 'Violation of community guidelines.',
+    ban_type: ((profBan && profBan.ban_type === 'temporary') || (rpcBan && rpcBan.ban_type === 'temporary')) ? 'temporary' : 'permanent',
+    banned_at: (rpcBan && rpcBan.banned_at) || (profBan && profBan.banned_at) || null,
+    expires_at: (profBan && profBan.expires_at) || (rpcBan && rpcBan.expires_at) || null,
+    user_id_ban: profRow ? profRow.user_id_ban : undefined,
+    duration_label: (profBan && profBan.duration_label) || '',
+    is_active: true
+  };
+  if (merged.expires_at) merged.ban_type = 'temporary';
+  if (!merged.duration_label) merged.duration_label = formatBanDurationLabel(merged);
+  return merged;
 }
 
 async function refreshBanState() {
@@ -7864,13 +8286,27 @@ async function refreshBanState() {
   return ban;
 }
 
+function silenceAllAppMediaForBan() {
+  try { pauseAllFeedVideos(); } catch (_) {}
+  if (typeof pauseAllHomeVideos === 'function') { try { pauseAllHomeVideos(); } catch (_) {} }
+  if (typeof closeHomeTheatre === 'function') { try { closeHomeTheatre(); } catch (_) {} }
+  if (typeof stopStoryTimer === 'function') { try { stopStoryTimer(); } catch (_) {} }
+  if (typeof cleanupStoryStageVideo === 'function') { try { cleanupStoryStageVideo(); } catch (_) {} }
+  try {
+    document.querySelectorAll('video, audio').forEach(el => {
+      try { el.pause(); } catch (_) {}
+      el.muted = true;
+    });
+  } catch (_) {}
+}
+
 function applyBanState(ban) {
   const wasBanned = Boolean(currentBan);
   currentBan = ban || null;
   if (currentBan) {
     document.body.classList.add('is-banned');
     showBannedScreen(currentBan);
-    try { pauseAllFeedVideos(); } catch (_) {}
+    silenceAllAppMediaForBan();
     startBanCountdown();
     startBanRecheck();
   } else {
@@ -7908,37 +8344,58 @@ function unsubscribeBanRealtime() {
 function showBannedScreen(ban) {
   const page = document.getElementById('page-banned');
   if (!page) return;
+  const handle = (profile && profile.handle) ? String(profile.handle).replace(/^@/, '') : 'user';
   const nameEl = document.getElementById('banned-username');
-  if (nameEl) nameEl.textContent = '@' + (profile.handle || 'user');
+  if (nameEl) nameEl.textContent = '@' + handle;
+
   const reasonEl = document.getElementById('banned-reason');
   if (reasonEl) reasonEl.textContent = ban.ban_reason || 'Violation of community guidelines.';
-  const dateEl = document.getElementById('banned-date');
-  if (dateEl) dateEl.textContent = formatBanDate(ban.banned_at);
+
+  const isPermanent = !ban.expires_at || ban.ban_type === 'permanent';
+  const durEl = document.getElementById('banned-duration');
+  if (durEl) durEl.textContent = isPermanent ? 'Permanent' : formatBanDurationLabel(ban);
+
+  const cdEl = document.getElementById('banned-countdown');
+  if (cdEl) cdEl.textContent = isPermanent ? 'Permanent' : formatBanCountdown(ban.expires_at);
+
   const typeEl = document.getElementById('banned-type');
   if (typeEl) {
-    const isPermanent = !ban.expires_at || ban.ban_type === 'permanent';
-    typeEl.textContent = isPermanent ? 'Permanent Ban' : 'Temporary Ban';
+    typeEl.textContent = isPermanent ? 'Permanent Suspension' : 'Temporary Suspension';
     typeEl.className = 'banned-type-badge' + (isPermanent ? ' permanent' : '');
   }
-  const cdEl = document.getElementById('banned-countdown');
-  if (cdEl) {
-    cdEl.textContent = (!ban.expires_at || ban.ban_type === 'permanent')
-      ? 'Permanent'
-      : formatBanCountdown(ban.expires_at);
-  }
+
+  const dateText = formatBanDate(ban.banned_at);
+  const dateRow = document.getElementById('banned-date-row');
+  const dateEl = document.getElementById('banned-date');
+  if (dateEl) dateEl.textContent = dateText || 'Active';
+  if (dateRow) dateRow.style.display = dateText ? 'flex' : 'none';
+
+  const expiryText = isPermanent ? 'Never' : formatBanDate(ban.expires_at);
+  const expiryRow = document.getElementById('banned-expiry-row');
+  const expiryEl = document.getElementById('banned-expiry');
+  if (expiryEl) expiryEl.textContent = expiryText;
+  if (expiryRow) expiryRow.style.display = (isPermanent || expiryText) ? 'flex' : 'none';
+
+  const logoutBtn = document.getElementById('banned-logout-btn');
+  if (logoutBtn) logoutBtn.disabled = false;
+
   try {
     setAvatarInto(
       document.getElementById('banned-avatar-img'),
       document.getElementById('banned-avatar-placeholder'),
-      profile.id, profile.name || profile.handle, profile.avatar_url
+      profile.id, profile.name || handle, profile.avatar_url
     );
   } catch (_) {}
   page.style.display = 'flex';
+  page.setAttribute('aria-hidden', 'false');
 }
 
 function hideBannedScreen() {
   const page = document.getElementById('page-banned');
-  if (page) page.style.display = 'none';
+  if (page) {
+    page.style.display = 'none';
+    page.setAttribute('aria-hidden', 'true');
+  }
 }
 
 function startBanCountdown() {
@@ -7949,8 +8406,7 @@ function startBanCountdown() {
     if (!currentBan || !currentBan.expires_at) { stopBanCountdown(); return; }
     const remaining = new Date(currentBan.expires_at).getTime() - Date.now();
     if (remaining <= 0) {
-      // Countdown hit zero: re-check with the DATABASE clock (the RPC
-      // judges expiry with now(), so a slow phone clock cannot fake it).
+      // Countdown hit zero: re-check with the server so expired bans restore access.
       stopBanCountdown();
       refreshBanState();
       return;
@@ -7966,9 +8422,6 @@ function stopBanCountdown() {
 
 function startBanRecheck() {
   stopBanRecheck();
-  // Re-validate with the server every 60s while banned, so an expired
-  // ban restores access even if the tab was throttled and the countdown
-  // never fired. The RPC uses the database clock.
   banRecheckTimer = setInterval(() => { refreshBanState(); }, 60000);
 }
 function stopBanRecheck() {
@@ -7976,15 +8429,38 @@ function stopBanRecheck() {
 }
 
 async function handleBannedLogout() {
+  const btn = document.getElementById('banned-logout-btn');
+  if (btn) btn.disabled = true;
   try {
-    if (supabaseClient && supabaseClient.auth && supabaseClient.auth.signOut) {
+    if (typeof removePushToken === 'function') await removePushToken();
+  } catch (_) {}
+  try {
+    if (supabaseClient && supabaseClient.auth && typeof supabaseClient.auth.signOut === 'function') {
       await supabaseClient.auth.signOut();
     }
   } catch (_) {}
   currentAuthUser = null;
+  latestBanProfileRow = null;
+  if (typeof profile !== 'undefined' && profile) {
+    profile.id = null;
+    profile.name = 'Sign In';
+    profile.handle = 'user';
+    profile.bio = '';
+    profile.avatar_url = null;
+    profile.is_verified = false;
+  }
+  if (typeof clearProfileLocalCache === 'function') {
+    try { clearProfileLocalCache(); } catch (_) {}
+  }
   applyBanState(null);
   unsubscribeBanRealtime();
-  openAuthPage();
+  if (typeof updateAuthStatusUI === 'function') {
+    try { updateAuthStatusUI(); } catch (_) {}
+  }
+  if (typeof openAuthPage === 'function') {
+    openAuthPage();
+  }
+  if (btn) btn.disabled = false;
 }
 
 
@@ -9817,6 +10293,10 @@ function handleProfilesRealtimeUpdate(row) {
   refreshAllVerifiedBadgeSlots();
   if (profile && profile.id && verifiedCacheKey(profile.id) === verifiedCacheKey(row.user_id) && isV) {
     maybeShowVerifyConfirmPopup(true);
+  }
+  if (currentAuthUser && String(row.user_id || '') === String(currentAuthUser.id)) {
+    latestBanProfileRow = Object.assign({}, latestBanProfileRow || {}, row);
+    if (typeof refreshBanState === 'function') refreshBanState();
   }
 }
 let profilesRealtimeChannel = null;
@@ -14508,6 +14988,7 @@ function closeStoryViewer() {
   renderHomeStories();
   resumeActiveFeedVideo();
   resumeActiveHomeTheatreVideo();
+  if (typeof scheduleHomePlaybackSync === 'function') scheduleHomePlaybackSync();
 }
 function showCurrentStory() {
   const v = storyViewer;
@@ -14920,7 +15401,7 @@ function homePostCardHTML(v, idx, homePos) {
     + '<span class="home-post-play">' + lucideIcon('play', 56, true) + '</span>'
     + '<div class="home-video-error" style="display:none"><span>Video couldn&rsquo;t load.</span><button onclick="retryHomeVideo(event, this)">Retry</button></div>'
     + '<span class="home-post-duration"></span>'
-    + '<button class="home-post-sound" onclick="toggleHomeSound(event, this)" title="Sound">' + lucideIcon('volume-x', 20) + '</button>'
+    + '<button class="home-post-sound" onclick="toggleHomeSound(event, this)" title="Sound">' + lucideIcon(window._muted === false ? 'volume-2' : 'volume-x', 20) + '</button>'
     + '</div>'
     + '<div class="home-post-actions">'
     + '<button class="home-post-act' + (v.liked ? ' liked' : '') + '" id="hlike-' + escapeHtml(String(v.id)) + '" onclick="toggleHomeLike(this,\'' + escapeHtml(String(v.id)) + '\',' + idx + ')" title="Like">' + lucideIcon('heart', 26) + '</button>'
@@ -14978,56 +15459,191 @@ function renderHomeFeed() {
   if (feed.parentElement) feed.parentElement.scrollTop = scrollTop;
 }
 
-// ── Home video playback: IntersectionObserver autoplay ──
+// ── Home video playback: IntersectionObserver + viewport center autoplay ──
+const HOME_AUTOPLAY_MIN_RATIO = 0.7;
 let homeVideoObserver = null;
 let currentHomeVideo = null;
 let homePostsRefreshAt = 0;
 const homeMediaAspectCache = {};
+const homeObsRatios = new WeakMap();
+let homePlaybackRaf = 0;
+let homePlaybackSettleTimer = null;
+
+function isHomeFeedPlaybackAllowed() {
+  if (typeof homeTheatreIsOpen !== 'undefined' && homeTheatreIsOpen) return false;
+  if (typeof storyViewer !== 'undefined' && storyViewer && storyViewer.open) return false;
+  const page = document.getElementById('page-home');
+  if (!page || !page.classList.contains('active')) return false;
+  return true;
+}
+
+function getHomeViewportBounds(pageEl) {
+  if (!pageEl || typeof pageEl.getBoundingClientRect !== 'function') return null;
+  const pageRect = pageEl.getBoundingClientRect();
+  if (!pageRect || pageRect.height <= 0) return null;
+  let topBound = pageRect.top;
+  let bottomBound = pageRect.bottom;
+  const header = pageEl.querySelector('.home-header');
+  if (header && !header.classList.contains('home-header-hidden') && typeof header.getBoundingClientRect === 'function') {
+    const hRect = header.getBoundingClientRect();
+    if (hRect && hRect.height > 0 && hRect.bottom > topBound && hRect.bottom < bottomBound - 40) {
+      topBound = hRect.bottom;
+    }
+  }
+  const nav = document.querySelector('.bottom-nav');
+  if (nav && typeof nav.getBoundingClientRect === 'function') {
+    const nRect = nav.getBoundingClientRect();
+    if (nRect && nRect.height > 0 && nRect.top > topBound + 40 && nRect.top < bottomBound) {
+      bottomBound = nRect.top;
+    }
+  }
+  const viewH = bottomBound - topBound;
+  if (viewH <= 0) return null;
+  return { topBound, bottomBound, viewH, centerY: topBound + viewH / 2 };
+}
+
+function measureHomeVideoVisibility(vid, bounds) {
+  if (!vid) return { eligible: false, ratio: 0, distFromCenter: Infinity };
+  const obs = homeObsRatios.get(vid);
+  const rect = typeof vid.getBoundingClientRect === 'function' ? vid.getBoundingClientRect() : null;
+  if (bounds && rect && rect.height > 0) {
+    const visTop = Math.max(rect.top, bounds.topBound);
+    const visBot = Math.min(rect.bottom, bounds.bottomBound);
+    const visH = Math.max(0, visBot - visTop);
+    const selfRatio = visH / rect.height;
+    const viewFillRatio = visH / bounds.viewH;
+    const vidCenter = rect.top + rect.height / 2;
+    const distFromCenter = Math.abs(vidCenter - bounds.centerY);
+    const visOk = rect.height > bounds.viewH * 1.02
+      ? (viewFillRatio >= HOME_AUTOPLAY_MIN_RATIO && selfRatio >= 0.65)
+      : (selfRatio >= HOME_AUTOPLAY_MIN_RATIO);
+    const centerOk = distFromCenter <= bounds.viewH * 0.36 || selfRatio >= 0.85;
+    const obsNotHidden = !obs || obs.isIntersecting !== false || selfRatio >= HOME_AUTOPLAY_MIN_RATIO;
+    return {
+      eligible: visOk && centerOk && obsNotHidden,
+      ratio: selfRatio,
+      distFromCenter
+    };
+  }
+  const ratio = (obs && obs.isIntersecting) ? (obs.ratio || 0) : 0;
+  return {
+    eligible: ratio >= HOME_AUTOPLAY_MIN_RATIO,
+    ratio,
+    distFromCenter: 0
+  };
+}
+
+function evaluateHomeFeedPlayback() {
+  if (!isHomeFeedPlaybackAllowed()) {
+    pauseAllHomeVideos();
+    return;
+  }
+  const page = document.getElementById('page-home');
+  const allHomeVids = Array.from(document.querySelectorAll('#home-feed video'));
+  if (!allHomeVids.length) {
+    currentHomeVideo = null;
+    return;
+  }
+  const bounds = getHomeViewportBounds(page);
+  const measured = allHomeVids.map(vid => ({ vid, m: measureHomeVideoVisibility(vid, bounds) }));
+
+  const scoreOf = (m) => {
+    const centerPenalty = bounds && bounds.viewH > 0 ? (m.distFromCenter / bounds.viewH) * 0.25 : 0;
+    return m.ratio - centerPenalty;
+  };
+
+  let best = null;
+  let bestScore = -Infinity;
+  let currentEntry = null;
+  measured.forEach(item => {
+    if (item.vid === currentHomeVideo) currentEntry = item;
+    if (!item.m.eligible) return;
+    const sc = scoreOf(item.m);
+    if (sc > bestScore) {
+      bestScore = sc;
+      best = item.vid;
+    }
+  });
+
+  if (currentEntry && currentEntry.m.eligible && best && best !== currentEntry.vid) {
+    const curScore = scoreOf(currentEntry.m);
+    if (bestScore <= curScore + 0.08) {
+      best = currentEntry.vid;
+    }
+  }
+
+  measured.forEach(({ vid, m }) => {
+    if (vid !== best) {
+      if (!vid.paused) {
+        try { vid.pause(); } catch (_) {}
+      }
+      vid.muted = true;
+      if (!m.eligible && vid.dataset && vid.dataset.homeManualPaused) {
+        delete vid.dataset.homeManualPaused;
+      }
+      updateHomePlayIcon(vid.parentElement);
+    }
+  });
+
+  if (!best) {
+    currentHomeVideo = null;
+    return;
+  }
+
+  if (best.dataset && best.dataset.homeManualPaused) {
+    if (!best.paused) { try { best.pause(); } catch (_) {} }
+    best.muted = true;
+    updateHomePlayIcon(best.parentElement);
+    return;
+  }
+
+  currentHomeVideo = best;
+  best.preload = 'auto';
+  best.muted = !!window._muted;
+  if (best.paused) {
+    const playPromise = best.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => { updateHomePlayIcon(best.parentElement); });
+    }
+  }
+  updateHomePlayIcon(best.parentElement);
+
+  const bIdx = allHomeVids.indexOf(best);
+  if (bIdx >= 0 && bIdx + 1 < allHomeVids.length) {
+    allHomeVids[bIdx + 1].preload = 'auto';
+  }
+}
+
+function scheduleHomePlaybackSync() {
+  if (homePlaybackRaf) return;
+  const run = () => {
+    homePlaybackRaf = 0;
+    evaluateHomeFeedPlayback();
+  };
+  if (typeof requestAnimationFrame === 'function') {
+    homePlaybackRaf = requestAnimationFrame(run);
+  } else {
+    homePlaybackRaf = setTimeout(run, 16);
+  }
+  clearTimeout(homePlaybackSettleTimer);
+  homePlaybackSettleTimer = setTimeout(() => {
+    homePlaybackSettleTimer = null;
+    evaluateHomeFeedPlayback();
+  }, 90);
+}
 
 function ensureHomeVideoObserver() {
   if (homeVideoObserver) return homeVideoObserver;
   if (typeof IntersectionObserver === 'undefined') return null;
   homeVideoObserver = new IntersectionObserver((entries) => {
-    if (typeof homeTheatreIsOpen !== 'undefined' && homeTheatreIsOpen) {
-      entries.forEach(en => {
-        const vid = en.target;
-        if (!vid.paused) { vid.pause(); updateHomePlayIcon(vid.parentElement); }
-        if (currentHomeVideo === vid) currentHomeVideo = null;
+    entries.forEach(en => {
+      homeObsRatios.set(en.target, {
+        isIntersecting: !!en.isIntersecting,
+        ratio: en.intersectionRatio || 0
       });
-      return;
-    }
-    entries.forEach(en => {
-      const vid = en.target;
-      if (!en.isIntersecting || en.intersectionRatio < 0.5) {
-        if (!vid.paused) { vid.pause(); updateHomePlayIcon(vid.parentElement); }
-        if (vid.dataset.homeManualPaused) delete vid.dataset.homeManualPaused;
-        if (currentHomeVideo === vid) currentHomeVideo = null;
-      }
     });
-    let best = null, bestRatio = 0;
-    entries.forEach(en => {
-      if (en.isIntersecting && en.intersectionRatio >= 0.5 && en.intersectionRatio > bestRatio) {
-        best = en.target; bestRatio = en.intersectionRatio;
-      }
-    });
-    if (best && best !== currentHomeVideo && !best.dataset.homeManualPaused) {
-      if (currentHomeVideo && !currentHomeVideo.paused) {
-        currentHomeVideo.pause();
-        updateHomePlayIcon(currentHomeVideo.parentElement);
-      }
-      currentHomeVideo = best;
-      best.preload = 'auto';
-      best.muted = !!window._muted;
-      best.play().catch(() => {});
-      updateHomePlayIcon(best.parentElement);
-      // Pre-warm the very next card below so scrolling starts faster
-      const allHomeVids = Array.from(document.querySelectorAll('#home-feed video'));
-      const bIdx = allHomeVids.indexOf(best);
-      if (bIdx >= 0 && bIdx + 1 < allHomeVids.length) {
-        allHomeVids[bIdx + 1].preload = 'auto';
-      }
-    }
-  }, { root: document.getElementById('page-home'), threshold: [0, 0.5, 1] });
+    evaluateHomeFeedPlayback();
+  }, { root: document.getElementById('page-home'), threshold: [0, 0.25, 0.5, 0.65, 0.7, 0.85, 1] });
   return homeVideoObserver;
 }
 
@@ -15099,8 +15715,10 @@ function setupHomeVideo(mediaEl) {
   const vid = mediaEl.querySelector('video');
   if (!vid) return;
   mediaEl.dataset.homeSetup = '1';
-  // Every Home video follows the single global mute state.
-  vid.muted = !!window._muted;
+  // Keep non-active videos muted until active in viewport.
+  vid.muted = true;
+  const soundBtn = mediaEl.querySelector('.home-post-sound');
+  if (soundBtn) soundBtn.innerHTML = lucideIcon(window._muted === false ? 'volume-2' : 'volume-x', 20);
   const postId = vid.getAttribute('data-post-id') || '';
   const v = postId ? videos.find(x => String(x.id) === String(postId)) : null;
   const spinner = () => mediaEl.querySelector('.home-video-spinner');
@@ -15190,15 +15808,29 @@ function setupHomeVideo(mediaEl) {
   });
   vid.addEventListener('waiting', () => setSpinner(true));
   vid.addEventListener('play', () => {
-    updateHomePlayIcon(mediaEl);
+    if (!isHomeFeedPlaybackAllowed()) {
+      try { vid.pause(); } catch (_) {}
+      vid.muted = true;
+      updateHomePlayIcon(mediaEl);
+      return;
+    }
     currentHomeVideo = vid;
+    vid.muted = !!window._muted;
+    updateHomePlayIcon(mediaEl);
     document.querySelectorAll('#home-feed video').forEach(other => {
-      if (other !== vid && !other.paused) { other.pause(); updateHomePlayIcon(other.parentElement); }
+      if (other !== vid) {
+        if (!other.paused) { try { other.pause(); } catch (_) {} }
+        other.muted = true;
+        updateHomePlayIcon(other.parentElement);
+      }
     });
   });
   vid.addEventListener('pause', () => {
     pendingDurReveal = false;
     hideHomeDurationBadge();
+    updateHomePlayIcon(mediaEl);
+  });
+  vid.addEventListener('ended', () => {
     updateHomePlayIcon(mediaEl);
   });
   if (vid.readyState >= 2 || !vid.paused) setSpinner(false);
@@ -15217,8 +15849,9 @@ function setupHomeVideo(mediaEl) {
 function setupHomeVideos() {
   const obs = ensureHomeVideoObserver();
   document.querySelectorAll('#home-feed .home-post-media').forEach(mediaEl => setupHomeVideo(mediaEl));
+  scheduleHomePlaybackSync();
   if (obs) return;
-  // No IntersectionObserver (very old WebView): fall back to tap-to-play.
+  // No IntersectionObserver (very old WebView): fall back to scroll/tap sync.
 }
 
 function toggleHomeVideo(mediaEl) {
@@ -15228,10 +15861,13 @@ function toggleHomeVideo(mediaEl) {
     delete vid.dataset.homeManualPaused;
     pauseAllHomeVideos();
     currentHomeVideo = vid;
-    vid.play().catch(() => {});
+    vid.muted = !!window._muted;
+    const p = vid.play();
+    if (p && typeof p.catch === 'function') p.catch(() => { updateHomePlayIcon(mediaEl); });
   } else {
     vid.dataset.homeManualPaused = '1';
     vid.pause();
+    vid.muted = true;
     if (currentHomeVideo === vid) currentHomeVideo = null;
   }
   updateHomePlayIcon(mediaEl);
@@ -15242,32 +15878,32 @@ function toggleHomeSound(ev, btn) {
   const media = btn ? homeMediaOf(btn) : null;
   const vid = media ? media.querySelector('video') : null;
   if (!vid) return;
-  // Global mute state: flip the tapped video's state and apply it to
-  // every Home video (unmuting one unmutes them all, muting one mutes
-  // them all). The single window._muted flag is the app-wide state,
-  // so Reels stays in sync too. The new state comes from the tapped
-  // video itself, so it is always the flip the user expects even if
-  // the global flag and this video had drifted apart.
-  const muted = !vid.muted;
+  const muted = typeof window._muted === 'boolean' ? !window._muted : !vid.muted;
   window._muted = muted;
-  // The tapped video and its own button always update directly, then
-  // the bulk query applies the same state to every other Home video.
-  vid.muted = muted;
-  btn.innerHTML = lucideIcon(muted ? 'volume-x' : 'volume-2', 20);
-  document.querySelectorAll('#home-feed video').forEach(other => { other.muted = muted; });
   document.querySelectorAll('#home-feed .home-post-sound').forEach(b => {
     b.innerHTML = lucideIcon(muted ? 'volume-x' : 'volume-2', 20);
   });
-  // Unmuting a paused video starts it so the user hears it.
+  const activeVid = (currentHomeVideo && !currentHomeVideo.paused) ? currentHomeVideo : vid;
+  document.querySelectorAll('#home-feed video').forEach(other => {
+    other.muted = (other === activeVid) ? muted : true;
+  });
+  // Unmuting a paused active/tapped video starts it if eligible or explicitly tapped.
   if (!muted && vid.paused) {
     delete vid.dataset.homeManualPaused;
+    pauseAllHomeVideos();
     currentHomeVideo = vid;
-    vid.play().catch(() => {});
+    vid.muted = false;
+    const p = vid.play();
+    if (p && typeof p.catch === 'function') p.catch(() => { updateHomePlayIcon(media); });
+    updateHomePlayIcon(media);
   }
 }
 
 function pauseAllHomeVideos() {
-  document.querySelectorAll('#home-feed video').forEach(v => { try { v.pause(); } catch (_) {} });
+  document.querySelectorAll('#home-feed video').forEach(v => {
+    try { v.pause(); } catch (_) {}
+    v.muted = true;
+  });
   document.querySelectorAll('#home-feed .home-post-play').forEach(el => { el.style.display = 'flex'; });
   currentHomeVideo = null;
 }
@@ -15743,16 +16379,18 @@ function closeHomeTheatre() {
   homeTheatrePosts = [];
   homeTheatreActiveIdx = -1;
 
-  // Restore global mute state on every Home video and restart the target video from 0:00.
-  document.querySelectorAll('#home-feed video').forEach(other => { other.muted = !!window._muted; });
+  // Pause/mute all Home videos, then restart only the target video from 0:00.
+  pauseAllHomeVideos();
   if (homeVid && document.contains && document.contains(homeVid)) {
     try { homeVid.currentTime = 0; } catch (_) {}
     delete homeVid.dataset.homeManualPaused;
     homeVid.muted = !!window._muted;
     currentHomeVideo = homeVid;
-    homeVid.play().catch(() => {});
+    const p = homeVid.play();
+    if (p && typeof p.catch === 'function') p.catch(() => { updateHomePlayIcon(homeVid.parentElement); });
     updateHomePlayIcon(homeVid.parentElement);
   }
+  scheduleHomePlaybackSync();
 }
 
 function toggleHomeTheatreVideo(vidEl) {
@@ -15779,7 +16417,7 @@ function toggleHomeTheatreSound(ev) {
     scroller.querySelectorAll('video').forEach(sv => { sv.muted = muted; });
   }
   updateHomeTheatreSoundIcon();
-  document.querySelectorAll('#home-feed video').forEach(other => { other.muted = muted; });
+  document.querySelectorAll('#home-feed video').forEach(other => { other.muted = true; });
   document.querySelectorAll('#home-feed .home-post-sound').forEach(b => {
     b.innerHTML = lucideIcon(muted ? 'volume-x' : 'volume-2', 20);
   });
@@ -16081,6 +16719,7 @@ function onHomeScroll() {
     header.classList.remove('home-header-hidden'); homeHeaderHidden = false;
   }
   homeHeaderLastScroll = st;
+  scheduleHomePlaybackSync();
 }
 
 function setupHomeHeaderScroll() {
